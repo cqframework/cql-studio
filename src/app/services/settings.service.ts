@@ -89,6 +89,14 @@ export class SettingsService {
           parsedSettings.runnerFhirBaseUrl = '';
           shouldSave = true;
         }
+        if (parsedSettings.terminologyBaseUrl == null) {
+          parsedSettings.terminologyBaseUrl = '';
+          shouldSave = true;
+        }
+        if (parsedSettings.terminologyVsacApiKey == null) {
+          parsedSettings.terminologyVsacApiKey = '';
+          shouldSave = true;
+        }
         if (parsedSettings.translationBaseUrl == null) {
           parsedSettings.translationBaseUrl = '';
           shouldSave = true;
@@ -167,6 +175,16 @@ export class SettingsService {
     return envValue && envValue.trim() !== '' ? envValue : 'http://localhost:8080/fhir';
   }
 
+  getDefaultTerminologyBaseUrl(): string {
+    const envValue = (window as any)['CQL_STUDIO_TERMINOLOGY_BASE_URL'];
+    return envValue && envValue.trim() !== '' ? envValue : 'http://localhost:8080/fhir';
+  }
+
+  getDefaultTerminologyVsacApiKey(): string {
+    const envValue = (window as any)['CQL_STUDIO_TERMINOLOGY_VSAC_API_KEY'];
+    return envValue && envValue.trim() !== '' ? envValue : '';
+  }
+
   getDefaultTranslationBaseUrl(): string {
     const envValue = (window as any)['CQL_STUDIO_TRANSLATION_BASE_URL'];
     return envValue && envValue.trim() !== '' ? envValue : 'http://localhost:3001';
@@ -205,6 +223,16 @@ export class SettingsService {
   getEffectiveRunnerFhirBaseUrl(): string {
     const settingValue = this.settings().runnerFhirBaseUrl;
     return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultRunnerFhirBaseUrl();
+  }
+
+  getEffectiveTerminologyBaseUrl(): string {
+    const settingValue = this.settings().terminologyBaseUrl;
+    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultTerminologyBaseUrl();
+  }
+
+  getEffectiveTerminologyVsacApiKey(): string {
+    const settingValue = this.settings().terminologyVsacApiKey;
+    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultTerminologyVsacApiKey();
   }
 
   getEffectiveTranslationBaseUrl(): string {

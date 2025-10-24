@@ -17,6 +17,8 @@ export class Settings {
     public runnerFhirBaseUrl: string = '';
     public translationBaseUrl: string = '';
     public defaultTestResultsIndexUrl: string = '';
+    public terminologyBaseUrl: string = '';
+    public terminologyVsacApiKey: string = '';
     
     // AI Settings
     public ollamaBaseUrl: string = '';
