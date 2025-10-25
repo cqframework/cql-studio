@@ -18,7 +18,8 @@ export class Settings {
     public translationBaseUrl: string = '';
     public defaultTestResultsIndexUrl: string = '';
     public terminologyBaseUrl: string = '';
-    public terminologyVsacApiKey: string = '';
+    public terminologyBasicAuthUsername: string = '';
+    public terminologyBasicAuthPassword: string = '';
     
     // AI Settings
     public ollamaBaseUrl: string = '';

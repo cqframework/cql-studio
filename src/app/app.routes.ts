@@ -11,6 +11,7 @@ import { SettingsComponent } from './components/settings/settings.component';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { RunnerComponent } from './components/runner/runner.component';
 import { FhirUploaderComponent } from './components/fhir-uploader/fhir-uploader.component';
+import { TerminologyComponent } from './components/terminology/terminology.component';
 import { AboutComponent } from './components/about/about.component';
 
 export const routes: Routes = [
@@ -24,6 +25,7 @@ export const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent },
   { path: 'runner', component: RunnerComponent },
   { path: 'uploader', component: FhirUploaderComponent },
+  { path: 'terminology', component: TerminologyComponent },
   { path: 'about', component: AboutComponent },
   
   // IDE routes with separate layout

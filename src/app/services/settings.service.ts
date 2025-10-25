@@ -93,8 +93,12 @@ export class SettingsService {
           parsedSettings.terminologyBaseUrl = '';
           shouldSave = true;
         }
-        if (parsedSettings.terminologyVsacApiKey == null) {
-          parsedSettings.terminologyVsacApiKey = '';
+        if (parsedSettings.terminologyBasicAuthUsername == null) {
+          parsedSettings.terminologyBasicAuthUsername = '';
+          shouldSave = true;
+        }
+        if (parsedSettings.terminologyBasicAuthPassword == null) {
+          parsedSettings.terminologyBasicAuthPassword = '';
           shouldSave = true;
         }
         if (parsedSettings.translationBaseUrl == null) {
@@ -180,8 +184,13 @@ export class SettingsService {
     return envValue && envValue.trim() !== '' ? envValue : 'http://localhost:8080/fhir';
   }
 
-  getDefaultTerminologyVsacApiKey(): string {
-    const envValue = (window as any)['CQL_STUDIO_TERMINOLOGY_VSAC_API_KEY'];
+  getDefaultTerminologyBasicAuthUsername(): string {
+    const envValue = (window as any)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_USERNAME'];
+    return envValue && envValue.trim() !== '' ? envValue : '';
+  }
+
+  getDefaultTerminologyBasicAuthPassword(): string {
+    const envValue = (window as any)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_PASSWORD'];
     return envValue && envValue.trim() !== '' ? envValue : '';
   }
 
@@ -230,9 +239,14 @@ export class SettingsService {
     return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultTerminologyBaseUrl();
   }
 
-  getEffectiveTerminologyVsacApiKey(): string {
-    const settingValue = this.settings().terminologyVsacApiKey;
-    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultTerminologyVsacApiKey();
+  getEffectiveTerminologyBasicAuthUsername(): string {
+    const settingValue = this.settings().terminologyBasicAuthUsername;
+    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultTerminologyBasicAuthUsername();
+  }
+
+  getEffectiveTerminologyBasicAuthPassword(): string {
+    const settingValue = this.settings().terminologyBasicAuthPassword;
+    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultTerminologyBasicAuthPassword();
   }
 
   getEffectiveTranslationBaseUrl(): string {

@@ -83,7 +83,8 @@
 
                 <div class="card mb-4">
                     <div class="card-header">
-                        <h6 class="card-title mb-0"><span class="bi bi-play-circle me-2"></span>CQL Tests Runner & Results</h6>
+                        <h6 class="card-title mb-0"><span class="bi bi-play-circle me-2"></span>CQL Tests Runner &
+                            Results</h6>
                     </div>
                     <div class="card-body">
                         <div class="form-floating">
@@ -98,10 +99,12 @@
 
                         <div class="form-floating mt-3">
                             <input type="url" class="form-control" id="runnerFhirBaseUrl" name="runnerFhirBaseUrl"
-                            [(ngModel)]="settingsService.settings().runnerFhirBaseUrl"
-                            [placeholder]="settingsService.getDefaultRunnerFhirBaseUrl()">
+                                [(ngModel)]="settingsService.settings().runnerFhirBaseUrl"
+                                [placeholder]="settingsService.getDefaultRunnerFhirBaseUrl()">
                             <label for="runnerFhirBaseUrl">Runner FHIR Base URL</label>
-                            <small class="form-text">Base FHIR URL to pass to the CQL Tests Runner, which must be network-accessible from the runner service. Defaults to CQL_STUDIO_RUNNER_FHIR_BASE_URL or {{
+                            <small class="form-text">Base FHIR URL to pass to the CQL Tests Runner, which must be
+                                network-accessible from the runner service. Defaults to CQL_STUDIO_RUNNER_FHIR_BASE_URL
+                                or {{
                                 settingsService.getDefaultRunnerFhirBaseUrl() }}</small>
                         </div>
 
@@ -112,7 +115,8 @@
                                 [placeholder]="settingsService.getDefaultTestResultsIndexUrl()">
                             <label for="defaultTestResultsIndexUrl">Default Test Results Index URL</label>
                             <small class="form-text">Default URL for loading test results index files. Defaults to
-                                CQL_STUDIO_DEFAULT_TEST_RESULTS_INDEX_URL or {{ settingsService.getDefaultTestResultsIndexUrl()
+                                CQL_STUDIO_DEFAULT_TEST_RESULTS_INDEX_URL or {{
+                                settingsService.getDefaultTestResultsIndexUrl()
                                 }}</small>
                         </div>
                     </div>
@@ -128,7 +132,8 @@
                                 [(ngModel)]="settingsService.settings().fhirBaseUrl"
                                 [placeholder]="settingsService.getDefaultFhirBaseUrl()">
                             <label for="fhirBaseUrl">FHIR Base URL</label>
-                            <small class="form-text">Base URL for the FHIR server. Defaults to CQL_STUDIO_FHIR_BASE_URL or {{
+                            <small class="form-text">Base URL for the FHIR server. Defaults to CQL_STUDIO_FHIR_BASE_URL
+                                or {{
                                 settingsService.getDefaultFhirBaseUrl() }}</small>
                         </div>
                     </div>
@@ -145,7 +150,8 @@
                                 [placeholder]="settingsService.getDefaultTranslationBaseUrl()">
                             <label for="translationBaseUrl">Translation Base URL</label>
                             <small class="form-text">Base URL for the translation service. Defaults to
-                                CQL_STUDIO_TRANSLATION_BASE_URL or {{ settingsService.getDefaultTranslationBaseUrl() }}</small>
+                                CQL_STUDIO_TRANSLATION_BASE_URL or {{ settingsService.getDefaultTranslationBaseUrl()
+                                }}</small>
                         </div>
                     </div>
                 </div>
@@ -160,16 +166,29 @@
                                 [(ngModel)]="settingsService.settings().terminologyBaseUrl"
                                 [placeholder]="settingsService.getDefaultTerminologyBaseUrl()">
                             <label for="terminologyBaseUrl">Terminology Base URL</label>
-                            <small class="form-text">Base URL for terminology services. Defaults to CQL_STUDIO_TERMINOLOGY_BASE_URL or {{
+                            <small class="form-text">Base URL for terminology services. Defaults to
+                                CQL_STUDIO_TERMINOLOGY_BASE_URL or {{
                                 settingsService.getDefaultTerminologyBaseUrl() }}</small>
                         </div>
 
                         <div class="form-floating mt-3">
-                            <input type="password" class="form-control" id="terminologyVsacApiKey" name="terminologyVsacApiKey"
-                                [(ngModel)]="settingsService.settings().terminologyVsacApiKey"
-                                [placeholder]="settingsService.getDefaultTerminologyVsacApiKey()">
-                            <label for="terminologyVsacApiKey">VSAC API Key</label>
-                            <small class="form-text">API key for the Value Set Authority Center (VSAC) terminology service. Defaults to CQL_STUDIO_TERMINOLOGY_VSAC_API_KEY or blank.</small>
+                            <input type="text" class="form-control" id="terminologyBasicAuthUsername"
+                                name="terminologyBasicAuthUsername"
+                                [(ngModel)]="settingsService.settings().terminologyBasicAuthUsername"
+                                [placeholder]="settingsService.getDefaultTerminologyBasicAuthUsername()">
+                            <label for="terminologyBasicAuthUsername">Basic Auth Username (Optional)</label>
+                            <small class="form-text">Username for Basic Authentication. Defaults to
+                                CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_USERNAME or blank.</small>
+                        </div>
+
+                        <div class="form-floating mt-3">
+                            <input type="password" class="form-control" id="terminologyBasicAuthPassword"
+                                name="terminologyBasicAuthPassword"
+                                [(ngModel)]="settingsService.settings().terminologyBasicAuthPassword"
+                                [placeholder]="settingsService.getDefaultTerminologyBasicAuthPassword()">
+                            <label for="terminologyBasicAuthPassword">Basic Auth Password (Optional)</label>
+                            <small class="form-text">Password for Basic Authentication. Defaults to
+                                CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_PASSWORD or blank.</small>
                         </div>
                     </div>
                 </div>

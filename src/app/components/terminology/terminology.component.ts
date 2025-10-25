@@ -1,0 +1,769 @@
+// Author: Preston Lee
+
+import { Component, signal, computed } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { SettingsService } from '../../services/settings.service';
+import { TerminologyService } from '../../services/terminology.service';
+import { ValueSet, CodeSystem, ConceptMap, Bundle, Parameters } from 'fhir/r4';
+
+interface SearchResult {
+  id: string;
+  title: string;
+  description?: string;
+  url?: string;
+  status?: string;
+  type: 'valueset' | 'codesystem' | 'conceptmap';
+}
+
+interface ValidationResult {
+  valid: boolean;
+  message?: string;
+  display?: string;
+}
+
+@Component({
+  selector: 'app-terminology',
+  standalone: true,
+  imports: [CommonModule, FormsModule],
+  templateUrl: './terminology.component.html',
+  styleUrl: './terminology.component.scss'
+})
+export class TerminologyComponent {
+
+  // Active tab
+  protected readonly activeTab = signal<string>('codes');
+
+  // ValueSet search
+  protected readonly valuesetSearchTerm = signal<string>('');
+  protected readonly valuesetResults = signal<ValueSet[]>([]);
+  protected readonly valuesetLoading = signal<boolean>(false);
+  protected readonly valuesetError = signal<string | null>(null);
+  protected readonly selectedValueSet = signal<ValueSet | null>(null);
+  protected readonly expandedCodes = signal<any[]>([]);
+  protected readonly expandLoading = signal<boolean>(false);
+
+  // Code lookup
+  protected readonly codeSearchTerm = signal<string>('');
+  protected readonly codeSystemUrl = signal<string>('');
+  protected readonly codeResults = signal<any[]>([]);
+  protected readonly codeLoading = signal<boolean>(false);
+  protected readonly codeError = signal<string | null>(null);
+  protected readonly expandedNodes = signal<Set<string>>(new Set());
+  protected readonly selectedCode = signal<any>(null);
+  protected readonly codeDetails = signal<any>(null);
+  protected readonly codeDetailsLoading = signal<boolean>(false);
+  protected readonly codeParents = signal<any[]>([]);
+  protected readonly codeChildren = signal<any[]>([]);
+  
+  // Available CodeSystems for dropdown
+  protected readonly availableCodeSystems = signal<any[]>([]);
+
+  // Code validation
+  protected readonly validationCode = signal<string>('');
+  protected readonly validationSystem = signal<string>('');
+  protected readonly validationValueSet = signal<string>('');
+  protected readonly validationResult = signal<ValidationResult | null>(null);
+  protected readonly validationLoading = signal<boolean>(false);
+  protected readonly validationError = signal<string | null>(null);
+
+  // ConceptMap search
+  protected readonly conceptmapSearchTerm = signal<string>('');
+  protected readonly conceptmapResults = signal<ConceptMap[]>([]);
+  protected readonly conceptmapLoading = signal<boolean>(false);
+  protected readonly conceptmapError = signal<string | null>(null);
+  protected readonly selectedConceptMap = signal<ConceptMap | null>(null);
+
+  // Translation
+  protected readonly translateCode = signal<string>('');
+  protected readonly translateSystem = signal<string>('');
+  protected readonly translateTarget = signal<string>('');
+  protected readonly translationResult = signal<any[]>([]);
+  protected readonly translationLoading = signal<boolean>(false);
+  protected readonly translationError = signal<string | null>(null);
+
+  // Code Systems tab
+  protected readonly codeSystemsResults = signal<CodeSystem[]>([]);
+  protected readonly codeSystemsLoading = signal<boolean>(false);
+  protected readonly codeSystemsError = signal<string | null>(null);
+  protected readonly codeSystemsFilter = signal<string>('');
+  protected readonly codeSystemsSortBy = signal<'name' | 'url' | 'title'>('name');
+  protected readonly codeSystemsSortOrder = signal<'asc' | 'desc'>('asc');
+  protected readonly codeSystemsDeleting = signal<Set<string>>(new Set());
+
+  // Server availability
+  protected readonly serverAvailable = signal<boolean>(false);
+  protected readonly serverLoading = signal<boolean>(true);
+  protected readonly serverError = signal<string | null>(null);
+  protected readonly resourceCounts = signal<{
+    valuesets: number;
+    codesystems: number;
+    conceptmaps: number;
+  } | null>(null);
+
+  // Configuration status
+  protected readonly hasValidConfiguration = computed(() => {
+    const baseUrl = this.settingsService.getEffectiveTerminologyBaseUrl();
+    return baseUrl.trim() !== '';
+  });
+
+  protected readonly configurationStatus = computed(() => {
+    if (!this.hasValidConfiguration()) {
+      return {
+        type: 'warning',
+        message: 'Terminology service not configured. Please configure the terminology base URL in Settings.',
+        showSettings: true
+      };
+    }
+    return {
+      type: 'success',
+      message: `Connected to ${this.settingsService.getEffectiveTerminologyBaseUrl()}`,
+      showSettings: false
+    };
+  });
+
+  constructor(
+    protected settingsService: SettingsService,
+    private terminologyService: TerminologyService,
+    private router: Router
+  ) {
+    // Initialize server availability check
+    this.initializeServerCheck();
+    // Load available CodeSystems for dropdown
+    this.loadAvailableCodeSystems();
+  }
+
+  // Tab management
+  setActiveTab(tab: string): void {
+    this.activeTab.set(tab);
+    
+    // Auto-load ValueSets when Browser tab is activated
+    if (tab === 'codes' && this.valuesetResults().length === 0 && !this.valuesetLoading()) {
+      this.searchValueSets();
+    }
+  }
+
+  // Server initialization
+  private async initializeServerCheck(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      this.serverLoading.set(false);
+      this.serverAvailable.set(false);
+      this.serverError.set('Terminology service not configured');
+      return;
+    }
+
+    this.serverLoading.set(true);
+    this.serverError.set(null);
+
+    try {
+      // Check server availability and get resource counts
+      await this.checkServerAvailability();
+      this.serverAvailable.set(true);
+      
+      // Load code systems automatically
+      await this.loadCodeSystems();
+    } catch (error) {
+      this.serverAvailable.set(false);
+      this.serverError.set(this.getErrorMessage(error));
+    } finally {
+      this.serverLoading.set(false);
+    }
+  }
+
+  private async checkServerAvailability(): Promise<void> {
+    try {
+      // Get resource counts in parallel
+      const [valuesetsResult, codesystemsResult, conceptmapsResult] = await Promise.all([
+        this.terminologyService.searchValueSets({ _count: 1 }).toPromise().catch(() => ({ total: 0 })),
+        this.terminologyService.searchCodeSystems({ _count: 1 }).toPromise().catch(() => ({ total: 0 })),
+        this.terminologyService.searchConceptMaps({ _count: 1 }).toPromise().catch(() => ({ total: 0 }))
+      ]);
+
+      this.resourceCounts.set({
+        valuesets: valuesetsResult?.total || 0,
+        codesystems: codesystemsResult?.total || 0,
+        conceptmaps: conceptmapsResult?.total || 0
+      });
+    } catch (error) {
+      console.error('Server availability check failed:', error);
+      throw error;
+    }
+  }
+
+  // ValueSet operations
+  async searchValueSets(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      this.valuesetError.set('Please configure terminology service settings first.');
+      return;
+    }
+
+    this.valuesetLoading.set(true);
+    this.valuesetError.set(null);
+
+    try {
+      const searchTerm = this.valuesetSearchTerm().trim();
+      const params: any = { _count: 20 };
+      
+      if (searchTerm) {
+        // Try searching by name first, then title
+        params.name = searchTerm;
+      }
+
+      const result = await this.terminologyService.searchValueSets(params).toPromise();
+      this.valuesetResults.set(result?.entry?.map(e => e.resource!) || []);
+    } catch (error) {
+      this.valuesetError.set(this.getErrorMessage(error));
+    } finally {
+      this.valuesetLoading.set(false);
+    }
+  }
+
+  async selectValueSet(valueset: ValueSet): Promise<void> {
+    this.selectedValueSet.set(valueset);
+    await this.expandValueSet();
+  }
+
+  async expandValueSet(): Promise<void> {
+    const valueset = this.selectedValueSet();
+    if (!valueset) return;
+
+    this.expandLoading.set(true);
+
+    try {
+      const params = {
+        url: valueset.url,
+        includeDesignations: true,
+        includeDefinition: true,
+        activeOnly: true
+      };
+
+      const result = await this.terminologyService.expandValueSet(params).toPromise();
+      this.expandedCodes.set(result?.expansion?.contains || []);
+    } catch (error) {
+      this.valuesetError.set(this.getErrorMessage(error));
+    } finally {
+      this.expandLoading.set(false);
+    }
+  }
+
+  // Browser search operations
+  async searchBrowserCodes(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      this.codeError.set('Please configure terminology service settings first.');
+      return;
+    }
+
+    this.codeLoading.set(true);
+    this.codeError.set(null);
+
+    try {
+      const searchTerm = this.codeSearchTerm().trim();
+      const selectedValueSet = this.selectedValueSet();
+      
+      if (!selectedValueSet) {
+        this.codeError.set('Please select a ValueSet to search codes.');
+        return;
+      }
+
+      console.log('Searching for codes in ValueSet:', selectedValueSet.url, 'with term:', searchTerm);
+      
+      // Expand the ValueSet to get codes with pagination and filtering
+      const params: any = {
+        url: selectedValueSet.url,
+        includeDesignations: true,
+        includeDefinition: true,
+        activeOnly: true,
+        count: 1000, // Stay within server limits
+        offset: 0
+      };
+
+      // If we have a search term, use server-side filtering
+      if (searchTerm) {
+        params.filter = searchTerm;
+      }
+
+      console.log('Expanding ValueSet with params:', params);
+      const result = await this.terminologyService.expandValueSet(params).toPromise();
+      let codes = result?.expansion?.contains || [];
+      
+      // If no search term was provided, we still need to filter the results
+      // since we're limited to 1000 codes and the server might return more than we can handle
+      if (!searchTerm && codes.length >= 1000) {
+        console.log('ValueSet has many codes, showing first 1000. Consider using a search term to narrow results.');
+        codes = codes.slice(0, 1000);
+      }
+      
+      console.log('Found codes:', codes.length);
+      this.codeResults.set(codes);
+      this.autoSelectFirstResult();
+    } catch (error) {
+      console.error('Browser search error:', error);
+      this.codeError.set(this.getErrorMessage(error));
+    } finally {
+      this.codeLoading.set(false);
+    }
+  }
+
+  // Code browsing operations (legacy - for CodeSystem browsing)
+  async browseCodes(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      this.codeError.set('Please configure terminology service settings first.');
+      return;
+    }
+
+    this.codeLoading.set(true);
+    this.codeError.set(null);
+
+    try {
+      const searchTerm = this.codeSearchTerm().trim();
+      const systemUrl = this.codeSystemUrl().trim();
+      
+      if (!systemUrl) {
+        this.codeError.set('Please select a CodeSystem to browse codes.');
+        return;
+      }
+
+      console.log('Searching for codes in CodeSystem:', systemUrl, 'with term:', searchTerm);
+      
+      // Get the specific CodeSystem to access its concepts
+      const codeSystemResult = await this.terminologyService.getCodeSystemByUrl(systemUrl).toPromise();
+      
+      if (!codeSystemResult) {
+        this.codeError.set('CodeSystem not found. Please check the selection.');
+        return;
+      }
+
+      console.log('CodeSystem found:', codeSystemResult);
+      
+      // Extract concepts from the CodeSystem
+      let concepts = codeSystemResult.concept || [];
+      
+      // Filter concepts by search term using client-side contains matching
+      if (searchTerm) {
+        console.log('Filtering concepts with search term:', searchTerm);
+        concepts = concepts.filter((concept: any) => 
+          concept.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          concept.display?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          concept.definition?.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+      }
+      
+      console.log('Found concepts:', concepts.length);
+      this.codeResults.set(concepts);
+      this.autoSelectFirstResult();
+    } catch (error) {
+      console.error('Browse error:', error);
+      this.codeError.set(this.getErrorMessage(error));
+    } finally {
+      this.codeLoading.set(false);
+    }
+  }
+
+  // Test server resources
+  async testServerResources(): Promise<void> {
+    try {
+      console.log('Testing server resources...');
+      const result = await this.terminologyService.testServerResources().toPromise();
+      console.log('Server metadata:', result);
+    } catch (error) {
+      console.error('Server test error:', error);
+    }
+  }
+
+  // Helper method to set example CodeSystem URLs
+  setExampleCodeSystemUrl(url: string): void {
+    this.codeSystemUrl.set(url);
+  }
+
+  // Test search functionality
+  async testSearch(): Promise<void> {
+    console.log('Testing search for "diabetes"...');
+    this.codeSearchTerm.set('diabetes');
+    await this.browseCodes();
+  }
+
+  // Load available CodeSystems for dropdown
+  async loadAvailableCodeSystems(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      return;
+    }
+
+    this.codeSystemsLoading.set(true);
+    
+    try {
+      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const codeSystems = result?.entry?.map(e => e.resource!).filter(r => r !== undefined) || [];
+      this.availableCodeSystems.set(codeSystems);
+      console.log('Loaded available CodeSystems:', codeSystems.length);
+    } catch (error) {
+      console.error('Failed to load CodeSystems:', error);
+      // Don't show error to user as this is background loading
+    } finally {
+      this.codeSystemsLoading.set(false);
+    }
+  }
+
+  async lookupCode(code: string, system: string): Promise<void> {
+    try {
+      const params = {
+        code: code,
+        system: system
+      };
+
+      const result = await this.terminologyService.lookupCode(params).toPromise();
+      // Handle lookup result
+      console.log('Code lookup result:', result);
+    } catch (error) {
+      console.error('Code lookup error:', error);
+    }
+  }
+
+  // Code validation operations
+  async validateCode(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      this.validationError.set('Please configure terminology service settings first.');
+      return;
+    }
+
+    const code = this.validationCode().trim();
+    const system = this.validationSystem().trim();
+    const valueset = this.validationValueSet().trim();
+
+    if (!code || !system) {
+      this.validationError.set('Please enter both code and system.');
+      return;
+    }
+
+    this.validationLoading.set(true);
+    this.validationError.set(null);
+
+    try {
+      const params: any = {
+        code: code,
+        system: system
+      };
+
+      if (valueset) {
+        params.url = valueset;
+      }
+
+      const result = await this.terminologyService.validateCode(params).toPromise();
+      
+      // Parse validation result
+      const validParam = result?.parameter?.find(p => p.name === 'result');
+      const displayParam = result?.parameter?.find(p => p.name === 'display');
+      
+      this.validationResult.set({
+        valid: validParam?.valueBoolean || false,
+        message: validParam?.valueBoolean ? 'Code is valid' : 'Code is not valid',
+        display: displayParam?.valueString
+      });
+    } catch (error) {
+      this.validationError.set(this.getErrorMessage(error));
+    } finally {
+      this.validationLoading.set(false);
+    }
+  }
+
+  // ConceptMap operations
+  async searchConceptMaps(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      this.conceptmapError.set('Please configure terminology service settings first.');
+      return;
+    }
+
+    this.conceptmapLoading.set(true);
+    this.conceptmapError.set(null);
+
+    try {
+      const searchTerm = this.conceptmapSearchTerm().trim();
+      const params: any = { _count: 20 };
+      
+      if (searchTerm) {
+        params.name = searchTerm;
+      }
+
+      const result = await this.terminologyService.searchConceptMaps(params).toPromise();
+      this.conceptmapResults.set(result?.entry?.map(e => e.resource!) || []);
+    } catch (error) {
+      this.conceptmapError.set(this.getErrorMessage(error));
+    } finally {
+      this.conceptmapLoading.set(false);
+    }
+  }
+
+  async selectConceptMap(conceptmap: ConceptMap): Promise<void> {
+    this.selectedConceptMap.set(conceptmap);
+  }
+
+  async translateConcept(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      this.translationError.set('Please configure terminology service settings first.');
+      return;
+    }
+
+    const code = this.translateCode().trim();
+    const system = this.translateSystem().trim();
+    const target = this.translateTarget().trim();
+
+    if (!code || !system) {
+      this.translationError.set('Please enter both code and system.');
+      return;
+    }
+
+    this.translationLoading.set(true);
+    this.translationError.set(null);
+
+    try {
+      const params: any = {
+        code: code,
+        system: system
+      };
+
+      if (target) {
+        params.target = [target];
+      }
+
+      const result = await this.terminologyService.translateConcept(params).toPromise();
+      
+      // Parse translation result
+      const matchParams = result?.parameter?.filter(p => p.name === 'match') || [];
+      this.translationResult.set(matchParams.map(p => p.valueCoding));
+    } catch (error) {
+      this.translationError.set(this.getErrorMessage(error));
+    } finally {
+      this.translationLoading.set(false);
+    }
+  }
+
+  // Utility methods
+  private getErrorMessage(error: any): string {
+    if (error?.status === 401 || error?.status === 403) {
+      return 'Authentication failed. The terminology server may require authentication. Please check your authorization bearer token in Settings.';
+    }
+    if (error?.status === 404) {
+      return 'Resource not found. Please check your search terms.';
+    }
+    if (error?.status >= 500) {
+      return 'Server error. Please try again later.';
+    }
+    return error?.message || 'An unexpected error occurred.';
+  }
+
+  navigateToSettings(): void {
+    this.router.navigate(['/settings']);
+  }
+
+
+
+  // Code Systems operations
+  async loadCodeSystems(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      this.codeSystemsError.set('Please configure terminology service settings first.');
+      return;
+    }
+
+    this.codeSystemsLoading.set(true);
+    this.codeSystemsError.set(null);
+
+    try {
+      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      this.codeSystemsResults.set(result?.entry?.map(e => e.resource).filter(r => r !== undefined) || []);
+    } catch (error) {
+      this.codeSystemsError.set(this.getErrorMessage(error));
+    } finally {
+      this.codeSystemsLoading.set(false);
+    }
+  }
+
+  setCodeSystemsSortBy(sortBy: 'name' | 'url' | 'title'): void {
+    this.codeSystemsSortBy.set(sortBy);
+  }
+
+  toggleCodeSystemsSortOrder(): void {
+    this.codeSystemsSortOrder.set(this.codeSystemsSortOrder() === 'asc' ? 'desc' : 'asc');
+  }
+
+  getFilteredAndSortedCodeSystems(): CodeSystem[] {
+    let results = this.codeSystemsResults();
+    
+    // Apply filter
+    const filter = this.codeSystemsFilter().toLowerCase();
+    if (filter) {
+      results = results.filter(cs => 
+        cs.name?.toLowerCase().includes(filter) ||
+        cs.title?.toLowerCase().includes(filter) ||
+        cs.url?.toLowerCase().includes(filter)
+      );
+    }
+
+    // Apply sorting
+    const sortBy = this.codeSystemsSortBy();
+    const sortOrder = this.codeSystemsSortOrder();
+    
+    results.sort((a, b) => {
+      let aValue = '';
+      let bValue = '';
+      
+      switch (sortBy) {
+        case 'name':
+          aValue = a.name || '';
+          bValue = b.name || '';
+          break;
+        case 'url':
+          aValue = a.url || '';
+          bValue = b.url || '';
+          break;
+        case 'title':
+          aValue = a.title || '';
+          bValue = b.title || '';
+          break;
+      }
+      
+      const comparison = aValue.localeCompare(bValue);
+      return sortOrder === 'asc' ? comparison : -comparison;
+    });
+
+    return results;
+  }
+
+  async deleteCodeSystem(codeSystem: CodeSystem): Promise<void> {
+    if (!codeSystem.id) {
+      this.codeSystemsError.set('Cannot delete CodeSystem: No ID found');
+      return;
+    }
+
+    // Confirmation dialog
+    const confirmed = confirm(
+      `Are you sure you want to delete the CodeSystem "${codeSystem.name || codeSystem.title || codeSystem.id}"?\n\n` +
+      `This action cannot be undone and will permanently remove the CodeSystem from the server.`
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    // Add to deleting set
+    const deleting = new Set(this.codeSystemsDeleting());
+    deleting.add(codeSystem.id);
+    this.codeSystemsDeleting.set(deleting);
+
+    try {
+      await this.terminologyService.deleteCodeSystem(codeSystem.id).toPromise();
+      
+      // Remove from results
+      const results = this.codeSystemsResults().filter(cs => cs.id !== codeSystem.id);
+      this.codeSystemsResults.set(results);
+      
+      console.log(`CodeSystem "${codeSystem.name || codeSystem.id}" deleted successfully`);
+    } catch (error) {
+      console.error('Failed to delete CodeSystem:', error);
+      this.codeSystemsError.set(`Failed to delete CodeSystem: ${this.getErrorMessage(error)}`);
+    } finally {
+      // Remove from deleting set
+      const deleting = new Set(this.codeSystemsDeleting());
+      deleting.delete(codeSystem.id);
+      this.codeSystemsDeleting.set(deleting);
+    }
+  }
+
+  isCodeSystemDeleting(codeSystemId: string): boolean {
+    return this.codeSystemsDeleting().has(codeSystemId);
+  }
+
+  openUrl(url: string): void {
+    window.open(url, '_blank');
+  }
+
+  // Tree navigation methods
+  toggleNode(nodeId: string): void {
+    const expanded = new Set(this.expandedNodes());
+    if (expanded.has(nodeId)) {
+      expanded.delete(nodeId);
+    } else {
+      expanded.add(nodeId);
+    }
+    this.expandedNodes.set(expanded);
+  }
+
+  isNodeExpanded(nodeId: string): boolean {
+    return this.expandedNodes().has(nodeId);
+  }
+
+  hasChildren(node: any): boolean {
+    return node.children && node.children.length > 0;
+  }
+
+  getNodeLevel(node: any): number {
+    return node.level || 0;
+  }
+
+  getNodeIndent(node: any): string {
+    const level = this.getNodeLevel(node);
+    return `${level * 20}px`;
+  }
+
+  // Code selection and details
+  selectCode(code: any): void {
+    this.selectedCode.set(code);
+    this.loadCodeDetails(code);
+  }
+
+  async loadCodeDetails(code: any): Promise<void> {
+    if (!code || !code.id) return;
+
+    this.codeDetailsLoading.set(true);
+    this.codeDetails.set(null);
+    this.codeParents.set([]);
+    this.codeChildren.set([]);
+
+    try {
+      // For CodeSystem resources, get the full CodeSystem details
+      if (code.resourceType === 'CodeSystem') {
+        const codeSystemDetails = await this.terminologyService.getCodeSystem(code.id).toPromise();
+        this.codeDetails.set(codeSystemDetails);
+        
+        // Extract concepts from the CodeSystem to show as "children"
+        if (codeSystemDetails?.concept) {
+          const concepts = codeSystemDetails.concept;
+          this.codeParents.set([]);
+          this.codeChildren.set(concepts.slice(0, 10)); // Show first 10 concepts
+        }
+      } else {
+        // For other resource types, just show the resource details
+        // since we don't have specific codes to lookup
+        this.codeDetails.set(code);
+        this.codeParents.set([]);
+        this.codeChildren.set([]);
+      }
+    } catch (error) {
+      console.error('Failed to load code details:', error);
+      // Fallback to showing the basic resource information
+      this.codeDetails.set(code);
+      this.codeParents.set([]);
+      this.codeChildren.set([]);
+    } finally {
+      this.codeDetailsLoading.set(false);
+    }
+  }
+
+  // Auto-select first result when results change
+  private autoSelectFirstResult(): void {
+    const results = this.codeResults();
+    if (results.length > 0 && !this.selectedCode()) {
+      this.selectCode(results[0]);
+    }
+  }
+
+  // Helper methods for template
+  formatDate(dateString?: string): string {
+    if (!dateString) return '';
+    return new Date(dateString).toLocaleDateString();
+  }
+
+  truncateText(text: string, maxLength: number = 100): string {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + '...';
+  }
+}
