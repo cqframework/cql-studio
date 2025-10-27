@@ -1,6 +1,6 @@
 # CQL Studio
 
-A web application for viewing and analyzing CQL (Clinical Quality Language) test results created from [CQL Tests Runner](https://github.com/cqframework/cql-tests-runner/issues/40).
+A integrated web application suite for developing, testing, and publication of CQL (Clinical Quality Language) and FHIR-based artifacts using classical IDE concepts and optional AI-assisted drafting, as well as full support of official CQL _engine_ compatibility test cases, runner services, and results analysis.
 
 #### Cross-Engine Comparison Summary
 ![dashboard](doc/screenshots/dashboard.png)
@@ -13,6 +13,11 @@ A web application for viewing and analyzing CQL (Clinical Quality Language) test
 
 #### Loading w/Deep-Linking Documentation
 ![documentation](doc/screenshots/documentation.png)
+
+### CQL Integrated Development Environment
+![ide-execution](doc/screenshots/ide-execution.png)
+![ide-outline](doc/screenshots/ide-outline.png)
+
 
 ## Quick Start with Docker
 
