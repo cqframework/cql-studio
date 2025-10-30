@@ -88,6 +88,7 @@ export class TerminologyService extends BaseService {
   expandValueSet(params: {
     url?: string;
     valueSet?: string;
+    id?: string;
     filter?: string;
     count?: number;
     offset?: number;
@@ -99,6 +100,31 @@ export class TerminologyService extends BaseService {
     excludePostCoordinated?: boolean;
     displayLanguage?: string;
   } = {}): Observable<ValueSet> {
+    
+    // If we have an ID, use the GET approach with ID in path
+    if (params.id) {
+      let url = `${this.getTerminologyBaseUrl()}/ValueSet/${params.id}/$expand`;
+      const queryParams: string[] = [];
+      
+      if (params.filter) queryParams.push(`filter=${encodeURIComponent(params.filter)}`);
+      if (params.count) queryParams.push(`count=${params.count}`);
+      if (params.offset) queryParams.push(`offset=${params.offset}`);
+      if (params.includeDesignations !== undefined) queryParams.push(`includeDesignations=${params.includeDesignations}`);
+      if (params.includeDefinition !== undefined) queryParams.push(`includeDefinition=${params.includeDefinition}`);
+      if (params.activeOnly !== undefined) queryParams.push(`activeOnly=${params.activeOnly}`);
+      if (params.excludeNested !== undefined) queryParams.push(`excludeNested=${params.excludeNested}`);
+      if (params.excludeNotForUI !== undefined) queryParams.push(`excludeNotForUI=${params.excludeNotForUI}`);
+      if (params.excludePostCoordinated !== undefined) queryParams.push(`excludePostCoordinated=${params.excludePostCoordinated}`);
+      if (params.displayLanguage) queryParams.push(`displayLanguage=${encodeURIComponent(params.displayLanguage)}`);
+      
+      if (queryParams.length > 0) {
+        url += `?${queryParams.join('&')}`;
+      }
+      
+      return this.http.get<ValueSet>(url, { headers: this.getAuthHeaders() });
+    }
+    
+    // Otherwise, use POST approach with Parameters body
     const operationParams: Parameters = {
       resourceType: 'Parameters',
       parameter: []

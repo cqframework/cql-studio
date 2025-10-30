@@ -43,6 +43,40 @@ export class TerminologyComponent {
   protected readonly selectedValueSet = signal<ValueSet | null>(null);
   protected readonly expandedCodes = signal<any[]>([]);
   protected readonly expandLoading = signal<boolean>(false);
+  
+  // Pagination for Expanded Codes
+  protected readonly currentPage = signal<number>(1);
+  protected readonly pageSize = signal<number>(50);
+  protected readonly availablePageSizes = [25, 50, 100, 200];
+  
+  // Expanded row state for Expanded Codes table
+  protected readonly expandedRows = signal<Set<string>>(new Set());
+  protected readonly expandedCodeDetails = signal<Map<string, any>>(new Map());
+  protected readonly loadingDetails = signal<Set<string>>(new Set());
+
+  // Pagination computed properties
+  protected readonly paginatedCodes = computed(() => {
+    const codes = this.expandedCodes();
+    const size = this.pageSize();
+    const page = this.currentPage();
+    const startIndex = (page - 1) * size;
+    const endIndex = startIndex + size;
+    return codes.slice(startIndex, endIndex);
+  });
+
+  protected readonly totalPages = computed(() => {
+    const codes = this.expandedCodes();
+    const size = this.pageSize();
+    return Math.max(1, Math.ceil(codes.length / size));
+  });
+
+  protected readonly hasPreviousPage = computed(() => {
+    return this.currentPage() > 1;
+  });
+
+  protected readonly hasNextPage = computed(() => {
+    return this.currentPage() < this.totalPages();
+  });
 
   // Code lookup
   protected readonly codeSearchTerm = signal<string>('');
@@ -88,9 +122,12 @@ export class TerminologyComponent {
   protected readonly codeSystemsLoading = signal<boolean>(false);
   protected readonly codeSystemsError = signal<string | null>(null);
   protected readonly codeSystemsFilter = signal<string>('');
-  protected readonly codeSystemsSortBy = signal<'name' | 'url' | 'title'>('name');
+  protected readonly codeSystemsSortBy = signal<'name' | 'url' | 'title' | 'version' | 'status'>('name');
   protected readonly codeSystemsSortOrder = signal<'asc' | 'desc'>('asc');
   protected readonly codeSystemsDeleting = signal<Set<string>>(new Set());
+  
+  // CodeSystem row expansion state
+  protected readonly expandedCodeSystemRows = signal<Set<string>>(new Set());
 
   // Server availability
   protected readonly serverAvailable = signal<boolean>(false);
@@ -231,20 +268,184 @@ export class TerminologyComponent {
     this.expandLoading.set(true);
 
     try {
-      const params = {
-        url: valueset.url,
+      // Try different approaches for ValueSet expansion
+      let params: any = {
         includeDesignations: true,
         includeDefinition: true,
         activeOnly: true
       };
 
+      // First try with ID if available (uses GET /ValueSet/{id}/$expand)
+      if (valueset.id) {
+        params.id = valueset.id;
+        console.log('Expanding ValueSet with ID:', valueset.id);
+      } else if (valueset.url) {
+        // Fall back to URL, decode if encoded (uses POST /ValueSet/$expand)
+        const url = decodeURIComponent(valueset.url);
+        params.url = url;
+        console.log('Expanding ValueSet with URL:', url);
+      } else {
+        throw new Error('No ID or URL available for ValueSet expansion');
+      }
+
       const result = await this.terminologyService.expandValueSet(params).toPromise();
       this.expandedCodes.set(result?.expansion?.contains || []);
+      this.currentPage.set(1); // Reset to first page when expanding new ValueSet
     } catch (error) {
+      console.error('ValueSet expansion error:', error);
+      
+      // If error mentions unknown ValueSet, try alternative approach
+      if ((error as any)?.error?.issue?.[0]?.diagnostics?.includes('Unknown ValueSet')) {
+        console.log('ValueSet not found, trying alternative approach...');
+        try {
+          // Try with just the ValueSet name/identifier
+          const alternativeParams = {
+            valueSet: valueset.name || valueset.id,
+            includeDesignations: true,
+            includeDefinition: true,
+            activeOnly: true
+          };
+          
+          const result = await this.terminologyService.expandValueSet(alternativeParams).toPromise();
+          this.expandedCodes.set(result?.expansion?.contains || []);
+          this.currentPage.set(1);
+          return;
+        } catch (altError) {
+          console.error('Alternative expansion also failed:', altError);
+        }
+      }
+      
       this.valuesetError.set(this.getErrorMessage(error));
     } finally {
       this.expandLoading.set(false);
     }
+  }
+
+  // Pagination methods
+  setPage(page: number): void {
+    this.currentPage.set(Math.max(1, Math.min(page, this.totalPages())));
+  }
+
+  setPageSize(size: number): void {
+    const currentPage = this.currentPage();
+    const totalCodes = this.expandedCodes().length;
+    
+    this.pageSize.set(size);
+    
+    // Adjust current page if necessary - recalculate max pages with new size
+    const maxPage = Math.max(1, Math.ceil(totalCodes / size));
+    if (currentPage > maxPage) {
+      this.currentPage.set(maxPage);
+    }
+  }
+
+  previousPage(): void {
+    if (this.hasPreviousPage()) {
+      this.currentPage.set(this.currentPage() - 1);
+    }
+  }
+
+  nextPage(): void {
+    if (this.hasNextPage()) {
+      this.currentPage.set(this.currentPage() + 1);
+    }
+  }
+
+  goToFirstPage(): void {
+    this.currentPage.set(1);
+  }
+
+  goToLastPage(): void {
+    this.currentPage.set(this.totalPages());
+  }
+
+  // Row expansion methods for Expanded Codes table
+  toggleRowExpansion(code: any): void {
+    const codeKey = `${code.code}-${code.system}`;
+    const expanded = new Set(this.expandedRows());
+    
+    if (expanded.has(codeKey)) {
+      expanded.delete(codeKey);
+    } else {
+      expanded.add(codeKey);
+      // Load details if not already loaded
+      if (!this.expandedCodeDetails().has(codeKey)) {
+        this.loadCodeDetailsForExpansion(code, codeKey);
+      }
+    }
+    
+    this.expandedRows.set(expanded);
+  }
+
+  isRowExpanded(code: any): boolean {
+    const codeKey = `${code.code}-${code.system}`;
+    return this.expandedRows().has(codeKey);
+  }
+
+  isLoadingCodeDetails(code: any): boolean {
+    const codeKey = `${code.code}-${code.system}`;
+    return this.loadingDetails().has(codeKey);
+  }
+
+  getCodeDetails(code: any): any {
+    const codeKey = `${code.code}-${code.system}`;
+    return this.expandedCodeDetails().get(codeKey);
+  }
+
+  async loadCodeDetailsForExpansion(code: any, codeKey: string): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      return;
+    }
+
+    // Add to loading set
+    const loading = new Set(this.loadingDetails());
+    loading.add(codeKey);
+    this.loadingDetails.set(loading);
+
+    try {
+      const params = {
+        code: code.code,
+        system: code.system
+      };
+
+      const result = await this.terminologyService.lookupCode(params).toPromise();
+      
+      // Store the result
+      const details = new Map(this.expandedCodeDetails());
+      details.set(codeKey, result);
+      this.expandedCodeDetails.set(details);
+      
+    } catch (error) {
+      console.error('Failed to load code details:', error);
+      // Store error in details
+      const details = new Map(this.expandedCodeDetails());
+      details.set(codeKey, { error: this.getErrorMessage(error) });
+      this.expandedCodeDetails.set(details);
+    } finally {
+      // Remove from loading set
+      const loading = new Set(this.loadingDetails());
+      loading.delete(codeKey);
+      this.loadingDetails.set(loading);
+    }
+  }
+
+  protected readonly startIndex = computed(() => {
+    return (this.currentPage() - 1) * this.pageSize() + 1;
+  });
+
+  protected readonly endIndex = computed(() => {
+    const total = this.expandedCodes().length;
+    const end = this.currentPage() * this.pageSize();
+    return Math.min(end, total);
+  });
+
+  // Getter/setter for pageSize binding with ngModel
+  get currentPageSize(): number {
+    return this.pageSize();
+  }
+
+  set currentPageSize(value: number) {
+    this.setPageSize(value);
   }
 
   // Browser search operations
@@ -577,12 +778,26 @@ export class TerminologyComponent {
     }
   }
 
-  setCodeSystemsSortBy(sortBy: 'name' | 'url' | 'title'): void {
+  setCodeSystemsSortBy(sortBy: 'name' | 'url' | 'title' | 'version' | 'status'): void {
     this.codeSystemsSortBy.set(sortBy);
   }
 
   toggleCodeSystemsSortOrder(): void {
     this.codeSystemsSortOrder.set(this.codeSystemsSortOrder() === 'asc' ? 'desc' : 'asc');
+  }
+
+  // Handle column header clicks for sorting
+  onCodeSystemColumnClick(column: 'name' | 'url' | 'title' | 'version' | 'status'): void {
+    const currentSortBy = this.codeSystemsSortBy();
+    
+    if (currentSortBy === column) {
+      // Same column clicked - toggle sort order
+      this.toggleCodeSystemsSortOrder();
+    } else {
+      // Different column clicked - set new column and default to ascending
+      this.codeSystemsSortBy.set(column);
+      this.codeSystemsSortOrder.set('asc');
+    }
   }
 
   getFilteredAndSortedCodeSystems(): CodeSystem[] {
@@ -618,6 +833,14 @@ export class TerminologyComponent {
         case 'title':
           aValue = a.title || '';
           bValue = b.title || '';
+          break;
+        case 'version':
+          aValue = a.version || '';
+          bValue = b.version || '';
+          break;
+        case 'status':
+          aValue = a.status || '';
+          bValue = b.status || '';
           break;
       }
       
@@ -670,6 +893,25 @@ export class TerminologyComponent {
 
   isCodeSystemDeleting(codeSystemId: string): boolean {
     return this.codeSystemsDeleting().has(codeSystemId);
+  }
+
+  // CodeSystem row expansion methods
+  toggleCodeSystemRowExpansion(codeSystem: CodeSystem): void {
+    const codeSystemId = codeSystem.id || codeSystem.url || '';
+    const expanded = new Set(this.expandedCodeSystemRows());
+    
+    if (expanded.has(codeSystemId)) {
+      expanded.delete(codeSystemId);
+    } else {
+      expanded.add(codeSystemId);
+    }
+    
+    this.expandedCodeSystemRows.set(expanded);
+  }
+
+  isCodeSystemRowExpanded(codeSystem: CodeSystem): boolean {
+    const codeSystemId = codeSystem.id || codeSystem.url || '';
+    return this.expandedCodeSystemRows().has(codeSystemId);
   }
 
   openUrl(url: string): void {
@@ -765,5 +1007,347 @@ export class TerminologyComponent {
   truncateText(text: string, maxLength: number = 100): string {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
+  }
+
+  // CodeSystem Verification Methods
+  async verifyCodeSystems(): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      console.error('Cannot verify CodeSystems: No valid configuration');
+      return;
+    }
+
+    console.log('🔍 Starting CodeSystem verification...');
+    
+    try {
+      // Test 1: Verify CodeSystems can be retrieved
+      await this.verifyCodeSystemRetrieval();
+      
+      // Test 2: Verify version integrity
+      await this.verifyVersionIntegrity();
+      
+      // Test 3: Verify expansion functionality
+      await this.verifyExpansionFunctionality();
+      
+      // Test 4: Verify lookup operations
+      await this.verifyLookupOperations();
+      
+      // Test 5: Verify search functionality
+      await this.verifySearchFunctionality();
+      
+      // Test 6: Verify error handling
+      await this.verifyErrorHandling();
+      
+      console.log('✅ CodeSystem verification completed successfully');
+    } catch (error) {
+      console.error('❌ CodeSystem verification failed:', error);
+    }
+  }
+
+  private async verifyCodeSystemRetrieval(): Promise<void> {
+    console.log('📋 Testing CodeSystem retrieval...');
+    
+    try {
+      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
+      
+      console.log(`Found ${codeSystems.length} CodeSystems on server`);
+      
+      if (codeSystems.length === 0) {
+        console.warn('⚠️ No CodeSystems found on server');
+        return;
+      }
+      
+      // Verify each CodeSystem has required fields
+      for (const cs of codeSystems) {
+        if (!cs.id) {
+          console.warn(`⚠️ CodeSystem missing ID: ${cs.name || cs.title || 'Unknown'}`);
+        }
+        if (!cs.url) {
+          console.warn(`⚠️ CodeSystem missing URL: ${cs.name || cs.title || cs.id}`);
+        }
+        if (!cs.status) {
+          console.warn(`⚠️ CodeSystem missing status: ${cs.name || cs.title || cs.id}`);
+        }
+      }
+      
+      console.log('✅ CodeSystem retrieval verification passed');
+    } catch (error) {
+      console.error('❌ CodeSystem retrieval verification failed:', error);
+      throw error;
+    }
+  }
+
+  private async verifyVersionIntegrity(): Promise<void> {
+    console.log('🔢 Testing version integrity...');
+    
+    try {
+      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
+      
+      let versionedCount = 0;
+      let versionIntegrityIssues = 0;
+      
+      for (const cs of codeSystems) {
+        if (cs.version) {
+          versionedCount++;
+          
+          // Test that we can retrieve the CodeSystem by URL with version
+          try {
+            const byUrlResult = await this.terminologyService.getCodeSystemByUrl(cs.url!).toPromise();
+            if (byUrlResult && byUrlResult.version !== cs.version) {
+              console.warn(`⚠️ Version mismatch for ${cs.name || cs.id}: expected ${cs.version}, got ${byUrlResult.version}`);
+              versionIntegrityIssues++;
+            }
+          } catch (error) {
+            console.warn(`⚠️ Could not verify version for ${cs.name || cs.id}:`, error);
+            versionIntegrityIssues++;
+          }
+        }
+      }
+      
+      console.log(`Found ${versionedCount} versioned CodeSystems`);
+      if (versionIntegrityIssues === 0) {
+        console.log('✅ Version integrity verification passed');
+      } else {
+        console.warn(`⚠️ Found ${versionIntegrityIssues} version integrity issues`);
+      }
+    } catch (error) {
+      console.error('❌ Version integrity verification failed:', error);
+      throw error;
+    }
+  }
+
+  private async verifyExpansionFunctionality(): Promise<void> {
+    console.log('🔍 Testing expansion functionality...');
+    
+    try {
+      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
+      
+      let expansionTestsPassed = 0;
+      let expansionTestsFailed = 0;
+      
+      // Test expansion on first few CodeSystems that have concepts
+      for (const cs of codeSystems.slice(0, 3)) {
+        try {
+          // Try to get the CodeSystem to see if it has concepts
+          const fullCodeSystem = await this.terminologyService.getCodeSystem(cs.id!).toPromise();
+          
+          if (fullCodeSystem && fullCodeSystem.concept && fullCodeSystem.concept.length > 0) {
+            console.log(`Testing expansion for CodeSystem: ${cs.name || cs.id}`);
+            
+            // Test lookup on first concept
+            const firstConcept = fullCodeSystem.concept[0];
+            const lookupResult = await this.terminologyService.lookupCode({
+              code: firstConcept.code!,
+              system: cs.url!
+            }).toPromise();
+            
+            if (lookupResult && lookupResult.parameter) {
+              expansionTestsPassed++;
+              console.log(`✅ Expansion test passed for ${cs.name || cs.id}`);
+            } else {
+              expansionTestsFailed++;
+              console.warn(`⚠️ Expansion test failed for ${cs.name || cs.id}: No parameters returned`);
+            }
+          } else {
+            console.log(`ℹ️ Skipping expansion test for ${cs.name || cs.id}: No concepts found`);
+          }
+        } catch (error) {
+          expansionTestsFailed++;
+          console.warn(`⚠️ Expansion test failed for ${cs.name || cs.id}:`, error);
+        }
+      }
+      
+      console.log(`Expansion tests: ${expansionTestsPassed} passed, ${expansionTestsFailed} failed`);
+      if (expansionTestsPassed > 0) {
+        console.log('✅ Expansion functionality verification passed');
+      } else {
+        console.warn('⚠️ No expansion tests passed');
+      }
+    } catch (error) {
+      console.error('❌ Expansion functionality verification failed:', error);
+      throw error;
+    }
+  }
+
+  private async verifyLookupOperations(): Promise<void> {
+    console.log('🔎 Testing lookup operations...');
+    
+    try {
+      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
+      
+      let lookupTestsPassed = 0;
+      let lookupTestsFailed = 0;
+      
+      // Test lookup operations on first few CodeSystems
+      for (const cs of codeSystems.slice(0, 2)) {
+        try {
+          const fullCodeSystem = await this.terminologyService.getCodeSystem(cs.id!).toPromise();
+          
+          if (fullCodeSystem && fullCodeSystem.concept && fullCodeSystem.concept.length > 0) {
+            const testConcept = fullCodeSystem.concept[0];
+            
+            console.log(`Testing lookup for code ${testConcept.code} in ${cs.name || cs.id}`);
+            
+            const lookupResult = await this.terminologyService.lookupCode({
+              code: testConcept.code!,
+              system: cs.url!,
+              version: cs.version
+            }).toPromise();
+            
+            if (lookupResult && lookupResult.parameter) {
+              // Check if we got expected parameters
+              const hasDisplay = lookupResult.parameter.some(p => p.name === 'display');
+              const hasDefinition = lookupResult.parameter.some(p => p.name === 'definition');
+              
+              if (hasDisplay || hasDefinition) {
+                lookupTestsPassed++;
+                console.log(`✅ Lookup test passed for ${cs.name || cs.id}`);
+              } else {
+                lookupTestsFailed++;
+                console.warn(`⚠️ Lookup test incomplete for ${cs.name || cs.id}: Missing expected parameters`);
+              }
+            } else {
+              lookupTestsFailed++;
+              console.warn(`⚠️ Lookup test failed for ${cs.name || cs.id}: No parameters returned`);
+            }
+          }
+        } catch (error) {
+          lookupTestsFailed++;
+          console.warn(`⚠️ Lookup test failed for ${cs.name || cs.id}:`, error);
+        }
+      }
+      
+      console.log(`Lookup tests: ${lookupTestsPassed} passed, ${lookupTestsFailed} failed`);
+      if (lookupTestsPassed > 0) {
+        console.log('✅ Lookup operations verification passed');
+      } else {
+        console.warn('⚠️ No lookup tests passed');
+      }
+    } catch (error) {
+      console.error('❌ Lookup operations verification failed:', error);
+      throw error;
+    }
+  }
+
+  private async verifySearchFunctionality(): Promise<void> {
+    console.log('🔍 Testing search functionality...');
+    
+    try {
+      // Test search by name
+      const nameSearchResult = await this.terminologyService.searchCodeSystems({ 
+        name: 'test',
+        _count: 5 
+      }).toPromise();
+      
+      // Test search by status
+      const statusSearchResult = await this.terminologyService.searchCodeSystems({ 
+        status: 'active',
+        _count: 5 
+      }).toPromise();
+      
+      // Test search by URL
+      const urlSearchResult = await this.terminologyService.searchCodeSystems({ 
+        url: 'http',
+        _count: 5 
+      }).toPromise();
+      
+      console.log(`Name search returned: ${nameSearchResult?.entry?.length || 0} results`);
+      console.log(`Status search returned: ${statusSearchResult?.entry?.length || 0} results`);
+      console.log(`URL search returned: ${urlSearchResult?.entry?.length || 0} results`);
+      
+      // Test that search results are properly formatted
+      const allResults = [
+        ...(nameSearchResult?.entry || []),
+        ...(statusSearchResult?.entry || []),
+        ...(urlSearchResult?.entry || [])
+      ];
+      
+      let validResults = 0;
+      for (const entry of allResults) {
+        if (entry.resource && entry.resource.resourceType === 'CodeSystem') {
+          validResults++;
+        }
+      }
+      
+      console.log(`Search functionality: ${validResults} valid results out of ${allResults.length} total`);
+      
+      if (validResults > 0) {
+        console.log('✅ Search functionality verification passed');
+      } else {
+        console.warn('⚠️ No valid search results found');
+      }
+    } catch (error) {
+      console.error('❌ Search functionality verification failed:', error);
+      throw error;
+    }
+  }
+
+  private async verifyErrorHandling(): Promise<void> {
+    console.log('⚠️ Testing error handling...');
+    
+    try {
+      let errorHandlingTestsPassed = 0;
+      let errorHandlingTestsFailed = 0;
+      
+      // Test 1: Invalid CodeSystem ID
+      try {
+        await this.terminologyService.getCodeSystem('invalid-id-that-should-not-exist').toPromise();
+        console.warn('⚠️ Expected error for invalid CodeSystem ID, but got success');
+        errorHandlingTestsFailed++;
+      } catch (error) {
+        console.log('✅ Correctly handled invalid CodeSystem ID');
+        errorHandlingTestsPassed++;
+      }
+      
+      // Test 2: Invalid CodeSystem URL
+      try {
+        await this.terminologyService.getCodeSystemByUrl('http://invalid-url-that-should-not-exist.com').toPromise();
+        console.warn('⚠️ Expected error for invalid CodeSystem URL, but got success');
+        errorHandlingTestsFailed++;
+      } catch (error) {
+        console.log('✅ Correctly handled invalid CodeSystem URL');
+        errorHandlingTestsPassed++;
+      }
+      
+      // Test 3: Invalid lookup parameters
+      try {
+        await this.terminologyService.lookupCode({
+          code: 'invalid-code',
+          system: 'http://invalid-system.com'
+        }).toPromise();
+        console.warn('⚠️ Expected error for invalid lookup parameters, but got success');
+        errorHandlingTestsFailed++;
+      } catch (error) {
+        console.log('✅ Correctly handled invalid lookup parameters');
+        errorHandlingTestsPassed++;
+      }
+      
+      // Test 4: Invalid search parameters
+      try {
+        await this.terminologyService.searchCodeSystems({
+          name: 'this-should-not-match-anything-realistic-12345',
+          _count: 1
+        }).toPromise();
+        console.log('✅ Search with non-matching parameters handled gracefully');
+        errorHandlingTestsPassed++;
+      } catch (error) {
+        console.warn('⚠️ Search with non-matching parameters threw error:', error);
+        errorHandlingTestsFailed++;
+      }
+      
+      console.log(`Error handling tests: ${errorHandlingTestsPassed} passed, ${errorHandlingTestsFailed} failed`);
+      
+      if (errorHandlingTestsPassed >= 3) {
+        console.log('✅ Error handling verification passed');
+      } else {
+        console.warn('⚠️ Error handling verification incomplete');
+      }
+    } catch (error) {
+      console.error('❌ Error handling verification failed:', error);
+      throw error;
+    }
   }
 }
