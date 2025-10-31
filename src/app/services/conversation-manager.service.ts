@@ -186,7 +186,8 @@ export class ConversationManagerService {
     editorType: 'cql' | 'fhir' | 'general',
     firstMessage?: string,
     libraryName?: string,
-    fileName?: string
+    fileName?: string,
+    mode?: 'plan' | 'act'
   ): Conversation {
     const conversation: Conversation = {
       id: this.generateId(),
@@ -197,7 +198,7 @@ export class ConversationManagerService {
       title: this.generateTitle(firstMessage || editorId),
       apiMessages: [], // API format (full context including tool calls/results)
       uiMessages: [], // UI format (sanitized, no tool JSON)
-      mode: this.settingsService.settings().defaultMode || 'plan', // Default mode from settings
+      mode: mode || this.settingsService.settings().defaultMode || 'plan', // Use provided mode or default from settings
       createdAt: new Date(),
       updatedAt: new Date(),
       lastAccessed: new Date()
@@ -451,7 +452,7 @@ export class ConversationManagerService {
               createdAt: new Date(conv.createdAt),
               updatedAt: new Date(conv.updatedAt),
               lastAccessed: new Date(conv.lastAccessed),
-              mode: conv.mode || (this.settingsService?.settings()?.defaultMode || 'plan'), // Backward compatibility
+              mode: (conv.mode === 'plan' || conv.mode === 'act') ? conv.mode : (this.settingsService?.settings()?.defaultMode || 'plan'), // Backward compatibility - only accept valid mode values
               apiMessages: apiMessages, // Ensure apiMessages array exists
               uiMessages: (conv.uiMessages || []).map((msg: any) => ({
                 ...msg,
@@ -557,7 +558,7 @@ export class ConversationManagerService {
       const conv = JSON.parse(data);
       return {
         ...conv,
-        mode: conv.mode || (this.settingsService?.settings()?.defaultMode || 'plan'), // Backward compatibility
+        mode: (conv.mode === 'plan' || conv.mode === 'act') ? conv.mode : (this.settingsService?.settings()?.defaultMode || 'plan'), // Backward compatibility - only accept valid mode values
         createdAt: new Date(conv.createdAt),
         updatedAt: new Date(conv.updatedAt),
         lastAccessed: new Date(conv.lastAccessed),

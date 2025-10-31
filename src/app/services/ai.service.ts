@@ -231,18 +231,32 @@ export class AiService extends BaseService {
       if (!message || message.trim().length === 0) {
         return throwError(() => new Error('Cannot create new conversation with empty message'));
       }
+      // Get mode from parameter or default (will be set on conversation creation)
+      const conversationMode = mode || this.settingsService.settings().defaultMode || 'plan';
       conversation = this.conversationManager.createConversationForEditor(
         editorContext.editorId,
         editorContext.editorType,
         message,
         editorContext.libraryName,
-        editorContext.fileName
+        editorContext.fileName,
+        conversationMode
       );
     } else {
       // Add user message to existing conversation (only if message is not empty)
       // Empty message indicates continuation mode (Cline pattern: after tool execution)
       if (message && message.trim().length > 0) {
         this.conversationManager.addUserMessage(conversation.id, message);
+      }
+      
+      // Ensure conversation mode matches the provided mode parameter if explicitly provided
+      // This fixes cases where the conversation mode might have been lost or incorrectly set
+      if (mode && conversation.mode !== mode) {
+        this.conversationManager.updateConversationMode(conversation.id, mode);
+        // Reload conversation to get updated mode
+        conversation = this.conversationManager.getActiveConversation(editorContext.editorId);
+        if (!conversation) {
+          return throwError(() => new Error('Failed to reload conversation after mode update'));
+        }
       }
     }
 
@@ -672,13 +686,20 @@ The user is currently working on the above CQL code. When providing assistance, 
 1. IMMEDIATELY call get_code to read current code
 2. IMMEDIATELY call insert_code or replace_code to actually modify the editor
 3. DO NOT just show code examples - YOU MUST USE THE TOOLS TO EDIT THE CODE DIRECTLY
+4. **CRITICAL: The "code" parameter is MANDATORY** - You MUST provide the actual code string in the "code" parameter
 
 **EXAMPLE FOR "Add BMI function":**
 Reading current code, then adding BMI function.
 {"tool": "get_code", "params": {}}
 {"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
 
+**CRITICAL REMINDERS:**
+- The "code" parameter MUST contain the actual CQL code you want to insert/replace
+- NEVER call insert_code or replace_code without providing the "code" parameter
+- The "code" parameter must be a non-empty string - empty strings will cause the tool to fail
+
 **IF YOU RESPOND WITH CODE EXAMPLES INSTEAD OF CALLING TOOLS, YOU ARE FAILING THE TASK.**
+**IF YOU CALL insert_code OR replace_code WITHOUT THE "code" PARAMETER, THE TOOL WILL FAIL.**
 
 ## ⚠️ CRITICAL INSTRUCTION: YOU MUST USE TOOLS FOR ALL QUESTIONS ⚠️
 
@@ -751,14 +772,18 @@ Searching for information.
 **CRITICAL: These tools ACTUALLY EDIT the CQL code in the user's editor. When users ask you to fix, improve, add, modify, update, or change code, you MUST use these tools to directly apply the changes.**
 
 9. **insert_code** - **DIRECTLY INSERTS** code at the current cursor position in the editor
+   ⚠️ **REQUIRED PARAMETER: "code"** - You MUST provide the actual code to insert as a string
    Format: {"tool": "insert_code", "params": {"code": "code to insert"}}
    Example: {"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
+   **CRITICAL:** The "code" parameter is MANDATORY and must be a non-empty string containing the actual CQL code you want to insert. The tool will FAIL if "code" is missing, empty, or not a string.
    Use when: User asks you to "add", "insert", "create", "write", or "implement" code. **YOU MUST CALL THIS TOOL - DO NOT JUST SHOW THEM THE CODE.**
    
 10. **replace_code** - **DIRECTLY REPLACES** selected code or code at a specific position in the editor
+    ⚠️ **REQUIRED PARAMETER: "code"** - You MUST provide the actual replacement code as a string
     Format: {"tool": "replace_code", "params": {"code": "new code"}}
     Format (specific position): {"tool": "replace_code", "params": {"code": "new code", "startLine": 10, "endLine": 15}}
     Example: {"tool": "replace_code", "params": {"code": "define function ImprovedFunction(x Integer): Boolean\n  return x > 0\n"}}
+    **CRITICAL:** The "code" parameter is MANDATORY and must be a non-empty string containing the actual CQL code you want to use as replacement. The tool will FAIL if "code" is missing, empty, or not a string.
     Use when: User asks you to "fix", "replace", "update", "modify", "change", "improve", or "correct" existing code. **YOU MUST CALL THIS TOOL - DO NOT JUST EXPLAIN WHAT TO CHANGE.**
     
     **For replacements:**
@@ -808,6 +833,7 @@ Reading current code, then adding BMI function.
 {"tool": "get_code", "params": {}}
 {"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
 **CRITICAL: Each tool call must be on its own line. You MUST call insert_code or replace_code tools. DO NOT just show the code - directly insert it into the editor.**
+**CRITICAL: The "code" parameter in insert_code/replace_code MUST contain the actual code string. NEVER omit the "code" parameter or leave it empty.**
 
 **Example 5 - Direct code fixing (REQUIRED FORMAT):**
 User: "Fix the syntax error on line 5"
@@ -816,6 +842,7 @@ Reading code to identify and fix the syntax error.
 {"tool": "get_code", "params": {}}
 {"tool": "replace_code", "params": {"code": "corrected code block here\nspanning multiple lines if needed\n", "startLine": 5, "endLine": 7}}
 **CRITICAL: You MUST call replace_code to actually fix the code. DO NOT just explain the fix - apply it directly.**
+**CRITICAL: The "code" parameter MUST contain the actual corrected code. NEVER call replace_code without providing the "code" parameter.**
 
 **Example 6 - Code improvement (REQUIRED FORMAT):**
 User: "Improve this function" or "Make this more efficient"
@@ -850,6 +877,9 @@ Creating a new CQL library for BMI calculations.
 - DO NOT just show code examples or explain what to change
 - The tools directly modify the editor - use them!
 - Always read code first with get_code, then apply changes with insert_code or replace_code
+- **REQUIRED PARAMETER:** Both insert_code and replace_code REQUIRE a "code" parameter that contains the actual code string
+- **NEVER call insert_code or replace_code without the "code" parameter - the tool will fail**
+- The "code" parameter must be a non-empty string containing the CQL code you want to insert or use as replacement
 
 **NEVER SKIP TOOLS. ALWAYS CALL A TOOL BEFORE ANSWERING. FOR CODE EDITS, YOU MUST CALL THE EDITING TOOLS - DO NOT JUST DESCRIBE THE CHANGES.**`;
     }
