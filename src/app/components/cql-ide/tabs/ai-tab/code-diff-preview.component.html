@@ -1,0 +1,77 @@
+<div class="code-diff-preview">
+  @if (diff.title) {
+  <div class="diff-header">
+    <h6 class="mb-0">{{ diff.title }}</h6>
+    @if (diff.description) {
+    <small class="text-muted">{{ diff.description }}</small>
+    }
+  </div>
+  }
+
+  <div class="diff-controls mb-2">
+    <button class="btn btn-sm btn-outline-secondary" (click)="toggleViewMode()">
+      <i class="bi bi-{{ viewMode === 'unified' ? 'columns' : 'file-text' }} me-1"></i>
+      {{ viewMode === 'unified' ? 'Side-by-Side' : 'Unified' }}
+    </button>
+  </div>
+
+  <div class="diff-content">
+    @if (viewMode === 'unified') {
+    <!-- Unified View -->
+    <div class="unified-diff">
+      <div class="code-block">
+        @for (line of getLines(diff.before); track $index) {
+        <div class="diff-line" [class.removed]="isLineDifferent(line, getLines(diff.after)[$index])">
+          <span class="line-number">{{ $index + 1 }}</span>
+          <span class="line-content">{{ line }}</span>
+        </div>
+        }
+        @for (line of getLines(diff.after); track $index) {
+        @if (isLineDifferent(getLines(diff.before)[$index], line)) {
+        <div class="diff-line added">
+          <span class="line-number">{{ $index + 1 }}</span>
+          <span class="line-content">{{ line }}</span>
+        </div>
+        }
+        }
+      </div>
+    </div>
+    } @else {
+    <!-- Side-by-Side View -->
+    <div class="side-by-side-diff">
+      <div class="diff-panel">
+        <div class="panel-header">Before</div>
+        <div class="code-block">
+          @for (line of getLines(diff.before); track $index) {
+          <div class="diff-line" [class.removed]="isLineDifferent(line, getLines(diff.after)[$index])">
+            <span class="line-number">{{ $index + 1 }}</span>
+            <span class="line-content">{{ line }}</span>
+          </div>
+          }
+        </div>
+      </div>
+      <div class="diff-panel">
+        <div class="panel-header">After</div>
+        <div class="code-block">
+          @for (line of getLines(diff.after); track $index) {
+          <div class="diff-line" [class.added]="isLineDifferent(getLines(diff.before)[$index], line)">
+            <span class="line-number">{{ $index + 1 }}</span>
+            <span class="line-content">{{ line }}</span>
+          </div>
+          }
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+
+  <div class="diff-actions mt-3">
+    <button class="btn btn-success" (click)="onApprove()">
+      <i class="bi bi-check-circle me-2"></i>Apply Changes
+    </button>
+    <button class="btn btn-outline-secondary" (click)="onReject()">
+      <i class="bi bi-x-circle me-2"></i>Reject
+    </button>
+  </div>
+</div>
+

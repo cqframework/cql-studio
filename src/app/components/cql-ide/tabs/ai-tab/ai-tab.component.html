@@ -57,7 +57,7 @@
   </div>
   } @else {
   <!-- Main Chat Interface -->
-  <div class="chat-container flex-fill d-flex flex-column">
+  <div class="ai-chat-area flex-fill d-flex flex-column">
     <!-- Toolbar -->
     <div class="ai-toolbar border-bottom p-2 sticky-top">
       <div class="d-flex justify-content-between align-items-center">
@@ -86,16 +86,16 @@
                   <i class="bi bi-clock-history me-1"></i>Context History
                 </div>
               </li>
-              @for (context of getContextHistory(); track context.id) {
+              @for (conversation of getContextHistory(); track conversation.id) {
               <li>
                 <button class="dropdown-item d-flex justify-content-between align-items-center"
-                        (click)="onSwitchToEditorContext(context.editorId)"
-                        [title]="context.contextSummary">
+                        (click)="onSwitchToEditorContext(conversation.editorId)"
+                        [title]="conversation.title">
                   <div class="flex-fill">
-                    <div class="fw-bold">{{ getContextDisplayName(context) }}</div>
-                    <small class="text-muted">{{ context.lastAccessed | date:'short' }}</small>
+                    <div class="fw-bold">{{ getContextDisplayName(conversation) }}</div>
+                    <small class="text-muted">{{ conversation.lastAccessed | date:'short' }}</small>
                   </div>
-                  @if (context.id === currentContext()?.id) {
+                  @if (conversation.id === activeConversationId()) {
                   <i class="bi bi-check-circle text-success"></i>
                   }
                 </button>
@@ -153,37 +153,95 @@
     </div>
 
     <!-- Messages Area -->
-    <div class="messages-area flex-fill overflow-auto p-3">
+    <div class="messages-area flex-fill overflow-auto p-3" #messagesContainer>
 
       <!-- Messages -->
-      @if (activeConversationId() && activeConversation()?.messages && activeConversation()!.messages.length > 0) {
+      @if (activeConversationId() && activeConversation()?.uiMessages && activeConversation()!.uiMessages.length > 0) {
       <div class="messages">
-        @for (message of activeConversation()!.messages; track $index) {
-        <div class="message mb-4" [class.user-message]="message.role === 'user'" [class.assistant-message]="message.role === 'assistant'">
+        @for (message of activeConversation()!.uiMessages; track message.id) {
+        <!-- Hide streaming messages - they're shown in the streaming response section below -->
+        @if (!message.streaming) {
+        <div class="message" [class.user-message]="message.role === 'user'" [class.assistant-message]="message.role === 'assistant'">
           @if (message.role === 'user') {
           <div class="d-flex">
-            <div class="message-body bg-info text-white rounded-1 m-1 p-1">
+            <div class="message-body">
               <markdown [data]="message.content"></markdown>
             </div>
           </div>
           } @else {
           <div class="message-content">
             <div class="message-body">
-              <markdown [data]="message.content"></markdown>
+              <markdown [data]="filterToolResultsFromMessage(message.content)"></markdown>
             </div>
           </div>
           }
         </div>
         }
+        }
+      </div>
+      }
+
+      <!-- Tool Execution Status (Cline-style brief status) -->
+      @if (pendingToolCalls().length > 0 || executingToolCalls().size > 0) {
+      <div class="message tool-execution-message">
+        <div class="message-content">
+          <div class="message-body">
+            <div class="d-flex align-items-center justify-content-between">
+              <div class="d-flex align-items-center">
+                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                <span class="tool-status-text" [class.pulsate]="shouldPulsate()">
+                  {{ getToolExecutionStatus() }}
+                </span>
+              </div>
+              <button 
+                class="btn btn-sm btn-outline-danger" 
+                (click)="onCancelToolExecutions()"
+                title="Cancel tool execution"
+                id="cancel-tool-executions-button"
+              >
+                <i class="bi bi-x-circle me-1"></i>Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      }
+
+      <!-- Plan Display (sticky when executing) -->
+      @if (activePlan() && (currentMode() === 'plan' || isPlanExecuting())) {
+      <div class="message plan-display-message" [class.sticky-plan]="isPlanExecuting()">
+        <div class="message-content">
+          <app-plan-display 
+            [plan]="activePlan()!"
+            [editable]="currentMode() === 'plan' && !isPlanExecuting()"
+            [executing]="isPlanExecuting()"
+            (execute)="onExecutePlan()"
+            (revise)="onRevisePlan()">
+          </app-plan-display>
+        </div>
+      </div>
+      }
+
+      <!-- Code Diff Preview -->
+      @if (showDiffPreview() && codeDiffPreview()) {
+      <div class="message diff-preview-message">
+        <div class="message-content">
+          <app-code-diff-preview 
+            [diff]="codeDiffPreview()!"
+            [autoApply]="settingsService.settings().autoApplyCodeEdits"
+            (approve)="onApproveCodeDiff()"
+            (reject)="onRejectCodeDiff()">
+          </app-code-diff-preview>
+        </div>
       </div>
       }
 
       <!-- Streaming Response -->
-      @if (isStreaming() && streamingResponse()) {
-      <div class="message mb-4 assistant-message">
+      @if (isStreaming() && streamingResponse() && pendingToolCalls().length === 0) {
+      <div class="message assistant-message">
         <div class="message-content">
           <div class="message-body">
-            <markdown [data]="streamingResponse()"></markdown>
+            <markdown [data]="filterToolResultsFromMessage(streamingResponse())"></markdown>
             <div class="streaming-cursor mt-1">
               <span class="text-primary">▋</span>
             </div>
@@ -191,23 +249,15 @@
         </div>
       </div>
       }
+      
+      <!-- Scroll Sentinel - keeps scroll position at bottom during streaming -->
+      <div class="scroll-sentinel" #scrollSentinel></div>
 
       <!-- Welcome Message - Only show when no active conversation or no messages -->
-      @if (!activeConversationId() || !activeConversation()?.messages || activeConversation()!.messages.length === 0) {
+      @if (!activeConversationId() || !activeConversation()?.uiMessages || activeConversation()!.uiMessages.length === 0) {
       <div class="welcome-message d-flex align-items-center justify-content-center h-100">
         <div class="text-center">
-          <i class="bi bi-robot mb-3" style="font-size: 3rem; color: #6c757d;"></i>
-          <h5 class="text-white">AI Assistant</h5>
-          <p class="">Start a conversation to get help with your CQL development</p>
 
-          <!-- No CQL Content Message -->
-          @if (!cqlContent.trim()) {
-          <div class="no-cql-content mt-4">
-            <div class="alert alert-info">
-              <p class="mb-0 mt-2">To get AI suggestions, load or create a CQL library.</p>
-            </div>
-          </div>
-          }
 
           <!-- Suggested Commands -->
           @if (cqlContent.trim()) {
@@ -242,6 +292,20 @@
                 }
               </div>
             </div>
+            } @else {
+            <div class="d-flex align-items-center justify-content-center">
+              <button class="btn btn-outline-secondary btn-sm" 
+                      (click)="onRefreshSuggestions()"
+                      [disabled]="isLoadingSuggestions()"
+                      title="Generate suggestions">
+                @if (isLoadingSuggestions()) {
+                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                } @else {
+                <i class="bi bi-lightbulb me-2"></i>
+                }
+                Generate Suggestions
+              </button>
+            </div>
             }
           </div>
           }
@@ -258,26 +322,52 @@
       </div>
       }
       
+      <!-- Mode Toggle Footer -->
+      <div class="mode-toggle-footer d-flex align-items-center justify-content-between px-2 py-1">
+        <div class="mode-toggle-container d-flex align-items-center gap-2">
+          <div class="mode-toggle-label" 
+               [class.disabled]="!canToggleMode()"
+               (click)="canToggleMode() && toggleMode()">
+            <span class="mode-indicator me-2" [class.plan-mode]="currentMode() === 'plan'" [class.act-mode]="currentMode() === 'act'">
+              @if (currentMode() === 'plan') {
+              <i class="bi bi-clipboard-check"></i>
+              } @else {
+              <i class="bi bi-play-circle"></i>
+              }
+            </span>
+            <span class="mode-text">{{ currentMode() === 'plan' ? 'Plan' : 'Act' }} Mode</span>
+          </div>
+        </div>
+      </div>
+      
       <div class="input-group rounded-0">
         <textarea 
-          class="form-control rounded-0 fs-6" 
+          class="form-control rounded-0 ai-input-textarea" 
           rows="2" 
           placeholder="Ask or build anything with CQL..."
           [value]="currentMessage()"
           (input)="onMessageChange($event)"
           (keydown)="onKeyPress($event)"
-          [disabled]="isLoading()">
+          [disabled]="isLoading() || isStreaming()">
         </textarea>
+        @if (canStop()) {
+        <button 
+          class="btn btn-danger rounded-0" 
+          (click)="onStopRequest()"
+          id="ai-stop-button"
+          title="Stop request">
+          <i class="bi bi-stop-fill"></i>
+        </button>
+        } @else {
         <button 
           class="btn btn-primary rounded-0" 
           (click)="onSendMessage()"
-          [disabled]="!canSendMessage()">
-          @if (isLoading()) {
-          <span class="spinner-border spinner-border-sm"></span>
-          } @else {
+          [disabled]="!canSendMessage()"
+          id="ai-send-button"
+          title="Send message">
           <i class="bi bi-send"></i>
-          }
         </button>
+        }
       </div>
     </div>
   </div>

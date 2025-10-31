@@ -85,6 +85,12 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
   
   // Computed signal for canExecute
   canExecute = computed(() => this._canExecuteSignal());
+  
+  // Signal for form validity state
+  private _isFormValidSignal = signal(false);
+  
+  // Computed signal for form validity
+  isFormValid = computed(() => this._isFormValidSignal());
 
   constructor(private cdr: ChangeDetectorRef, private ideStateService: IdeStateService) {
     this.grammarManager = new CqlGrammarManager(this.cqlVersion);
@@ -239,6 +245,9 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
               const newValue = update.state.doc.toString();
               this._value = newValue;
               
+              // Update form validity signal
+              this._isFormValidSignal.set(newValue.trim().length > 0);
+              
               const cursor = this.getCursorPosition();
               const wordCount = this.getWordCount();
               this.contentChange.emit({ 
@@ -289,6 +298,9 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
       this.initializationRetries = 0; // Reset retry counter on success
       console.log('Editor initialization completed');
       
+      // Update form validity signal after initialization
+      this._isFormValidSignal.set(initialContent.trim().length > 0);
+      
       // Update canExecute state after initialization
       this.updateCanExecute();
       
@@ -317,6 +329,10 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
     }
     
     this._value = value;
+    
+    // Update form validity signal
+    this._isFormValidSignal.set(value.trim().length > 0);
+    
     if (this.editor) {
       this.editor.dispatch({
         changes: {
@@ -383,6 +399,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
 
   clearCode(): void {
     this.setValue('');
+    // setValue already updates the form validity signal
   }
 
   validateSyntax(code: string): void {
@@ -524,9 +541,6 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
   }
 
 
-  isFormValid(): boolean {
-    return this._value.trim().length > 0;
-  }
 
   onExecuteLibrary(): void {
     this.executeLibrary.emit();

@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, OnInit, OnDestroy, HostListener, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, ViewChild, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, ActivatedRoute } from '@angular/router';
 import { IdeStateService } from '../../services/ide-state.service';
@@ -54,7 +54,22 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     private translationService: TranslationService,
     private cqlExecutionService: CqlExecutionService,
     public settingsService: SettingsService
-  ) {}
+  ) {
+    // Watch for editor action requests from tool orchestrator (effect must be in constructor)
+    effect(() => {
+      const lineNumber = this.ideStateService.navigateToLineRequest();
+      if (lineNumber !== null) {
+        this.onNavigateToLine(lineNumber);
+      }
+    });
+    
+    effect(() => {
+      const shouldFormat = this.ideStateService.formatCodeRequest();
+      if (shouldFormat) {
+        this.onFormatCql();
+      }
+    });
+  }
 
   ngOnInit(): void {
     console.log('CQL IDE Component initialized');
@@ -110,7 +125,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       title: 'FHIR',
       icon: 'bi-heart-pulse',
       type: 'fhir',
-      isActive: true,
+      isActive: false,
       isClosable: false,
       component: null
     };
@@ -130,7 +145,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       title: 'AI',
       icon: 'bi-robot',
       type: 'ai',
-      isActive: false,
+      isActive: true,
       isClosable: true,
       component: null
     };
@@ -163,12 +178,20 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.addTabToPanel('right', elmTab);
     
     // Only add AI tab if Ollama is configured
-    if (this.settingsService.getEffectiveOllamaBaseUrl() && this.settingsService.settings().enableAiAssistant) {
+    const aiTabAdded = this.settingsService.getEffectiveOllamaBaseUrl() && this.settingsService.settings().enableAiAssistant;
+    if (aiTabAdded) {
       this.ideStateService.addTabToPanel('right', aiTab);
     }
     
     this.ideStateService.addTabToPanel('bottom', outputTab);
     this.ideStateService.addTabToPanel('bottom', problemsTab);
+    
+    // Set the active tab for the right panel: AI tab if available, otherwise FHIR tab
+    if (aiTabAdded) {
+      this.ideStateService.setActiveTab('right', 'ai-tab');
+    } else {
+      this.ideStateService.setActiveTab('right', 'fhir-tab');
+    }
   }
 
   private cleanupTabs(): void {
@@ -440,6 +463,28 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
   onReorderEditorTabs(event: { fromIndex: number; toIndex: number }): void {
     console.log('Reorder editor tabs:', event);
+  }
+
+  onInsertCqlCode(code: string): void {
+    if (this.cqlEditor) {
+      this.cqlEditor.insertText(code);
+    } else {
+      console.warn('CQL editor not available for code insertion');
+    }
+  }
+
+  onReplaceCqlCode(code: string): void {
+    if (this.cqlEditor) {
+      // If there's a selection, replace it; otherwise insert at cursor
+      const selection = this.cqlEditor.getSelection();
+      if (selection && selection.trim().length > 0) {
+        this.cqlEditor.replaceSelection(code);
+      } else {
+        this.cqlEditor.insertText(code);
+      }
+    } else {
+      console.warn('CQL editor not available for code replacement');
+    }
   }
 
   onEditorContentChange(event: { cursorPosition: { line: number; column: number }, wordCount: number, content: string }, libraryId: string): void {

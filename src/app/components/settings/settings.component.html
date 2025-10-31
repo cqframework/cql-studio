@@ -193,6 +193,39 @@
                     </div>
                 </div>
 
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h6 class="card-title mb-0"><span class="bi bi-server me-2"></span>CQL Studio Server</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="form-floating">
+                            <input type="url" class="form-control" id="serverBaseUrl" name="serverBaseUrl"
+                                [(ngModel)]="settingsService.settings().serverBaseUrl"
+                                [placeholder]="settingsService.getDefaultServerBaseUrl()">
+                            <label for="serverBaseUrl">Server Base URL</label>
+                            <small class="form-text">Base URL for the CQL Studio Server API. Defaults to CQL_STUDIO_SERVER_BASE_URL or {{
+                                settingsService.getDefaultServerBaseUrl() }}</small>
+                        </div>
+
+                        <div class="form-floating mt-3">
+                            <input type="text" class="form-control" id="braveSearchApiKey" name="braveSearchApiKey"
+                                [(ngModel)]="settingsService.settings().braveSearchApiKey"
+                                [placeholder]="settingsService.getDefaultBraveSearchApiKey()">
+                            <label for="braveSearchApiKey">Brave Search API Key</label>
+                            <small class="form-text">Optional API key for Brave Search integration. Defaults to CQL_STUDIO_BRAVE_SEARCH_API_KEY or {{ settingsService.getDefaultBraveSearchApiKey() || 'blank' }}.</small>
+                        </div>
+
+                        <div class="form-check form-switch mt-3 ms-1">
+                            <input id="useMCPTools" class="form-check-input" type="checkbox" name="useMCPTools"
+                                [(ngModel)]="settingsService.settings().useMCPTools" />
+                            <label class="form-check-label" for="useMCPTools"><span class="bi bi-tools"></span> Enable MCP
+                                Tools</label>
+                            <br />
+                            <small class="form-text">Enable MCP (Model Context Protocol) tools for FHIR data access in AI
+                                conversations.</small>
+                        </div>
+                    </div>
+                </div>
 
             </div>
 
@@ -228,23 +261,30 @@
                         settingsService.getDefaultOllamaModel() }}</small>
                 </div>
 
-                <div class="form-floating mt-3">
-                    <input type="url" class="form-control" id="mcpBaseUrl" name="mcpBaseUrl"
-                        [(ngModel)]="settingsService.settings().mcpBaseUrl"
-                        [placeholder]="settingsService.getDefaultMCPBaseUrl()">
-                    <label for="mcpBaseUrl">MCP Server Base URL</label>
-                    <small class="form-text">Base URL for the MCP (Model Context Protocol) server for FHIR data access.
-                        Defaults to CQL_STUDIO_MCP_BASE_URL or {{ settingsService.getDefaultMCPBaseUrl() }}</small>
+                <div class="form-check form-switch mt-3 ms-1">
+                    <input id="autoApplyCodeEdits" class="form-check-input" type="checkbox" name="autoApplyCodeEdits"
+                        [(ngModel)]="settingsService.settings().autoApplyCodeEdits" />
+                    <label class="form-check-label" for="autoApplyCodeEdits"><span class="bi bi-lightning-charge"></span> Auto-Apply Code Edits</label>
+                    <br />
+                    <small class="form-text">Automatically apply code edits suggested by AI without manual approval.</small>
                 </div>
 
                 <div class="form-check form-switch mt-3 ms-1">
-                    <input id="useMCPTools" class="form-check-input" type="checkbox" name="useMCPTools"
-                        [(ngModel)]="settingsService.settings().useMCPTools" />
-                    <label class="form-check-label" for="useMCPTools"><span class="bi bi-tools"></span> Enable MCP
-                        Tools</label>
+                    <input id="requireDiffPreview" class="form-check-input" type="checkbox" name="requireDiffPreview"
+                        [(ngModel)]="settingsService.settings().requireDiffPreview" />
+                    <label class="form-check-label" for="requireDiffPreview"><span class="bi bi-eye"></span> Always Show Diff Preview</label>
                     <br />
-                    <small class="form-text">Enable MCP (Model Context Protocol) tools for FHIR data access in AI
-                        conversations.</small>
+                    <small class="form-text">Always show a diff preview before applying code edits, even when auto-apply is enabled.</small>
+                </div>
+
+                <div class="form-floating mt-3">
+                    <select class="form-select" id="defaultMode" name="defaultMode"
+                        [(ngModel)]="settingsService.settings().defaultMode">
+                        <option value="plan">Plan Mode</option>
+                        <option value="act">Act Mode</option>
+                    </select>
+                    <label for="defaultMode">Default Mode</label>
+                    <small class="form-text">Default mode for new conversations. Plan Mode analyzes and creates strategies without modifying files. Act Mode executes changes directly.</small>
                 </div>
             </div>
         </div>

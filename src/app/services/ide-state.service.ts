@@ -89,6 +89,10 @@ export class IdeStateService {
   private _draggedTab = signal<IdePanelTab | null>(null);
   private _dragOverPanel = signal<string | null>(null);
 
+  // Editor action requests (for tool orchestrator)
+  private _navigateToLineRequest = signal<number | null>(null);
+  private _formatCodeRequest = signal<boolean>(false);
+
   // Public computed signals
   public panelState = computed(() => this._panelState());
   public editorState = computed(() => this._editorState());
@@ -110,6 +114,8 @@ export class IdeStateService {
   public elmTranslationResults = computed(() => this._elmTranslationResults());
   public draggedTab = computed(() => this._draggedTab());
   public dragOverPanel = computed(() => this._dragOverPanel());
+  public navigateToLineRequest = computed(() => this._navigateToLineRequest());
+  public formatCodeRequest = computed(() => this._formatCodeRequest());
 
   // Panel management
   updatePanelState(updates: Partial<IdePanelState>): void {
@@ -506,5 +512,18 @@ export class IdeStateService {
     
     // Add to target panel
     this.addTabToPanel(toPanelId, tab);
+  }
+
+  // Editor action methods (for tool orchestrator)
+  requestNavigateToLine(lineNumber: number): void {
+    this._navigateToLineRequest.set(lineNumber);
+    // Clear after a tick to allow component to react
+    setTimeout(() => this._navigateToLineRequest.set(null), 0);
+  }
+
+  requestFormatCode(): void {
+    this._formatCodeRequest.set(true);
+    // Clear after a tick to allow component to react
+    setTimeout(() => this._formatCodeRequest.set(false), 0);
   }
 }

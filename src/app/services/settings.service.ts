@@ -117,8 +117,12 @@ export class SettingsService {
           parsedSettings.ollamaModel = '';
           shouldSave = true;
         }
-        if (parsedSettings.mcpBaseUrl == null) {
-          parsedSettings.mcpBaseUrl = '';
+        if (parsedSettings.serverBaseUrl == null) {
+          parsedSettings.serverBaseUrl = '';
+          shouldSave = true;
+        }
+        if (parsedSettings.braveSearchApiKey == null) {
+          parsedSettings.braveSearchApiKey = '';
           shouldSave = true;
         }
         if (parsedSettings.enableAiAssistant == null) {
@@ -127,6 +131,14 @@ export class SettingsService {
         }
         if (parsedSettings.useMCPTools == null) {
           parsedSettings.useMCPTools = false;
+          shouldSave = true;
+        }
+        if (parsedSettings.autoApplyCodeEdits == null) {
+          parsedSettings.autoApplyCodeEdits = false;
+          shouldSave = true;
+        }
+        if (parsedSettings.requireDiffPreview == null) {
+          parsedSettings.requireDiffPreview = false;
           shouldSave = true;
         }
         if (shouldSave) {
@@ -211,12 +223,17 @@ export class SettingsService {
 
   getDefaultOllamaModel(): string {
     const envValue = (window as any)['CQL_STUDIO_OLLAMA_MODEL'];
-    return envValue && envValue.trim() !== '' ? envValue : 'deepseek-coder:6.7b';
+    return envValue && envValue.trim() !== '' ? envValue : 'qwen3-coder:30b';
   }
 
-  getDefaultMCPBaseUrl(): string {
-    const envValue = (window as any)['CQL_STUDIO_MCP_BASE_URL'];
-    return envValue && envValue.trim() !== '' ? envValue : 'http://localhost:3002';
+  getDefaultServerBaseUrl(): string {
+    const envValue = (window as any)['CQL_STUDIO_SERVER_BASE_URL'];
+    return envValue && envValue.trim() !== '' ? envValue : 'http://localhost:3003';
+  }
+
+  getDefaultBraveSearchApiKey(): string {
+    const envValue = (window as any)['CQL_STUDIO_BRAVE_SEARCH_API_KEY'];
+    return envValue && envValue.trim() !== '' ? envValue : '';
   }
 
   getEffectiveRunnerApiBaseUrl(): string {
@@ -261,7 +278,9 @@ export class SettingsService {
 
   getEffectiveOllamaBaseUrl(): string {
     const settingValue = this.settings().ollamaBaseUrl;
-    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultOllamaBaseUrl();
+    const baseUrl = settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultOllamaBaseUrl();
+    // Remove trailing slash to avoid double slashes when concatenating with API paths
+    return baseUrl.replace(/\/+$/, '');
   }
 
   getEffectiveOllamaModel(): string {
@@ -269,9 +288,14 @@ export class SettingsService {
     return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultOllamaModel();
   }
 
-  getEffectiveMCPBaseUrl(): string {
-    const settingValue = this.settings().mcpBaseUrl;
-    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultMCPBaseUrl();
+  getEffectiveServerBaseUrl(): string {
+    const settingValue = this.settings().serverBaseUrl;
+    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultServerBaseUrl();
+  }
+
+  getEffectiveBraveSearchApiKey(): string {
+    const settingValue = this.settings().braveSearchApiKey;
+    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultBraveSearchApiKey();
   }
 
   updateSettings(updates: Partial<Settings>): void {

@@ -100,8 +100,29 @@
       flex: 1;
       padding-bottom: 0;
       
-      // Auto-scroll to bottom
+      // Auto-scroll to bottom - smooth scrolling for better UX
+      // Note: During streaming, we use 'auto' behavior in JS for instant scrolling
+      // Smooth scrolling is only used for new messages and non-streaming updates
       scroll-behavior: smooth;
+      
+      // Respect user's motion preferences
+      @media (prefers-reduced-motion: reduce) {
+        scroll-behavior: auto;
+      }
+      
+      // Enable scroll anchoring for better performance during streaming
+      // This keeps the scroll position relative to content that's changing
+      & {
+        overflow-anchor: auto;
+      }
+      
+      // Scroll Sentinel - invisible element at bottom that tracks scroll position
+      .scroll-sentinel {
+        height: 1px;
+        width: 100%;
+        // Use scroll-margin to ensure smooth scrolling
+        scroll-margin-bottom: 0;
+      }
     }
       
     // Code blocks
@@ -152,6 +173,59 @@
       background-color: theme.$ide-bg-secondary;
       border-top: 1px solid theme.$ide-border;
       
+      // Mode toggle footer
+      .mode-toggle-footer {
+        background-color: theme.$ide-bg-secondary;
+        border-bottom: 1px solid theme.$ide-border;
+        min-height: 36px;
+        
+        .mode-toggle-container {
+          .mode-toggle-label {
+            display: flex;
+            align-items: center;
+            color: theme.$ide-text-white;
+            font-size: 0.875rem;
+            user-select: none;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+            
+            &:hover:not(.disabled) {
+              opacity: 0.8;
+            }
+            
+            &.disabled {
+              opacity: 0.5;
+              cursor: not-allowed;
+            }
+            
+            .mode-indicator {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              width: 20px;
+              height: 20px;
+              border-radius: 4px;
+              font-size: 0.875rem;
+              transition: all 0.2s ease;
+              
+              &.plan-mode {
+                background-color: #ffc107;
+                color: #000;
+              }
+              
+              &.act-mode {
+                background-color: theme.$ide-blue;
+                color: white;
+              }
+            }
+            
+            .mode-text {
+              font-weight: 500;
+            }
+          }
+        }
+      }
+      
       .input-group {
         .form-control {
           background-color: theme.$ide-bg-secondary;
@@ -165,6 +239,12 @@
             color: theme.$ide-text-white;
             box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
           }
+        }
+        
+        .ai-input-textarea {
+          font-size: 0.75rem;
+          padding: 0.375rem 0.5rem;
+          line-height: 1.4;
         }
         
         .btn {
@@ -192,55 +272,374 @@
   }
 }
 
+// Scroll Sentinel - invisible element that tracks bottom of messages
+// CSS handles keeping it in view during content changes
+.scroll-sentinel {
+  height: 1px;
+  width: 100%;
+  flex-shrink: 0;
+  // Invisible but takes up space
+  visibility: hidden;
+  pointer-events: none;
+  // Ensure it's at the bottom
+  margin-top: auto;
+}
+
 @keyframes blink {
   0%, 50% { opacity: 1; }
   51%, 100% { opacity: 0; }
 }
 
-// Minimal markdown styling for chat - use ::ng-deep to penetrate component encapsulation
-:host ::ng-deep .ai-tab-container markdown {
-  h1, h2, h3, h4, h5, h6 {
-    color: theme.$ide-text-white !important;
-    font-size: 0.8rem;
-    font-weight: 600;
-    margin: 0.2rem 0 0.1rem 0;
-  }
+// Plan display styling
+.plan-display-message {
+  position: relative;
   
-  p {
-    color: theme.$ide-text-white !important;
-    margin-bottom: 0.2rem;
-    font-size: 0.85rem;
-  }
-  
-  ul, ol {
-    color: theme.$ide-text-white !important;
-    margin-bottom: 0.2rem;
-    padding-left: 1rem;
-    font-size: 0.85rem;
-  }
-  
-  a {
-    color: theme.$ide-blue !important;
-  }
-  
-  code {
-    background-color: theme.$ide-bg-secondary;
-    color: theme.$ide-text-white;
-    padding: 0.1rem 0.2rem;
-    border-radius: 2px;
-    font-size: 0.75rem;
+  &.sticky-plan {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: var(--bs-body-bg, #fff);
+    border-bottom: 2px solid var(--bs-border-color, #dee2e6);
+    margin-bottom: 1rem;
+    padding: 0.5rem;
   }
 }
 
-// Assistant message styling
+// Tool execution message styling (Cline-style brief status)
+.tool-execution-message {
+  .message-body {
+    background-color: rgba(0, 123, 255, 0.1);
+    border-left: 3px solid theme.$ide-blue;
+    padding: 0.75rem;
+    border-radius: 4px;
+    
+    .tool-status-text {
+      font-size: 0.9rem;
+      color: theme.$ide-text-white;
+      font-weight: 500;
+      
+      &.pulsate {
+        animation: pulsate 2s ease-in-out infinite;
+      }
+    }
+  }
+}
+
+// Pulsating animation for status text
+@keyframes pulsate {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+// Diff preview message styling
+.diff-preview-message {
+  .message-body {
+    background-color: rgba(255, 193, 7, 0.1);
+    border-left: 3px solid #ffc107;
+    padding: 0;
+  }
+}
+
+// Condensed markdown styling for chat - Cline-style compact formatting
+// Target markdown-rendered content within message bodies
+:host ::ng-deep {
+  // Target all markdown components in the AI tab - multiple selector strategies
+  .message-body markdown,
+  .message-body markdown > *,
+  markdown,
+  .ai-tab-container markdown {
+    font-size: 0.8125rem !important; // 13px base
+    line-height: 1.4 !important;
+    color: theme.$ide-text-white !important;
+  }
+  
+  // Headings - condensed with minimal spacing (target all markdown contexts)
+  // Direct children of message-body (when markdown renders directly)
+  .message-body > h1,
+  .message-body > h2,
+  .message-body > h3,
+  .message-body > h4,
+  .message-body > h5,
+  .message-body > h6,
+  .message-body markdown h1,
+  .message-body markdown h2,
+  .message-body markdown h3,
+  .message-body markdown h4,
+  .message-body markdown h5,
+  .message-body markdown h6,
+  markdown h1,
+  markdown h2,
+  markdown h3,
+  markdown h4,
+  markdown h5,
+  markdown h6,
+  .ai-tab-container markdown h1,
+  .ai-tab-container markdown h2,
+  .ai-tab-container markdown h3,
+  .ai-tab-container markdown h4,
+  .ai-tab-container markdown h5,
+  .ai-tab-container markdown h6 {
+    color: theme.$ide-text-white !important;
+    font-weight: 600 !important;
+    margin: 0.5rem 0 0.25rem 0 !important;
+    line-height: 1.3 !important;
+    
+    &:first-child {
+      margin-top: 0 !important;
+    }
+  }
+  
+  .message-body > h1,
+  .message-body markdown h1,
+  markdown h1,
+  .ai-tab-container markdown h1 {
+    font-size: 1rem !important;
+    margin-top: 0.75rem !important;
+  }
+  
+  .message-body > h2,
+  .message-body markdown h2,
+  markdown h2,
+  .ai-tab-container markdown h2 {
+    font-size: 0.9375rem !important;
+  }
+  
+  .message-body > h3,
+  .message-body markdown h3,
+  markdown h3,
+  .ai-tab-container markdown h3 {
+    font-size: 0.875rem !important;
+  }
+  
+  .message-body > h4,
+  .message-body > h5,
+  .message-body > h6,
+  .message-body markdown h4,
+  .message-body markdown h5,
+  .message-body markdown h6,
+  markdown h4,
+  markdown h5,
+  markdown h6,
+  .ai-tab-container markdown h4,
+  .ai-tab-container markdown h5,
+  .ai-tab-container markdown h6 {
+    font-size: 0.8125rem !important;
+  }
+  
+  // Paragraphs - tight spacing
+  .message-body > p,
+  .message-body markdown p,
+  markdown p,
+  .ai-tab-container markdown p {
+    color: theme.$ide-text-white !important;
+    margin: 0.25rem 0 !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.4 !important;
+    
+    &:first-child {
+      margin-top: 0 !important;
+    }
+    
+    &:last-child {
+      margin-bottom: 0 !important;
+    }
+  }
+  
+  // Lists - compact spacing
+  .message-body > ul,
+  .message-body > ol,
+  .message-body markdown ul,
+  .message-body markdown ol,
+  markdown ul,
+  markdown ol,
+  .ai-tab-container markdown ul,
+  .ai-tab-container markdown ol {
+    color: theme.$ide-text-white !important;
+    margin: 0.25rem 0 !important;
+    padding-left: 1.25rem !important;
+    font-size: 0.8125rem !important;
+    line-height: 1.4 !important;
+    
+    li {
+      margin: 0.125rem 0 !important;
+      
+      p {
+        margin: 0.125rem 0 !important;
+      }
+    }
+    
+    ul, ol {
+      margin: 0.125rem 0 !important;
+    }
+  }
+  
+  // Links
+  .message-body a,
+  .message-body markdown a,
+  markdown a,
+  .ai-tab-container markdown a {
+    color: theme.$ide-blue !important;
+    text-decoration: none !important;
+    
+    &:hover {
+      color: theme.$ide-blue-hover !important;
+      text-decoration: underline !important;
+    }
+  }
+  
+  // Inline code - very compact
+  .message-body code:not(pre code),
+  .message-body markdown code:not(pre code),
+  markdown code:not(pre code),
+  .ai-tab-container markdown code:not(pre code) {
+    background-color: rgba(255, 255, 255, 0.08) !important;
+    color: theme.$ide-text-white !important;
+    padding: 0.125rem 0.25rem !important;
+    border-radius: 3px !important;
+    font-size: 0.75rem !important;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace !important;
+    line-height: 1.4 !important;
+  }
+  
+  // Code blocks - condensed with minimal padding
+  .message-body pre,
+  .message-body markdown pre,
+  markdown pre,
+  .ai-tab-container markdown pre {
+    background-color: theme.$ide-bg-secondary !important;
+    border: 1px solid theme.$ide-border !important;
+    border-radius: 4px !important;
+    padding: 0.5rem 0.75rem !important;
+    margin: 0.5rem 0 !important;
+    overflow-x: auto !important;
+    font-size: 0.75rem !important;
+    line-height: 1.4 !important;
+    
+    code {
+      background-color: transparent !important;
+      padding: 0 !important;
+      border-radius: 0 !important;
+      font-size: 0.75rem !important;
+      color: theme.$ide-text-white !important;
+    }
+  }
+  
+  // Blockquotes - minimal styling
+  .message-body blockquote,
+  .message-body markdown blockquote,
+  markdown blockquote,
+  .ai-tab-container markdown blockquote {
+    border-left: 3px solid theme.$ide-border !important;
+    padding-left: 0.75rem !important;
+    margin: 0.5rem 0 !important;
+    color: theme.$ide-text-primary !important;
+    font-size: 0.8125rem !important;
+    
+    p {
+      margin: 0.25rem 0 !important;
+    }
+  }
+  
+  // Horizontal rules
+  .message-body hr,
+  .message-body markdown hr,
+  markdown hr,
+  .ai-tab-container markdown hr {
+    border: none !important;
+    border-top: 1px solid theme.$ide-border !important;
+    margin: 0.75rem 0 !important;
+  }
+  
+  // Tables - compact
+  .message-body table,
+  .message-body markdown table,
+  markdown table,
+  .ai-tab-container markdown table {
+    font-size: 0.8125rem !important;
+    margin: 0.5rem 0 !important;
+    border-collapse: collapse !important;
+    width: 100% !important;
+    
+    th, td {
+      padding: 0.25rem 0.5rem !important;
+      border: 1px solid theme.$ide-border !important;
+    }
+    
+    th {
+      background-color: theme.$ide-bg-secondary !important;
+      font-weight: 600 !important;
+    }
+  }
+  
+  // Strong and emphasis
+  .message-body strong,
+  .message-body b,
+  .message-body markdown strong,
+  .message-body markdown b,
+  markdown strong,
+  markdown b,
+  .ai-tab-container markdown strong,
+  .ai-tab-container markdown b {
+    font-weight: 600 !important;
+    color: theme.$ide-text-white !important;
+  }
+  
+  .message-body em,
+  .message-body i,
+  .message-body markdown em,
+  .message-body markdown i,
+  markdown em,
+  markdown i,
+  .ai-tab-container markdown em,
+  .ai-tab-container markdown i {
+    font-style: italic !important;
+  }
+  
+  // Images
+  .message-body img,
+  .message-body markdown img,
+  markdown img,
+  .ai-tab-container markdown img {
+    max-width: 100% !important;
+    height: auto !important;
+    border-radius: 4px !important;
+    margin: 0.5rem 0 !important;
+  }
+}
+
+// Message styling - condensed and no background colors
 .ai-tab-container {
   .ai-chat-area {
     .messages-area {
       .message {
-        &.assistant-message .message-content .message-body {
-          background-color: transparent;
-          color: theme.$ide-text-white;
-          border: none;
+        margin-bottom: 0.75rem !important;
+        
+        &.user-message,
+        &.assistant-message {
+          .message-content,
+          .message-body {
+            background-color: transparent !important;
+            color: theme.$ide-text-white !important;
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+        }
+        
+        &.user-message {
+          .message-body {
+            color: theme.$ide-text-white !important;
+          }
+        }
+        
+        &.tool-execution-message,
+        &.plan-display-message,
+        &.diff-preview-message {
+          margin-bottom: 0.75rem !important;
         }
       }
       

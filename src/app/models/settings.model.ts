@@ -24,9 +24,14 @@ export class Settings {
     // AI Settings
     public ollamaBaseUrl: string = '';
     public ollamaModel: string = '';
-    public mcpBaseUrl: string = '';
+    public serverBaseUrl: string = '';
+    public braveSearchApiKey: string = '';
     public enableAiAssistant: boolean = false;
     public useMCPTools: boolean = false;
+    public autoApplyCodeEdits: boolean = false;
+    public requireDiffPreview: boolean = false;
+    public defaultMode: 'plan' | 'act' = 'plan';
+    public planActSeparateModels: boolean = false;
 
     public static DEFAULT_THEME = ThemeType.AUTOMATIC;
 }

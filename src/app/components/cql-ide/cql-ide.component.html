@@ -14,7 +14,9 @@
         (dragOver)="onDragOver($event)"
         (dragLeave)="onDragLeave($event)"
         (executeAll)="onExecuteAll()"
-        (navigateToLine)="onNavigateToLine($event)">
+        (navigateToLine)="onNavigateToLine($event)"
+        (insertCqlCode)="onInsertCqlCode($event)"
+        (replaceCqlCode)="onReplaceCqlCode($event)">
       </app-ide-panel>
     }
 
@@ -95,7 +97,9 @@
         (dragOver)="onDragOver($event)"
         (dragLeave)="onDragLeave($event)"
         (executeAll)="onExecuteAll()"
-        (navigateToLine)="onNavigateToLine($event)">
+        (navigateToLine)="onNavigateToLine($event)"
+        (insertCqlCode)="onInsertCqlCode($event)"
+        (replaceCqlCode)="onReplaceCqlCode($event)">
       </app-ide-panel>
     }
   </div>
@@ -112,7 +116,9 @@
       (tabDrop)="onTabDrop($event)"
       (dragOver)="onDragOver($event)"
       (dragLeave)="onDragLeave($event)"
-      (executeAll)="onExecuteAll()">
+      (executeAll)="onExecuteAll()"
+      (insertCqlCode)="onInsertCqlCode($event)"
+      (replaceCqlCode)="onReplaceCqlCode($event)">
     </app-ide-panel>
   }
 

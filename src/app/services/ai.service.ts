@@ -7,7 +7,9 @@ import { catchError, map } from 'rxjs/operators';
 import { BaseService } from './base.service';
 import { SettingsService } from './settings.service';
 import { IdeStateService } from './ide-state.service';
-import { ConversationContextService, ConversationContext } from './conversation-context.service';
+import { ConversationManagerService } from './conversation-manager.service';
+import { AiPlanningService } from './ai-planning.service';
+import { Plan, PlanStep } from '../models/plan.model';
 
 // Ollama API types (based on official Ollama API)
 export interface OllamaMessage {
@@ -51,29 +53,16 @@ export interface MCPResponse {
   };
 }
 
-export interface AIConversation {
-  id: string;
-  title: string;
-  messages: OllamaMessage[];
-  createdAt: Date;
-  updatedAt: Date;
-  contextId?: string;
-  editorId?: string;
-  editorType?: 'cql' | 'fhir' | 'general';
-}
-
 @Injectable({
   providedIn: 'root'
 })
 export class AiService extends BaseService {
-  private readonly CONVERSATION_STORAGE_KEY = 'ai_conversations';
-  private readonly MAX_CONVERSATIONS = 50;
-
   constructor(
     protected override http: HttpClient,
     private settingsService: SettingsService,
     private ideStateService: IdeStateService,
-    private conversationContextService: ConversationContextService
+    private conversationManager: ConversationManagerService,
+    private planningService: AiPlanningService
   ) {
     super(http);
   }
@@ -112,23 +101,27 @@ export class AiService extends BaseService {
 
   /**
    * Send a context-aware message to Ollama
+   * Uses ConversationManagerService for conversation management
    */
   sendContextAwareMessage(
     message: string,
     useMCPTools: boolean = true,
     cqlContent?: string
   ): Observable<OllamaResponse> {
-    const contextId = this.conversationContextService.getRelevantConversation();
-    return this.sendMessage(message, contextId || undefined, useMCPTools);
+    const editorContext = this.conversationManager.getCurrentEditorContext();
+    const editorId = editorContext?.editorId;
+    return this.sendMessage(message, editorId, useMCPTools, cqlContent);
   }
 
   /**
    * Send a message to Ollama with optional MCP tool integration
+   * Uses ConversationManagerService for conversation management
    */
   sendMessage(
     message: string, 
-    conversationId?: string,
-    useMCPTools: boolean = true
+    editorId?: string,
+    useMCPTools: boolean = true,
+    cqlContent?: string
   ): Observable<OllamaResponse> {
     const ollamaUrl = this.settingsService.getEffectiveOllamaBaseUrl();
     if (!ollamaUrl || !this.settingsService.settings().enableAiAssistant) {
@@ -136,23 +129,39 @@ export class AiService extends BaseService {
     }
 
     const model = this.settingsService.getEffectiveOllamaModel();
-    const conversations = this.getConversations();
-    let conversation = conversationId ? conversations.find(c => c.id === conversationId) : null;
-
+    
+    // Get or create conversation for editor
+    const editorContext = editorId 
+      ? this.conversationManager.getEditorContextFromId(editorId)
+      : this.conversationManager.getCurrentEditorContext();
+    
+    if (!editorContext) {
+      return throwError(() => new Error('No editor context available'));
+    }
+    
+    let conversation = this.conversationManager.getActiveConversation(editorContext.editorId);
     if (!conversation) {
-      conversation = this.createNewConversation(message);
+      conversation = this.conversationManager.createConversationForEditor(
+        editorContext.editorId,
+        editorContext.editorType,
+        message,
+        editorContext.libraryName,
+        editorContext.fileName
+      );
+    } else {
+      // Add user message to existing conversation
+      this.conversationManager.addUserMessage(conversation.id, message);
     }
 
-    // Add user message to conversation
-    conversation.messages.push({ role: 'user', content: message });
-    conversation.updatedAt = new Date();
+    // Get API messages for LLM request
+    const apiMessages = this.conversationManager.getApiMessages(conversation.id);
 
     // Prepare system message with context
-    const systemMessage = this.buildSystemMessage(conversation, useMCPTools);
+    const systemMessage = this.buildSystemMessage(conversation.editorType, useMCPTools, cqlContent);
 
     const request: OllamaRequest = {
       model: model,
-      messages: [systemMessage, ...conversation.messages],
+      messages: [systemMessage, ...apiMessages],
       stream: false,
       options: {
         temperature: 0.7,
@@ -166,15 +175,7 @@ export class AiService extends BaseService {
     }).pipe(
       map(response => {
         // Add assistant response to conversation
-        conversation!.messages.push({
-          role: 'assistant',
-          content: response.message.content
-        });
-        conversation!.updatedAt = new Date();
-        
-        // Save updated conversation
-        this.saveConversation(conversation!);
-        
+        this.conversationManager.addAssistantMessage(conversation!.id, response.message.content);
         return response;
       }),
       catchError(this.handleError)
@@ -189,52 +190,102 @@ export class AiService extends BaseService {
     useMCPTools: boolean = true,
     cqlContent?: string
   ): Observable<{type: 'start' | 'chunk' | 'end', content?: string, fullResponse?: string}> {
-    const contextId = this.conversationContextService.getRelevantConversation();
-    return this.sendStreamingMessage(message, contextId || undefined, useMCPTools, cqlContent);
+    const editorContext = this.conversationManager.getCurrentEditorContext();
+    const editorId = editorContext?.editorId;
+    return this.sendStreamingMessage(message, editorId, useMCPTools, cqlContent);
   }
 
   /**
    * Send a streaming message to Ollama with optional MCP tool integration
+   * Uses ConversationManagerService for conversation management
+   * @param toolResultsSummary Optional tool results to append to last message for AI context (never saved)
    */
   sendStreamingMessage(
     message: string, 
-    conversationId?: string,
+    editorId?: string,
     useMCPTools: boolean = true,
-    cqlContent?: string
+    cqlContent?: string,
+    toolResultsSummary?: string,
+    mode?: 'plan' | 'act'
   ): Observable<{type: 'start' | 'chunk' | 'end', content?: string, fullResponse?: string}> {
-    console.log('AI Service - sendStreamingMessage called');
-    console.log('AI Service - message:', message);
-    console.log('AI Service - conversationId:', conversationId);
-    console.log('AI Service - useMCPTools:', useMCPTools);
-    console.log('AI Service - cqlContent length:', cqlContent?.length);
-    
     const ollamaUrl = this.settingsService.getEffectiveOllamaBaseUrl();
-    console.log('AI Service - ollamaUrl:', ollamaUrl);
-    console.log('AI Service - enableAiAssistant:', this.settingsService.settings().enableAiAssistant);
     
     if (!ollamaUrl || !this.settingsService.settings().enableAiAssistant) {
-      console.log('AI Service - AI Assistant not available');
       return throwError(() => new Error('AI Assistant is not enabled or Ollama base URL not configured'));
     }
 
     const model = this.settingsService.getEffectiveOllamaModel();
-    const conversations = this.getConversations();
-    let conversation = conversationId ? conversations.find(c => c.id === conversationId) : null;
-
+    
+    // Get or create conversation for editor
+    const editorContext = editorId 
+      ? this.conversationManager.getEditorContextFromId(editorId)
+      : this.conversationManager.getCurrentEditorContext();
+    
+    if (!editorContext) {
+      return throwError(() => new Error('No editor context available'));
+    }
+    
+    let conversation = this.conversationManager.getActiveConversation(editorContext.editorId);
     if (!conversation) {
-      conversation = this.createNewConversation(message);
+      // Can't create a new conversation with empty message
+      if (!message || message.trim().length === 0) {
+        return throwError(() => new Error('Cannot create new conversation with empty message'));
+      }
+      conversation = this.conversationManager.createConversationForEditor(
+        editorContext.editorId,
+        editorContext.editorType,
+        message,
+        editorContext.libraryName,
+        editorContext.fileName
+      );
+    } else {
+      // Add user message to existing conversation (only if message is not empty)
+      // Empty message indicates continuation mode (Cline pattern: after tool execution)
+      if (message && message.trim().length > 0) {
+        this.conversationManager.addUserMessage(conversation.id, message);
+      }
     }
 
-    // Add user message to conversation
-    conversation.messages.push({ role: 'user', content: message });
-    conversation.updatedAt = new Date();
+    // Get API messages for LLM request
+    let apiMessages = this.conversationManager.getApiMessages(conversation.id);
+    
+    // Append tool results to last assistant message if provided (in-memory only, never saved)
+    if (toolResultsSummary) {
+      const lastMessage = apiMessages[apiMessages.length - 1];
+      if (lastMessage && lastMessage.role === 'assistant') {
+        // Clone messages array and append tool results to last message (in-memory only)
+        apiMessages = [...apiMessages];
+        const conversationMode = mode || conversation.mode || 'plan';
+        
+        // In plan mode, explicitly instruct to create a plan after tool execution
+        let toolResultsText = `\n\n**Tool Execution Results:**\n${toolResultsSummary}`;
+        if (conversationMode === 'plan' && !message) {
+          // Continuation mode in plan - explicitly request plan creation
+          toolResultsText += `\n\nBased on these tool execution results, create a structured plan in JSON format. The plan should outline the steps needed to accomplish the user's request. Include the plan JSON in your response.`;
+        }
+        
+        apiMessages[apiMessages.length - 1] = {
+          ...lastMessage,
+          content: lastMessage.content + toolResultsText
+        };
+      }
+    }
 
+    // Get mode from conversation or parameter
+    const conversationMode = mode || conversation.mode || 'plan';
+    
+    // Check if there are plan messages in conversation (for Act Mode reference)
+    // A plan exists if we're in Act Mode and there are assistant messages from when we were in Plan Mode
+    const hasPlanMessages = conversationMode === 'act' && conversation.apiMessages.some(msg => 
+      msg.role === 'assistant' && msg.content && msg.content.length > 0
+    );
+    
     // Prepare system message with context
-    const systemMessage = this.buildSystemMessage(conversation, useMCPTools, cqlContent);
+    const systemMessage = this.buildSystemMessage(editorContext.editorType, useMCPTools, cqlContent, conversationMode, hasPlanMessages);
 
     const request: OllamaRequest = {
       model: model,
-      messages: [systemMessage, ...conversation.messages],
+      messages: [systemMessage, ...apiMessages],
       stream: true,
       options: {
         temperature: 0.7,
@@ -244,15 +295,11 @@ export class AiService extends BaseService {
 
     return new Observable(observer => {
       let fullResponse = '';
+      const conversationId = conversation.id;
       
       // Emit start event
-      console.log('AI Service - Emitting start event');
       observer.next({ type: 'start' });
 
-      // Make streaming request
-      console.log('AI Service - Making fetch request to:', `${ollamaUrl}/api/chat`);
-      console.log('AI Service - Request body:', JSON.stringify(request, null, 2));
-      
       fetch(`${ollamaUrl}/api/chat`, {
         method: 'POST',
         headers: {
@@ -261,7 +308,6 @@ export class AiService extends BaseService {
         },
         body: JSON.stringify(request)
       }).then(response => {
-        console.log('AI Service - Fetch response received:', response.status, response.statusText);
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -277,17 +323,9 @@ export class AiService extends BaseService {
         const readChunk = (): Promise<void> => {
           return reader.read().then(({ done, value }) => {
             if (done) {
-              // Add complete response to conversation
-              conversation!.messages.push({
-                role: 'assistant',
-                content: fullResponse
-              });
-              conversation!.updatedAt = new Date();
+              // Mark streaming as complete (component will add the final cleaned message)
+              this.conversationManager.completeStreaming(conversationId);
               
-              // Save updated conversation
-              this.saveConversation(conversation!);
-              
-              console.log('AI Service - Emitting end event');
               observer.next({ type: 'end', fullResponse });
               observer.complete();
               return;
@@ -307,12 +345,15 @@ export class AiService extends BaseService {
                   if (data.message && data.message.content) {
                     const content = data.message.content;
                     fullResponse += content;
-                    console.log('AI Service - Emitting chunk:', content);
+                    
+                    // Don't update conversation message during streaming - only update when complete
+                    // This prevents duplicate display (conversation message vs streaming response)
+                    // Component will handle updating the conversation when streaming ends
+                    
                     observer.next({ type: 'chunk', content });
                   }
                 } catch (e) {
                   // Skip invalid JSON lines
-                  console.warn('Invalid JSON line:', line);
                 }
               }
             }
@@ -323,8 +364,21 @@ export class AiService extends BaseService {
 
         return readChunk();
       }).catch(error => {
-        console.error('AI Service - Fetch error:', error);
-        observer.error(error);
+        let errorMessage = 'Failed to connect to Ollama server';
+        
+        if (error instanceof TypeError && error.message === 'Failed to fetch') {
+          errorMessage = 'Unable to connect to Ollama server. Please check:\n' +
+            '- The Ollama server URL is correct\n' +
+            '- The Ollama server is running\n' +
+            '- There are no network connectivity issues\n' +
+            '- CORS is properly configured (if accessing from a browser)';
+        } else if (error instanceof TypeError) {
+          errorMessage = `Network error: ${error.message}`;
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        
+        observer.error(new Error(errorMessage));
       });
     });
   }
@@ -333,7 +387,7 @@ export class AiService extends BaseService {
    * Get available MCP tools
    */
   getMCPTools(): Observable<MCPTool[]> {
-    const mcpUrl = this.settingsService.getEffectiveMCPBaseUrl();
+    const mcpUrl = this.settingsService.getEffectiveServerBaseUrl();
     if (!mcpUrl) {
       return throwError(() => new Error('MCP base URL not configured'));
     }
@@ -349,14 +403,21 @@ export class AiService extends BaseService {
    * Execute an MCP tool
    */
   executeMCPTool(toolName: string, parameters: any): Observable<MCPResponse> {
-    const mcpUrl = this.settingsService.getEffectiveMCPBaseUrl();
+    const mcpUrl = this.settingsService.getEffectiveServerBaseUrl();
     if (!mcpUrl) {
       return throwError(() => new Error('MCP base URL not configured'));
     }
 
+    // Add brave_api_key for web_search and fetch_url tools
+    const params = { ...parameters };
+    if (toolName === 'web_search' || toolName === 'fetch_url') {
+      const braveApiKey = this.settingsService.getEffectiveBraveSearchApiKey();
+      params['brave_api_key'] = braveApiKey || '';
+    }
+
     const request: MCPRequest = {
       method: toolName,
-      params: parameters
+      params: params
     };
 
     return this.http.post<MCPResponse>(`${mcpUrl}/execute`, request, {
@@ -370,7 +431,7 @@ export class AiService extends BaseService {
    * Get FHIR data through MCP server
    */
   getFhirData(resourceType: string, id?: string, query?: any): Observable<any> {
-    const mcpUrl = this.settingsService.getEffectiveMCPBaseUrl();
+    const mcpUrl = this.settingsService.getEffectiveServerBaseUrl();
     if (!mcpUrl) {
       return throwError(() => new Error('MCP base URL not configured'));
     }
@@ -463,131 +524,95 @@ ${cqlContent}
   }
 
   /**
-   * Get all conversations
+   * Switch to a different editor context (delegates to ConversationManagerService)
    */
-  getConversations(): AIConversation[] {
-    const stored = localStorage.getItem(this.CONVERSATION_STORAGE_KEY);
-    if (!stored) return [];
-    
-    try {
-      const conversations = JSON.parse(stored);
-      return conversations.map((c: any) => ({
-        ...c,
-        createdAt: new Date(c.createdAt),
-        updatedAt: new Date(c.updatedAt)
-      }));
-    } catch {
-      return [];
-    }
+  switchToEditorContext(editorId: string): string | null {
+    const conversation = this.conversationManager.switchToEditor(editorId);
+    return conversation?.id || null;
   }
 
   /**
-   * Get a specific conversation
+   * Get conversations (delegates to ConversationManagerService)
+   * For backwards compatibility
    */
-  getConversation(id: string): AIConversation | null {
-    return this.getConversations().find(c => c.id === id) || null;
+  getConversations() {
+    return this.conversationManager.getAllConversations();
   }
 
   /**
-   * Delete a conversation
+   * Get a specific conversation (delegates to ConversationManagerService)
+   * For backwards compatibility
+   */
+  getConversation(id: string) {
+    const all = this.conversationManager.getAllConversations();
+    return all.find(c => c.id === id) || null;
+  }
+
+  /**
+   * Delete a conversation (delegates to ConversationManagerService)
    */
   deleteConversation(id: string): void {
-    const conversations = this.getConversations().filter(c => c.id !== id);
-    localStorage.setItem(this.CONVERSATION_STORAGE_KEY, JSON.stringify(conversations));
+    this.conversationManager.deleteConversation(id);
   }
 
   /**
-   * Clear all conversations
+   * Clear all conversations (delegates to ConversationManagerService)
    */
   clearAllConversations(): void {
-    localStorage.removeItem(this.CONVERSATION_STORAGE_KEY);
-  }
-
-  /**
-   * Get conversations for a specific context
-   */
-  getConversationsForContext(editorId: string): AIConversation[] {
-    return this.getConversations().filter(c => c.editorId === editorId);
+    this.conversationManager.clearAllConversations();
   }
 
   /**
    * Get the most relevant conversation for current context
+   * For backwards compatibility - now returns conversation ID from active editor
    */
   getRelevantConversation(): string | null {
-    return this.conversationContextService.getRelevantConversation();
+    const conversation = this.conversationManager.getActiveConversation();
+    return conversation?.id || null;
   }
 
   /**
-   * Create a new conversation with context
+   * Sanitize message content - delegates to ConversationManagerService
+   * Also removes plan JSON blocks
    */
-  createContextualConversation(firstMessage: string): AIConversation {
-    const conversation = this.createNewConversation(firstMessage);
-    const context = this.conversationContextService.createOrGetContext(conversation.id);
+  public sanitizeMessageContent(content: string): string {
+    if (!content) {
+      return content;
+    }
+
+    // Remove JSON plan blocks
+    let sanitized = content.replace(/```(?:json)?\s*\{[\s\S]*?"plan"[\s\S]*?\}\s*```/g, '');
     
-    // Update conversation with context information
-    conversation.contextId = context.id;
-    conversation.editorId = context.editorId;
-    conversation.editorType = context.editorType;
+    // Remove standalone plan JSON
+    sanitized = sanitized.replace(/\{\s*"plan"\s*:\s*\{[\s\S]*?\}\s*\}/g, '');
     
-    this.saveConversation(conversation);
-    return conversation;
+    // Delegate to ConversationManagerService for consistent sanitization
+    // This ensures tool results are removed from all displayed messages
+    sanitized = this.conversationManager.sanitizeContentForDisplay(sanitized);
+    
+    return sanitized;
   }
 
   /**
-   * Update conversation context when editor changes
+   * Add assistant message to conversation (delegates to ConversationManagerService)
+   * For backwards compatibility
    */
-  updateConversationContext(conversationId: string, editorId: string): void {
-    const conversation = this.getConversation(conversationId);
-    if (conversation) {
-      conversation.editorId = editorId;
-      this.saveConversation(conversation);
-    }
+  addAssistantMessage(conversationId: string, content: string): boolean {
+    this.conversationManager.addAssistantMessage(conversationId, content);
+    return true;
   }
-
 
   /**
-   * Switch to a different editor context
+   * Append tool results - now handled in sendStreamingMessage
+   * For backwards compatibility
    */
-  switchToEditorContext(editorId: string): string | null {
-    return this.conversationContextService.switchToEditorContext(editorId);
+  appendToolResults(conversationId: string, toolResultsSummary: string): boolean {
+    // Tool results are now appended in-memory in sendStreamingMessage
+    // This method is kept for backwards compatibility but does nothing
+    return true;
   }
 
-  private createNewConversation(firstMessage: string): AIConversation {
-    const conversation: AIConversation = {
-      id: this.generateId(),
-      title: this.generateTitle(firstMessage),
-      messages: [],
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-
-    // Clean up old conversations if we have too many
-    const conversations = this.getConversations();
-    if (conversations.length >= this.MAX_CONVERSATIONS) {
-      const sortedConversations = conversations.sort((a, b) => 
-        a.updatedAt.getTime() - b.updatedAt.getTime()
-      );
-      const toDelete = sortedConversations.slice(0, conversations.length - this.MAX_CONVERSATIONS + 1);
-      toDelete.forEach(c => this.deleteConversation(c.id));
-    }
-
-    return conversation;
-  }
-
-  private saveConversation(conversation: AIConversation): void {
-    const conversations = this.getConversations();
-    const existingIndex = conversations.findIndex(c => c.id === conversation.id);
-    
-    if (existingIndex >= 0) {
-      conversations[existingIndex] = conversation;
-    } else {
-      conversations.push(conversation);
-    }
-
-    localStorage.setItem(this.CONVERSATION_STORAGE_KEY, JSON.stringify(conversations));
-  }
-
-  private buildSystemMessage(conversation: AIConversation, useMCPTools: boolean, cqlContent?: string): OllamaMessage {
+  private buildSystemMessage(editorType: 'cql' | 'fhir' | 'general', useMCPTools: boolean, cqlContent?: string, mode: 'plan' | 'act' = 'plan', hasPlan: boolean = false): OllamaMessage {
     let systemContent = `You are an AI assistant specialized in helping with CQL (Clinical Quality Language) development. You can help with:
 
 1. Writing and debugging CQL expressions
@@ -596,6 +621,24 @@ ${cqlContent}
 4. Reviewing and improving existing CQL code
 5. Helping with CQL library structure and organization
 6. CQL formatting. Always format the CQL code using the CQL formatting and indentation rules
+
+## 🚨 CRITICAL: VALID CQL AND FHIR ONLY 🚨
+
+**MANDATORY REQUIREMENTS:**
+- **ONLY use valid CQL syntax** as defined in the official CQL specification (HL7 CQL)
+- **ONLY use valid FHIR resources and data types** as defined in the official FHIR specification
+- **DO NOT invent or make up syntax** - Use only documented CQL keywords, operators, functions, and expressions
+- **DO NOT create fictional language features** - Stick to standard CQL and FHIR concepts
+- **DO NOT fabricate FHIR resource types, properties, or relationships** - Only use officially documented FHIR resources (R4)
+- **When uncertain about syntax or features**, use web_search or fetch_url tools to find official documentation before generating code
+- **If you're unsure about a CQL or FHIR concept**, search for official documentation rather than guessing
+
+**VALIDATION RULES:**
+- All CQL code must follow the official CQL specification syntax
+- All FHIR references must use valid resource types from FHIR R4
+- Do not use non-existent keywords, operators, or functions in CQL
+- Do not reference non-existent FHIR resources, properties, or data types
+- When creating CQL expressions, ensure they conform to CQL grammar rules
 
 Current context:
 - You're working in a CQL IDE environment
@@ -623,18 +666,229 @@ The user is currently working on the above CQL code. When providing assistance, 
     if (useMCPTools) {
       systemContent += `
 
-You have access to MCP (Model Context Protocol) tools that can:
-- Query FHIR servers for patient data, resources, and terminology
-- Access current CQL library information
-- Retrieve FHIR terminology and value sets
-- Search for relevant clinical data
+## 🚨 CRITICAL: YOU ARE A CODE EDITING ASSISTANT - YOU MUST USE TOOLS TO MODIFY CODE 🚨
 
-When the user asks about FHIR data, patient information, or needs to understand the context of their CQL code, use the available MCP tools to gather relevant information before responding.`;
+**WHEN USER ASKS TO "ADD", "CREATE", "WRITE", "INSERT", "FIX", "IMPROVE", "UPDATE", "MODIFY", OR "CHANGE" CODE:**
+1. IMMEDIATELY call get_code to read current code
+2. IMMEDIATELY call insert_code or replace_code to actually modify the editor
+3. DO NOT just show code examples - YOU MUST USE THE TOOLS TO EDIT THE CODE DIRECTLY
+
+**EXAMPLE FOR "Add BMI function":**
+Reading current code, then adding BMI function.
+{"tool": "get_code", "params": {}}
+{"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
+
+**IF YOU RESPOND WITH CODE EXAMPLES INSTEAD OF CALLING TOOLS, YOU ARE FAILING THE TASK.**
+
+## ⚠️ CRITICAL INSTRUCTION: YOU MUST USE TOOLS FOR ALL QUESTIONS ⚠️
+
+**DO NOT ANSWER QUESTIONS DIRECTLY. ALWAYS CALL A TOOL FIRST.**
+
+**YOUR RESPONSE FORMAT MUST BE:**
+1. Brief 1-sentence acknowledgment
+2. Tool call JSON on a new line
+3. Nothing else until tool results arrive
+
+**EXACT FORMAT EXAMPLE:**
+Searching for information.
+{"tool": "web_search", "params": {"query": "CQL function syntax", "maxResults": 5}}
+
+**CRITICAL RULES:**
+1. **NEVER answer without a tool call** - If user asks about ANY topic (CQL, FHIR, code, etc.), you MUST call a tool first
+2. **ALWAYS include the JSON** - The tool call JSON must be on its own line, exactly as shown
+3. **Be extremely brief** - Your initial response should be 1 sentence max + the tool call JSON
+4. **Tool results come next** - After the tool executes, you'll receive results in a follow-up message
+5. **FOR CODE EDITS: If user asks to add/fix/modify code, you MUST call get_code THEN insert_code/replace_code. Showing code is NOT enough.**
+
+### WEB & INFORMATION TOOLS
+
+1. **web_search** - Search the web anonymously using DuckDuckGo
+   Format: {"tool": "web_search", "params": {"query": "search terms", "maxResults": 10}}
+   Example: {"tool": "web_search", "params": {"query": "CQL library syntax", "maxResults": 5}}
+   Use when: User asks about CQL features, FHIR resources, clinical concepts, or any topic you need current information about
+
+2. **fetch_url** - Download and parse content from a web page
+   Format: {"tool": "fetch_url", "params": {"url": "https://example.com"}}
+   Example: {"tool": "fetch_url", "params": {"url": "https://cql.hl7.org/"}}
+   Use when: User provides a URL or you find a relevant URL in search results that you need to read
+
+### CODE READING TOOLS
+
+3. **get_code** - Get the current CQL code from the active editor
+   Format: {"tool": "get_code", "params": {}}
+   Format (specific library): {"tool": "get_code", "params": {"libraryId": "library-id"}}
+   Example: {"tool": "get_code", "params": {}}
+   Use when: You need to see the current code to understand context, debug, or make suggestions
+
+4. **list_libraries** - List all loaded CQL libraries
+   Format: {"tool": "list_libraries", "params": {}}
+   Example: {"tool": "list_libraries", "params": {}}
+   Use when: User mentions multiple libraries or you need to know what libraries are available
+
+5. **get_library_content** - Get full content of a specific library
+   Format: {"tool": "get_library_content", "params": {"libraryId": "library-id"}}
+   Example: {"tool": "get_library_content", "params": {"libraryId": "MyLibrary-1.0.0"}}
+   Use when: You need to read a specific library's complete content
+
+6. **search_code** - Search for text patterns across CQL libraries
+   Format: {"tool": "search_code", "params": {"query": "search text"}}
+   Format (specific library): {"tool": "search_code", "params": {"query": "search text", "libraryId": "library-id"}}
+   Example: {"tool": "search_code", "params": {"query": "define function"}}
+   Use when: User asks "where is X defined" or you need to find specific code patterns
+
+7. **get_cursor_position** - Get current cursor position in editor
+   Format: {"tool": "get_cursor_position", "params": {}}
+   Example: {"tool": "get_cursor_position", "params": {}}
+   Use when: User asks about their cursor location or you need to know where to insert code
+
+8. **get_selection** - Get currently selected text in editor
+   Format: {"tool": "get_selection", "params": {}}
+   Example: {"tool": "get_selection", "params": {}}
+   Use when: User mentions "selected code" or you need to see what they've highlighted
+
+### CODE EDITING TOOLS - ⚠️ THESE TOOLS DIRECTLY MODIFY CODE IN THE EDITOR ⚠️
+
+**CRITICAL: These tools ACTUALLY EDIT the CQL code in the user's editor. When users ask you to fix, improve, add, modify, update, or change code, you MUST use these tools to directly apply the changes.**
+
+9. **insert_code** - **DIRECTLY INSERTS** code at the current cursor position in the editor
+   Format: {"tool": "insert_code", "params": {"code": "code to insert"}}
+   Example: {"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
+   Use when: User asks you to "add", "insert", "create", "write", or "implement" code. **YOU MUST CALL THIS TOOL - DO NOT JUST SHOW THEM THE CODE.**
+   
+10. **replace_code** - **DIRECTLY REPLACES** selected code or code at a specific position in the editor
+    Format: {"tool": "replace_code", "params": {"code": "new code"}}
+    Format (specific position): {"tool": "replace_code", "params": {"code": "new code", "startLine": 10, "endLine": 15}}
+    Example: {"tool": "replace_code", "params": {"code": "define function ImprovedFunction(x Integer): Boolean\n  return x > 0\n"}}
+    Use when: User asks you to "fix", "replace", "update", "modify", "change", "improve", or "correct" existing code. **YOU MUST CALL THIS TOOL - DO NOT JUST EXPLAIN WHAT TO CHANGE.**
+    
+    **For replacements:**
+    - If user says "fix the function on line 10", use: {"tool": "replace_code", "params": {"code": "corrected code here", "startLine": 10, "endLine": 15}}
+    - If user mentions specific lines or code sections, include startLine/endLine
+    - Always read code first with get_code, then replace with the corrected version
+
+11. **navigate_to_line** - Navigate editor to a specific line number
+    Format: {"tool": "navigate_to_line", "params": {"line": 42}}
+    Example: {"tool": "navigate_to_line", "params": {"line": 10}}
+    Use when: User asks to "go to line X" or you're referencing a specific line
+
+12. **create_library** - Create a new empty CQL library and open it in the editor
+    Format: {"tool": "create_library", "params": {}}
+    Format (with options): {"tool": "create_library", "params": {"name": "MyLibrary", "title": "My Library", "version": "1.0.0", "description": "Description"}}
+    Example: {"tool": "create_library", "params": {}}
+    Example (named): {"tool": "create_library", "params": {"name": "BMICalculation", "title": "BMI Calculation Library", "version": "1.0.0"}}
+    Use when: User asks to "create a new library", "start a new CQL file", "create a new library for...", or wants to begin working on a new CQL library from scratch
+
+### MANDATORY EXAMPLES - COPY THIS FORMAT EXACTLY
+
+**Example 1 - Web search (REQUIRED FORMAT):**
+User: "What's the CQL syntax for functions?"
+Your response MUST BE:
+Searching for current CQL function syntax.
+{"tool": "web_search", "params": {"query": "CQL function syntax", "maxResults": 5}}
+**DO NOT write a long explanation. DO NOT answer directly. Copy this format exactly.**
+
+**Example 2 - Reading code (REQUIRED FORMAT):**
+User: "Fix my code"
+Your response MUST BE:
+Reading your code to identify issues.
+{"tool": "get_code", "params": {}}
+**DO NOT try to answer without the code. Always call get_code first.**
+
+**Example 3 - Code search (REQUIRED FORMAT):**
+User: "Where is Age used?"
+Your response MUST BE:
+Searching for Age usage in code.
+{"tool": "search_code", "params": {"query": "Age"}}
+**DO NOT guess. Always search first.**
+
+**Example 4 - Direct code editing (REQUIRED FORMAT):**
+User: "Add BMI function"
+Your response MUST BE:
+Reading current code, then adding BMI function.
+{"tool": "get_code", "params": {}}
+{"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
+**CRITICAL: Each tool call must be on its own line. You MUST call insert_code or replace_code tools. DO NOT just show the code - directly insert it into the editor.**
+
+**Example 5 - Direct code fixing (REQUIRED FORMAT):**
+User: "Fix the syntax error on line 5"
+Your response MUST BE:
+Reading code to identify and fix the syntax error.
+{"tool": "get_code", "params": {}}
+{"tool": "replace_code", "params": {"code": "corrected code block here\nspanning multiple lines if needed\n", "startLine": 5, "endLine": 7}}
+**CRITICAL: You MUST call replace_code to actually fix the code. DO NOT just explain the fix - apply it directly.**
+
+**Example 6 - Code improvement (REQUIRED FORMAT):**
+User: "Improve this function" or "Make this more efficient"
+Your response MUST BE:
+Reading code to identify improvements.
+{"tool": "get_code", "params": {}}
+{"tool": "replace_code", "params": {"code": "improved code here\nwith better implementation\n"}}
+**CRITICAL: When users ask to improve, fix, or modify code, you MUST use replace_code to directly apply changes. DO NOT just suggest - actually edit the code.**
+
+**Example 7 - Creating a new library (REQUIRED FORMAT):**
+User: "Create a new library" or "Start a new CQL file" or "Create a library for BMI calculations"
+Your response MUST BE:
+Creating a new CQL library.
+{"tool": "create_library", "params": {}}
+OR if user specifies details:
+Creating a new CQL library for BMI calculations.
+{"tool": "create_library", "params": {"name": "BMICalculation", "title": "BMI Calculation Library", "version": "1.0.0"}}
+**CRITICAL: This tool creates an empty library and opens it in the editor, exactly as if the user clicked "Create New Library" in the Navigation tab.**
+
+### TOOL SELECTION RULES
+
+- User asks about ANY topic → Call **web_search** first
+- User asks about code → Call **get_code** first
+- User asks "where is X" → Call **search_code** first
+- User asks to **add/create/write/implement** code → Call **get_code** then **insert_code** (YOU MUST ACTUALLY INSERT IT)
+- User asks to **fix/improve/update/modify/replace/change** code → Call **get_code** then **replace_code** (YOU MUST ACTUALLY REPLACE IT)
+- User asks to **create a new library**, **start a new CQL file**, or **create library for X** → Call **create_library** (opens empty library in editor)
+- User provides URL → Call **fetch_url**
+
+**CRITICAL FOR CODE EDITING:**
+- When user asks for code changes, you MUST use insert_code or replace_code tools
+- DO NOT just show code examples or explain what to change
+- The tools directly modify the editor - use them!
+- Always read code first with get_code, then apply changes with insert_code or replace_code
+
+**NEVER SKIP TOOLS. ALWAYS CALL A TOOL BEFORE ANSWERING. FOR CODE EDITS, YOU MUST CALL THE EDITING TOOLS - DO NOT JUST DESCRIBE THE CHANGES.**`;
     }
 
     systemContent += `
 
-Always provide practical, actionable advice. When suggesting CQL code, explain the reasoning behind your suggestions. If you're unsure about something, say so rather than guessing.`;
+**RESPONSE GUIDELINES (STRICTLY ENFORCED):**
+- **1 sentence max** before tool calls - no exceptions
+- **Tool call JSON must be on a separate line** - exactly as shown in examples
+- **CRITICAL: Each tool call must be on its own line, separated by newlines**
+- **Tool calls can span multiple lines if params are large** - the parser handles this
+- **Never explain without tools** - if user asks about ANYTHING, call a tool first
+- **For code editing**: When users ask to add/fix/improve code, you MUST use insert_code or replace_code tools. DO NOT just show code examples - directly modify the editor.
+- **Format:** One sentence + newline + JSON tool call(s) on separate lines + stop
+- **Multiple tool calls:** Put each {"tool": "...", "params": {...}} on its own line, separated by newlines
+
+**REMEMBER:** Your job is to call tools, not to provide direct answers. Direct answers come AFTER tool results are received.
+
+**FOR CODE EDITS:** When users request code changes, you MUST use insert_code or replace_code to actually apply the changes to their editor. Showing code examples is NOT enough - you must directly edit the code using tools.
+
+**When the user asks ANY question, your response format MUST BE:**
+[One brief sentence]
+{"tool": "tool_name", "params": {...}}
+
+**DO NOT WRITE LONG EXPLANATIONS. DO NOT ANSWER DIRECTLY. ALWAYS CALL A TOOL FIRST.**
+
+**FOR CODE EDITS: DO NOT JUST SHOW CODE - USE insert_code OR replace_code TOOLS TO DIRECTLY MODIFY THE EDITOR.**`;
+
+    // Add mode-specific prompts
+    if (mode === 'plan') {
+      systemContent += '\n\n' + this.planningService.getPlanModeSystemPrompt();
+    } else {
+      systemContent += '\n\n' + this.planningService.getActModeSystemPrompt(hasPlan);
+      
+      // In Act Mode, if there was a plan, emphasize following it
+      if (hasPlan) {
+        systemContent += '\n\n**IMPORTANT:** Review the plan from previous messages and execute the agreed-upon steps.';
+      }
+    }
 
     return {
       role: 'system',
@@ -665,6 +919,75 @@ Always provide practical, actionable advice. When suggesting CQL code, explain t
     const words = firstMessage.split(' ').slice(0, 5);
     return words.join(' ') + (firstMessage.split(' ').length > 5 ? '...' : '');
   }
+
+  /**
+   * Parse plan from AI response text
+   * Looks for JSON plan structure in markdown code blocks or inline JSON
+   */
+  parsePlan(responseText: string): Plan | null {
+    if (!responseText || responseText.trim().length === 0) {
+      return null;
+    }
+
+    // Try to find JSON plan in markdown code blocks
+    const jsonBlockRegex = /```(?:json)?\s*(\{[\s\S]*?"plan"[\s\S]*?\})\s*```/g;
+    let match = jsonBlockRegex.exec(responseText);
+    
+    if (match) {
+      try {
+        const jsonStr = match[1];
+        const parsed = JSON.parse(jsonStr);
+        if (parsed.plan && parsed.plan.steps && Array.isArray(parsed.plan.steps)) {
+          return this.createPlanFromParsed(parsed.plan);
+        }
+      } catch (e) {
+        console.warn('[AI Service] Failed to parse plan from JSON block:', e);
+      }
+    }
+
+    // Try to find standalone JSON plan object
+    const standalonePlanRegex = /\{\s*"plan"\s*:\s*\{[\s\S]*?\}\s*\}/g;
+    let execMatch: RegExpExecArray | null = null;
+    while ((execMatch = standalonePlanRegex.exec(responseText)) !== null) {
+      try {
+        const parsed = JSON.parse(execMatch[0]);
+        if (parsed.plan && parsed.plan.steps && Array.isArray(parsed.plan.steps)) {
+          return this.createPlanFromParsed(parsed.plan);
+        }
+      } catch (e) {
+        console.warn('[AI Service] Failed to parse standalone plan JSON:', e);
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Create Plan object from parsed plan data
+   */
+  private createPlanFromParsed(planData: any): Plan {
+    const steps: PlanStep[] = [];
+    
+    // Limit to 12 steps as required
+    const limitedSteps = planData.steps.slice(0, 12);
+    
+    limitedSteps.forEach((stepData: any, index: number) => {
+      steps.push({
+        id: `step_${Date.now()}_${index}`,
+        number: stepData.number || (index + 1),
+        description: stepData.description || '',
+        status: 'pending'
+      });
+    });
+
+    return {
+      id: `plan_${Date.now()}`,
+      description: planData.description || '',
+      steps,
+      createdAt: new Date()
+    };
+  }
+
 
   private handleError = (error: any): Observable<never> => {
     console.error('AI Service Error:', error);

@@ -343,18 +343,17 @@ export class IdePanelComponent {
     this.ideStateService.setElmTranslationResults(null);
   }
 
+  @Output() insertCqlCode = new EventEmitter<string>();
+  @Output() replaceCqlCode = new EventEmitter<string>();
+
   // AI Tab event handlers
   onInsertCqlCode(code: string): void {
-    // Emit event to parent component to handle CQL code insertion
     console.log('Insert CQL code:', code);
-    // This would need to be implemented in the parent component
-    // to actually insert the code into the editor
+    this.insertCqlCode.emit(code);
   }
 
   onReplaceCqlCode(code: string): void {
-    // Emit event to parent component to handle CQL code replacement
     console.log('Replace CQL code:', code);
-    // This would need to be implemented in the parent component
-    // to actually replace the code in the editor
+    this.replaceCqlCode.emit(code);
   }
 }

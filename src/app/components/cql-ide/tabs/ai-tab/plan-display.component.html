@@ -1,0 +1,35 @@
+<div class="plan-display-container">
+  @if (plan.description) {
+  <div class="plan-description">
+    <span class="plan-description-label">Plan:</span>
+    <span class="plan-description-text">{{ plan.description }}</span>
+  </div>
+  }
+
+  <div class="plan-steps">
+    @for (step of plan.steps; track step.id) {
+    <div class="plan-step {{ getStepStatusClass(step) }}" [class.executing]="step.status === 'in-progress'">
+      <div class="d-flex align-items-start">
+        <div class="step-number">
+          <i class="bi {{ getStepStatusIcon(step) }}" [class.spinning]="step.status === 'in-progress'"></i>
+        </div>
+        <div class="step-content flex-fill">
+          <div class="step-description">{{ step.description }}</div>
+        </div>
+      </div>
+    </div>
+    }
+  </div>
+
+  @if (editable && !executing) {
+  <div class="plan-actions">
+    <button class="btn btn-primary btn-sm" (click)="onExecute()" id="execute-plan-button">
+      <i class="bi bi-play-fill me-1"></i>Execute
+    </button>
+    <button class="btn btn-outline-secondary btn-sm" (click)="onRevise()" id="revise-plan-button">
+      <i class="bi bi-pencil me-1"></i>Revise
+    </button>
+  </div>
+  }
+</div>
+

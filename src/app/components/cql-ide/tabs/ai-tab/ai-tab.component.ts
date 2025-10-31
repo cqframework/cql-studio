@@ -1,110 +1,148 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, computed, signal, ViewChild, ElementRef, AfterViewChecked, OnInit, effect } from '@angular/core';
+import { Component, Input, Output, EventEmitter, computed, signal, ViewChild, ElementRef, AfterViewChecked, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { MarkdownComponent } from 'ngx-markdown';
-import { AiService, AIConversation, OllamaMessage } from '../../../../services/ai.service';
+import { AiService } from '../../../../services/ai.service';
 import { IdeStateService } from '../../../../services/ide-state.service';
 import { SettingsService } from '../../../../services/settings.service';
-import { ConversationContextService, ConversationContext } from '../../../../services/conversation-context.service';
+import { ConversationManagerService, Conversation, UIMessage } from '../../../../services/conversation-manager.service';
+import { ToolResult } from '../../../../services/tool-orchestrator.service';
+import { ToolCallParserService, ParsedToolCall } from '../../../../services/tool-call-parser.service';
+import { CodeDiffPreviewComponent, CodeDiff } from './code-diff-preview.component';
+import { AiConversationStateService } from '../../../../services/ai-conversation-state.service';
+import { AiToolExecutionManagerService } from '../../../../services/ai-tool-execution-manager.service';
+import { Plan, PlanStep } from '../../../../models/plan.model';
+import { PlanDisplayComponent } from './plan-display.component';
 
 @Component({
   selector: 'app-ai-tab',
   standalone: true,
-  imports: [CommonModule, FormsModule, MarkdownComponent],
+  imports: [CommonModule, FormsModule, MarkdownComponent, CodeDiffPreviewComponent, PlanDisplayComponent],
   templateUrl: './ai-tab.component.html',
   styleUrls: ['./ai-tab.component.scss']
 })
-export class AiTabComponent implements OnInit, AfterViewChecked {
+export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {
   @ViewChild('messagesContainer') messagesContainer!: ElementRef;
+  @ViewChild('scrollSentinel') scrollSentinel!: ElementRef;
   private _cqlContent = signal<string>('');
   @Input() set cqlContent(value: string) {
     this._cqlContent.set(value);
-    // Reload suggested commands when CQL content changes
-    this.loadSuggestedCommands();
-    // Update context when CQL content changes
-    this.updateContextForContentChange();
   }
   get cqlContent(): string {
     return this._cqlContent();
   }
-  @Output() insertCqlCode = new EventEmitter<string>();
   @Output() replaceCqlCode = new EventEmitter<string>();
+  @Output() insertCqlCode = new EventEmitter<string>();
 
   // Component state signals
   private _isLoading = signal(false);
   private _currentMessage = signal('');
-  private _conversations = signal<AIConversation[]>([]);
-  private _activeConversationId = signal<string | null>(null);
   private _error = signal<string | null>(null);
-  private _currentContext = signal<ConversationContext | null>(null);
-  private _contextualConversations = signal<AIConversation[]>([]);
-  private _lastProcessedEditorId = signal<string | null>(null);
-  private _contextSwitchingSetup = false;
   
   // Connection state signals
   private _connectionStatus = signal<'unknown' | 'testing' | 'connected' | 'error'>('unknown');
   private _availableModels = signal<string[]>([]);
   private _connectionError = signal<string>('');
-  
-  // Streaming state signals
-  private _streamingResponse = signal<string>('');
-  private _isStreaming = signal<boolean>(false);
-  
-  // Suggestions state signals
   private _suggestedCommands = signal<string[]>([]);
   private _isLoadingSuggestions = signal<boolean>(false);
+  private _codeDiffPreview = signal<CodeDiff | null>(null);
+  private _showDiffPreview = signal<boolean>(false);
+  
+  public currentMode = computed(() => {
+    const conversation = this.activeConversation();
+    return conversation?.mode || this.settingsService.settings().defaultMode || 'plan';
+  });
+  
+  private _currentSubscription: Subscription | null = null;
+  private _lastMessageCount = 0;
+  private _lastStreamingLength = 0;
+  private _scrollRafId: number | null = null;
+  private _userScrolledUp = false;
+  private _intersectionObserver: IntersectionObserver | null = null;
 
-  // Computed properties
   public isLoading = computed(() => this._isLoading());
   public currentMessage = computed(() => this._currentMessage());
-  public conversations = computed(() => this._conversations());
-  public activeConversationId = computed(() => this._activeConversationId());
   public error = computed(() => this._error());
   public useMCPTools = computed(() => this.settingsService.settings().useMCPTools);
-  public activeConversation = computed(() => {
-    const id = this._activeConversationId();
-    return id ? this._conversations().find(c => c.id === id) : null;
-  });
+  public activeConversation = computed(() => this.conversationManager.activeConversation());
+  
+  public activeConversationId = computed(() => this.activeConversation()?.id || null);
+  public conversations = computed(() => this.conversationManager.getAllConversations());
   public hasActiveConversation = computed(() => !!this.activeConversation());
+  
   public canSendMessage = computed(() => 
     !this._isLoading() && this._currentMessage().trim().length > 0
   );
+  public canStop = computed(() => 
+    this._isLoading() || this.conversationState.isStreaming()
+  );
+  public canToggleMode = computed(() => 
+    !this._isLoading() && !this.conversationState.isStreaming()
+  );
   public isAiAvailable = computed(() => this.aiService.isAiAssistantAvailable());
-  public currentContext = computed(() => this._currentContext());
-  public contextualConversations = computed(() => this._contextualConversations());
-  
-  // Connection computed properties
   public connectionStatus = computed(() => this._connectionStatus());
   public availableModels = computed(() => this._availableModels());
   public connectionError = computed(() => this._connectionError());
-  
-  // Streaming computed properties
-  public streamingResponse = computed(() => this._streamingResponse());
-  public isStreaming = computed(() => this._isStreaming());
-  
-  // Suggestions computed properties
+  public streamingResponse = computed(() => this.conversationState.streamingResponse());
+  public isStreaming = computed(() => this.conversationState.isStreaming());
   public suggestedCommands = computed(() => this._suggestedCommands());
   public isLoadingSuggestions = computed(() => this._isLoadingSuggestions());
+  public pendingToolCalls = computed(() => this.conversationState.pendingToolCalls());
+  public executingToolCalls = computed(() => this.conversationState.executingToolCalls());
+  public toolExecutionResults = computed(() => this.conversationState.toolExecutionResults());
+  public codeDiffPreview = computed(() => this._codeDiffPreview());
+  public showDiffPreview = computed(() => this._showDiffPreview());
+  public activePlan = computed(() => this.activeConversation()?.plan);
+  public isPlanExecuting = computed(() => {
+    const plan = this.activePlan();
+    if (!plan) return false;
+    return plan.steps.some(s => s.status === 'in-progress');
+  });
 
   constructor(
     private aiService: AiService,
     public ideStateService: IdeStateService,
     public settingsService: SettingsService,
-    private conversationContextService: ConversationContextService,
-    private router: Router
+    private conversationManager: ConversationManagerService,
+    private router: Router,
+    private toolCallParser: ToolCallParserService,
+    private conversationState: AiConversationStateService,
+    private toolExecutionManager: AiToolExecutionManagerService
   ) {
-    console.log('AiTabComponent constructor called');
-    this.loadConversations();
-    this.loadSuggestedCommands();
-    this.loadCurrentContext();
   }
 
   ngOnInit(): void {
-    console.log('ngOnInit called, setting up context switching');
-    this.setupContextSwitching();
+  }
+  
+  ngAfterViewInit(): void {
+    setTimeout(() => {
+      this.setupScrollSentinelObserver();
+    }, 0);
+  }
+
+  ngOnDestroy(): void {
+    if (this._currentSubscription) {
+      this._currentSubscription.unsubscribe();
+      this._currentSubscription = null;
+    }
+    
+    if (this._intersectionObserver) {
+      this._intersectionObserver.disconnect();
+      this._intersectionObserver = null;
+    }
+    
+    if (this._scrollRafId !== null) {
+      cancelAnimationFrame(this._scrollRafId);
+      this._scrollRafId = null;
+    }
+    
+    if (this.messagesContainer) {
+      this.messagesContainer.nativeElement.removeEventListener('scroll', this.onUserScroll);
+    }
   }
 
   onMessageChange(event: Event): void {
@@ -112,16 +150,14 @@ export class AiTabComponent implements OnInit, AfterViewChecked {
     const value = target?.value || '';
     this._currentMessage.set(value);
     this._error.set(null);
-    
-    // Auto-resize textarea
     this.autoResizeTextarea(target);
   }
 
   private autoResizeTextarea(textarea: HTMLTextAreaElement): void {
     textarea.style.height = 'auto';
     const scrollHeight = textarea.scrollHeight;
-    const maxHeight = 120; // max-height from CSS
-    const minHeight = 36; // min-height from CSS
+    const maxHeight = 120;
+    const minHeight = 36;
     
     if (scrollHeight > maxHeight) {
       textarea.style.height = maxHeight + 'px';
@@ -135,241 +171,61 @@ export class AiTabComponent implements OnInit, AfterViewChecked {
     }
   }
 
-
-  onSendMessage(): void {
-    console.log('onSendMessage called');
-    const message = this._currentMessage().trim();
-    console.log('Message to send:', message);
-    console.log('Is loading:', this._isLoading());
-    
-    if (!message || this._isLoading()) {
-      console.log('Not sending message - empty message or already loading');
-      return;
-    }
-
-    // Clear suggested commands when starting a conversation
-    this._suggestedCommands.set([]);
-
-    this._isLoading.set(true);
-    this._error.set(null);
-    this._isStreaming.set(true);
-    this._streamingResponse.set('');
-    
-    console.log('Starting streaming - isStreaming set to:', this.isStreaming());
-    console.log('AI Assistant available:', this.isAiAvailable());
-    console.log('Use MCP Tools:', this.useMCPTools());
-    console.log('CQL Content length:', this.cqlContent.length);
-
-    // Use context-aware message sending
-    let conversationId = this._activeConversationId();
-    
-    // If no active conversation, try to get relevant one for current context
-    if (!conversationId) {
-      conversationId = this.aiService.getRelevantConversation();
+  public onStopRequest(): void {
+    if (this._currentSubscription) {
+      this._currentSubscription.unsubscribe();
+      this._currentSubscription = null;
     }
     
-    console.log('Sending message with conversation ID:', conversationId);
-    
-    this.aiService.sendStreamingMessage(
-      message,
-      conversationId || undefined,
-      this.useMCPTools(),
-      this.cqlContent
-    ).subscribe({
-      next: (event) => {
-        console.log('Streaming event received:', event);
-        if (event.type === 'start') {
-          console.log('Streaming started');
-          // Start of streaming response
-          this._streamingResponse.set('');
-        } else if (event.type === 'chunk') {
-          console.log('Streaming chunk:', event.content);
-          
-          // Add chunk to streaming response
-          this._streamingResponse.set(this._streamingResponse() + (event.content || ''));
-          console.log('Updated streaming response:', this._streamingResponse());
-        } else if (event.type === 'end') {
-          console.log('Streaming ended');
-          // End of streaming response
-          this._isLoading.set(false);
-          this._currentMessage.set('');
-          this._isStreaming.set(false);
-          this._streamingResponse.set('');
-          
-          // Update conversations
-          this.loadConversations();
-          
-          // If this was a new conversation, set it as active and associate with current context
-          if (!this._activeConversationId()) {
-            const conversations = this._conversations();
-            if (conversations.length > 0) {
-              const newConversationId = conversations[conversations.length - 1].id;
-              this._activeConversationId.set(newConversationId);
-              
-              // Associate the new conversation with the current context
-              this.conversationContextService.createOrGetContext(newConversationId);
-              this.loadCurrentContext();
-            }
-          }
-        }
-      },
-      error: (error) => {
-        console.error('Streaming error:', error);
-        this._isLoading.set(false);
-        this._isStreaming.set(false);
-        this._streamingResponse.set('');
-        this._error.set(error.message || 'Failed to send message');
-      }
-    });
+    this._isLoading.set(false);
+    this.conversationState.resetState();
   }
 
-  onKeyPress(event: KeyboardEvent): void {
+  public onKeyPress(event: KeyboardEvent): void {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       this.onSendMessage();
     }
   }
 
-  onSelectConversation(conversationId: string): void {
-    this._activeConversationId.set(conversationId);
+  public onSelectConversation(conversationId: string): void {
+    const conversation = this.conversations().find(c => c.id === conversationId);
+    if (conversation) {
+      this.conversationManager.switchToEditor(conversation.editorId);
+    }
     this._error.set(null);
   }
 
-  onNewConversation(): void {
-    this._activeConversationId.set(null);
+  public onNewConversation(): void {
     this._currentMessage.set('');
     this._error.set(null);
-    // Reload suggested commands when starting a new conversation
-    this.loadSuggestedCommands();
   }
 
-  onDeleteConversation(conversationId: string): void {
-    this.aiService.deleteConversation(conversationId);
-    this.loadConversations();
-    
-    // If we deleted the active conversation, clear it
-    if (this._activeConversationId() === conversationId) {
-      this._activeConversationId.set(null);
-    }
+  public onDeleteConversation(conversationId: string): void {
+    this.conversationManager.deleteConversation(conversationId);
   }
 
-
-  onInsertCode(code: string): void {
-    this.insertCqlCode.emit(code);
-  }
-
-  onReplaceCode(code: string): void {
-    this.replaceCqlCode.emit(code);
-  }
-
-  onCopyMessage(content: string): void {
-    navigator.clipboard.writeText(content).then(() => {
-      // Could show a toast notification here
-    });
-  }
-
-  onRegenerateResponse(): void {
-    const conversation = this.activeConversation();
-    if (!conversation || conversation.messages.length < 2) return;
-
-    // Remove the last assistant message and resend
-    const messages = conversation.messages;
-    const lastUserMessage = messages[messages.length - 2];
-    
-    if (lastUserMessage.role === 'user') {
-      this._currentMessage.set(lastUserMessage.content);
-      this.onSendMessage();
-    }
-  }
-
-
-  onClearAllConversations(): void {
+  public onClearAllConversations(): void {
     if (confirm('Are you sure you want to clear all conversations? This action cannot be undone.')) {
-      this.aiService.clearAllConversations();
-      this._conversations.set([]);
-      this._activeConversationId.set(null);
-      this._streamingResponse.set('');
+      this.conversationManager.clearAllConversations();
+      this.conversationState.resetState();
     }
   }
 
-  private loadConversations(): void {
-    this._conversations.set(this.aiService.getConversations());
-    this.loadContextualConversations();
-  }
-
-  private loadCurrentContext(): void {
-    const context = this.conversationContextService.activeContext();
-    this._currentContext.set(context || null);
-    
-    if (context) {
-      // Load conversation for this context
-      const conversation = this.aiService.getConversation(context.conversationId);
-      if (conversation) {
-        this._activeConversationId.set(conversation.id);
-      }
-    }
-  }
-
-  private loadContextualConversations(): void {
-    const currentContext = this._currentContext();
-    if (currentContext) {
-      const contextualConversations = this.aiService.getConversationsForContext(currentContext.editorId);
-      this._contextualConversations.set(contextualConversations);
-    } else {
-      this._contextualConversations.set([]);
-    }
-  }
-
-  private loadSuggestedCommands(): void {
-    // Only load suggestions if no active conversation and CQL content exists
-    if (this.hasActiveConversation() || !this.cqlContent?.trim()) {
-      this._suggestedCommands.set([]);
-      return;
-    }
-
-    this._isLoadingSuggestions.set(true);
-    this._suggestedCommands.set([]);
-
-    // Use AI-generated suggestions based on current content
-    this.aiService.generateSuggestedCommands(this.cqlContent).subscribe({
-      next: (commands) => {
-        this._suggestedCommands.set(commands);
-        this._isLoadingSuggestions.set(false);
-      },
-      error: (error) => {
-        console.warn('Failed to load suggested commands:', error);
-        this._suggestedCommands.set([]);
-        this._isLoadingSuggestions.set(false);
-      }
-    });
-  }
-
-  onSuggestedCommandClick(command: string): void {
-    console.log('Suggested command clicked:', command);
-    // Set the command as the current message and send it
-    this._currentMessage.set(command);
-    console.log('Current message set to:', this._currentMessage());
-    this.onSendMessage();
-  }
-
-  onRefreshSuggestions(): void {
-    this.loadSuggestedCommands();
-  }
-
-
-  onNavigateToSettings(): void {
+  public onNavigateToSettings(): void {
     this.router.navigate(['/settings']);
   }
 
-  testConnection(): void {
+  public testConnection(): void {
     this._connectionStatus.set('testing');
     this._connectionError.set('');
     
     this.aiService.testOllamaConnection().subscribe({
       next: (result) => {
-        this._connectionStatus.set('connected');
-        this._availableModels.set(result.models);
-        this._connectionError.set('');
+        const status: 'connected' | 'error' | 'testing' | 'unknown' = result.connected ? 'connected' : (result.error ? 'error' : 'unknown');
+        this._connectionStatus.set(status);
+        this._connectionError.set(result.error || '');
+        this._availableModels.set(result.models || []);
       },
       error: (error) => {
         this._connectionStatus.set('error');
@@ -379,212 +235,936 @@ export class AiTabComponent implements OnInit, AfterViewChecked {
     });
   }
 
-  testContextSwitching(): void {
+  public testContextSwitching(): void {
     console.log('Manual context switching test');
     console.log('Current library ID:', this.ideStateService.activeLibraryId());
     console.log('Current panel state:', this.ideStateService.panelState());
-    console.log('Last processed editor ID:', this._lastProcessedEditorId());
-    console.log('Current context:', this._currentContext());
-    console.log('Active conversation ID:', this._activeConversationId());
+    console.log('Active conversation:', this.activeConversation());
+    console.log('Active conversation ID:', this.activeConversationId());
     
-    // Test manual context change
-    this.onEditorContextChanged('test_editor_123');
-  }
-
-
-  ngAfterViewChecked(): void {
-    // Auto-scroll to bottom when new messages arrive or streaming
-    if (this.messagesContainer) {
-      const element = this.messagesContainer.nativeElement;
-      element.scrollTop = element.scrollHeight;
+    const editorContext = this.conversationManager.getCurrentEditorContext();
+    if (editorContext) {
+      this.conversationManager.switchToEditor(editorContext.editorId);
     }
   }
 
-  /**
-   * Update context when CQL content changes
-   */
-  private updateContextForContentChange(): void {
-    const activeConversationId = this._activeConversationId();
-    if (activeConversationId) {
-      const contentSummary = this.generateContentSummary();
-      this.conversationContextService.updateContextForContentChange(activeConversationId, contentSummary);
-    }
-  }
-
-  /**
-   * Generate a summary of the current content for context
-   */
-  private generateContentSummary(): string {
-    const content = this.cqlContent;
-    if (!content || content.trim().length === 0) {
-      return 'Empty content';
-    }
-
-    // Generate a brief summary of the content
-    const lines = content.split('\n');
-    const firstLine = lines[0]?.trim() || '';
-    const lineCount = lines.length;
-    
-    if (firstLine.includes('library')) {
-      return `CQL Library (${lineCount} lines): ${firstLine.substring(0, 50)}...`;
-    } else if (firstLine.includes('define')) {
-      return `CQL Expression (${lineCount} lines): ${firstLine.substring(0, 50)}...`;
-    } else {
-      return `CQL Content (${lineCount} lines): ${firstLine.substring(0, 50)}...`;
-    }
-  }
-
-  /**
-   * Switch to a different editor context
-   */
-  onSwitchToEditorContext(editorId: string): void {
-    const conversationId = this.aiService.switchToEditorContext(editorId);
-    if (conversationId) {
-      this._activeConversationId.set(conversationId);
-      this.loadCurrentContext();
-      this.loadContextualConversations();
-    }
-  }
-
-  /**
-   * Get context history for current editor
-   */
-  getContextHistory(): ConversationContext[] {
-    const currentContext = this._currentContext();
-    if (currentContext) {
-      return this.conversationContextService.getContextHistory(currentContext.editorId);
+  public getContextHistory(): Conversation[] {
+    const editorContext = this.conversationManager.getCurrentEditorContext();
+    if (editorContext) {
+      const allConversations = this.conversationManager.getAllConversations();
+      return allConversations.filter(c => c.editorId === editorContext.editorId);
     }
     return [];
   }
 
-  /**
-   * Get context display name
-   */
-  getContextDisplayName(context: ConversationContext): string {
-    if (context.libraryName) {
-      return `CQL: ${context.libraryName}`;
-    } else if (context.fileName) {
-      return `File: ${context.fileName}`;
+  public getContextDisplayName(conversation: Conversation): string {
+    if (conversation.libraryName) {
+      return `CQL: ${conversation.libraryName}`;
+    } else if (conversation.fileName) {
+      return `File: ${conversation.fileName}`;
     } else {
-      return context.contextSummary;
+      return conversation.title;
     }
   }
 
-  /**
-   * Setup automatic context switching when IDE state changes
-   */
-  private setupContextSwitching(): void {
-    console.log('setupContextSwitching called, already setup:', this._contextSwitchingSetup);
-    if (this._contextSwitchingSetup) {
-      return; // Already setup
+  public onSwitchToEditorContext(editorId: string): void {
+    this.conversationManager.switchToEditor(editorId);
+  }
+
+  public filterToolResultsFromMessage(content: string): string {
+    return this.aiService.sanitizeMessageContent(content);
+  }
+
+  public shouldPulsate(): boolean {
+    return this.conversationState.isStreaming() || 
+           this.conversationState.pendingToolCalls().length > 0 ||
+           this.conversationState.executingToolCalls().size > 0;
+  }
+
+  public getToolExecutionStatus(): string {
+    const pending = this.conversationState.pendingToolCalls();
+    const executing = this.conversationState.executingToolCalls();
+    
+    if (executing.size > 0) {
+      const tools = Array.from(executing.values()).map(c => c.tool).join(', ');
+      return `Executing: ${tools}`;
+    } else if (pending.length > 0) {
+      const tools = pending.map(c => c.tool).join(', ');
+      return `Pending: ${tools}`;
     }
-    this._contextSwitchingSetup = true;
-    console.log('Setting up context switching effects');
-    
-    // Test effect to verify effects are working
-    effect(() => {
-      console.log('Test effect triggered - effects are working!');
-    });
-    
-    // Watch for changes in active library using effect
-    effect(() => {
-      try {
-        const libraryId = this.ideStateService.activeLibraryId();
-        console.log('Library effect triggered, libraryId:', libraryId);
-        console.log('IDE State Service available:', !!this.ideStateService);
-        console.log('activeLibraryId method available:', typeof this.ideStateService.activeLibraryId);
-        if (libraryId) {
-          const editorId = `library_${libraryId}`;
-          console.log('Processing library editorId:', editorId, 'lastProcessed:', this._lastProcessedEditorId());
-          if (this._lastProcessedEditorId() !== editorId) {
-            this._lastProcessedEditorId.set(editorId);
-            this.onEditorContextChanged(editorId);
-          }
-        }
-      } catch (error) {
-        console.error('Error in library effect:', error);
-      }
-    });
-
-    // Watch for changes in panel tabs to detect editor changes
-    effect(() => {
-      try {
-        const panelState = this.ideStateService.panelState();
-        console.log('Panel effect triggered, panelState:', panelState);
-        if (!panelState) return;
-        
-        const leftPanel = panelState.left;
-        const rightPanel = panelState.right;
-        const bottomPanel = panelState.bottom;
-        
-        if (!leftPanel || !rightPanel || !bottomPanel) return;
-        
-        // Check for active tabs in each panel, but only for relevant tab types
-        const activeTabs = [
-          ...(leftPanel.tabs || []).filter(tab => tab.isActive && this.isRelevantTabType(tab.type)),
-          ...(rightPanel.tabs || []).filter(tab => tab.isActive && this.isRelevantTabType(tab.type)),
-          ...(bottomPanel.tabs || []).filter(tab => tab.isActive && this.isRelevantTabType(tab.type))
-        ];
-        
-        console.log('Active tabs found:', activeTabs);
-        
-        if (activeTabs.length > 0) {
-          const activeTab = activeTabs[0]; // Get the first active tab
-          const editorId = `tab_${activeTab.id}`;
-          console.log('Processing tab editorId:', editorId, 'lastProcessed:', this._lastProcessedEditorId());
-          
-          if (this._lastProcessedEditorId() !== editorId) {
-            this._lastProcessedEditorId.set(editorId);
-            this.onEditorContextChanged(editorId);
-          }
-        }
-      } catch (error) {
-        console.error('Error in panel effect:', error);
-      }
-    });
+    return '';
   }
 
-  /**
-   * Check if a tab type is relevant for context switching
-   */
-  private isRelevantTabType(tabType: string): boolean {
-    // Only switch contexts for tabs that contain actual content/editors
-    const relevantTypes = ['fhir', 'elm', 'problems', 'output', 'ai'];
-    return relevantTypes.includes(tabType);
+  public onCancelToolExecutions(): void {
+    this.toolExecutionManager.cancelAllExecutions();
   }
 
-  /**
-   * Handle editor context changes
-   */
-  private onEditorContextChanged(editorId: string): void {
-    try {
-      console.log('onEditorContextChanged called with:', editorId);
-      // Switch to the relevant conversation for this editor
-      const relevantConversationId = this.aiService.switchToEditorContext(editorId);
-      const currentConversationId = this._activeConversationId();
+  public onApproveCodeDiff(): void {
+    const diff = this._codeDiffPreview();
+    if (diff) {
+      this.replaceCqlCode.emit(diff.after);
+      this._showDiffPreview.set(false);
+      this._codeDiffPreview.set(null);
+    }
+  }
+
+  public onRejectCodeDiff(): void {
+    this._showDiffPreview.set(false);
+    this._codeDiffPreview.set(null);
+  }
+
+  public toggleMode(): void {
+    if (!this.canToggleMode()) {
+      return;
+    }
+    
+    const conversation = this.activeConversation();
+    if (!conversation) {
+      return;
+    }
+    
+    const newMode: 'plan' | 'act' = conversation.mode === 'plan' ? 'act' : 'plan';
+    this.conversationManager.updateConversationMode(conversation.id, newMode);
+  }
+
+  public onRefreshSuggestions(): void {
+    this.loadSuggestedCommands();
+  }
+
+  public onSuggestedCommandClick(command: string): void {
+    this._currentMessage.set(command);
+    this.onSendMessage();
+  }
+
+  private hashString(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash;
+    }
+    return hash.toString();
+  }
+
+  private removeToolCallJsonFromResponse(response: string, toolCalls: ParsedToolCall[]): string {
+    let cleaned = response;
+    
+    for (const toolCall of toolCalls) {
+      if (toolCall.raw) {
+        if (cleaned.includes(toolCall.raw)) {
+          cleaned = cleaned.replace(toolCall.raw, '').trim();
+        }
+      }
+    }
+    
+    const standaloneToolCallPattern = /\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[\s\S]*?\}\s*\}/g;
+    cleaned = cleaned.replace(standaloneToolCallPattern, '').trim();
+    
+    const lines = cleaned.split('\n');
+    const filteredLines = lines.filter(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('{') && trimmed.includes('"tool"') && trimmed.includes('"params"')) {
+        return false;
+      }
+      return true;
+    });
+    
+    return filteredLines.join('\n').trim();
+  }
+
+  private handleToolResult(toolCall: ParsedToolCall, result: ToolResult): void {
+    if (toolCall.tool === 'insert_code' || toolCall.tool === 'replace_code') {
+      let code = '';
+      if (toolCall.params && toolCall.params['code']) {
+        code = typeof toolCall.params['code'] === 'string' 
+          ? toolCall.params['code'] 
+          : String(toolCall.params['code']);
+      }
       
-      console.log('Context change - relevant:', relevantConversationId, 'current:', currentConversationId);
-      
-      // Only update if there's an actual change
-      if (relevantConversationId !== currentConversationId) {
-        if (relevantConversationId) {
-          console.log('Switching to conversation:', relevantConversationId);
-          this._activeConversationId.set(relevantConversationId);
-          this.loadCurrentContext();
-          this.loadContextualConversations();
-          this.loadSuggestedCommands();
+      if (!code || code.trim().length === 0) {
+        console.warn('[handleToolResult] No code found in tool call params', toolCall);
+        return;
+      }
+
+      if (toolCall.tool === 'replace_code') {
+        const currentCode = this.cqlContent || '';
+        const autoApply = this.settingsService.settings().autoApplyCodeEdits && 
+                         !this.settingsService.settings().requireDiffPreview;
+        
+        if (autoApply) {
+          this.replaceCqlCode.emit(code);
         } else {
-          console.log('Clearing active conversation');
-          this._activeConversationId.set(null);
-          this.loadCurrentContext();
-          this.loadContextualConversations();
-          this.loadSuggestedCommands();
+          const diff: CodeDiff = {
+            before: currentCode,
+            after: code,
+            title: 'Replace Code',
+            description: 'Code replacement preview'
+          };
+          this._codeDiffPreview.set({ ...diff });
+          this._showDiffPreview.set(true);
+        }
+      } else if (toolCall.tool === 'insert_code') {
+        const autoApply = this.settingsService.settings().autoApplyCodeEdits && 
+                         !this.settingsService.settings().requireDiffPreview;
+        
+        if (autoApply) {
+          const currentCode = this.cqlContent || '';
+          this.replaceCqlCode.emit(currentCode + '\n' + code);
+        } else {
+          const currentCode = this.cqlContent || '';
+          const diff: CodeDiff = {
+            before: currentCode,
+            after: currentCode + '\n' + code,
+            title: 'Insert Code',
+            description: 'Code insertion preview'
+          };
+          this._codeDiffPreview.set({ ...diff });
+          this._showDiffPreview.set(true);
+        }
+      }
+    }
+  }
+
+  public onSendMessage(): void {
+    const message = this._currentMessage().trim();
+    
+    if (!message || this._isLoading()) {
+      return;
+    }
+
+    this._suggestedCommands.set([]);
+    this.conversationState.resetState();
+    this._isLoading.set(true);
+    this._error.set(null);
+
+    const editorContext = this.conversationManager.getCurrentEditorContext();
+    const editorId = editorContext?.editorId;
+    
+    if (this._currentSubscription) {
+      this._currentSubscription.unsubscribe();
+      this._currentSubscription = null;
+    }
+    
+    const mode = this.currentMode();
+    const subscription = this.aiService.sendStreamingMessage(
+      message,
+      editorId,
+      this.useMCPTools(),
+      this.cqlContent,
+      undefined,
+      mode
+    );
+    
+    this._currentSubscription = subscription.subscribe({
+      next: async (event) => {
+        if (event.type === 'start') {
+          this.conversationState.startStreaming();
+        } else if (event.type === 'chunk') {
+          let chunkContent = event.content || '';
+          const toolCallInChunk = /\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[\s\S]*?\}\s*\}/g;
+          chunkContent = chunkContent.replace(toolCallInChunk, '');
+          
+          if (chunkContent.trim().length > 0) {
+            this.conversationState.addStreamingChunk(chunkContent);
+          }
+        } else if (event.type === 'end') {
+          const finalResponse = this.conversationState.streamingResponse();
+          await this.handleMainStreamResponse(finalResponse);
+        }
+      },
+      error: (err: any) => {
+        console.error('Streaming error:', err);
+        this._isLoading.set(false);
+        
+        let errorMessage = 'Failed to send message';
+        if (err?.message) {
+          errorMessage = err.message;
+        } else if (err instanceof TypeError && err.message === 'Failed to fetch') {
+          errorMessage = 'Unable to connect to Ollama server. Please check your settings and ensure the server is running.';
+        }
+        
+        this.conversationState.setError(errorMessage);
+        this.conversationState.endStreaming();
+        this._error.set(errorMessage);
+        this._currentSubscription = null;
+      },
+      complete: (): void => {
+        this._currentSubscription = null;
+      }
+    });
+  }
+
+  public onReplaceCode(code: string): void {
+    this.replaceCqlCode.emit(code);
+  }
+
+  private loadSuggestedCommands(): void {
+    if (this.hasActiveConversation() || !this.cqlContent?.trim()) {
+      this._suggestedCommands.set([]);
+      return;
+    }
+
+    this._isLoadingSuggestions.set(true);
+    this._suggestedCommands.set([]);
+
+    this.aiService.generateSuggestedCommands(this.cqlContent).subscribe({
+      next: (commands) => {
+        this._suggestedCommands.set(commands);
+        this._isLoadingSuggestions.set(false);
+      },
+      error: (error) => {
+        this._suggestedCommands.set([]);
+        this._isLoadingSuggestions.set(false);
+      }
+    });
+  }
+
+  public ngAfterViewChecked(): void {
+    if (!this.messagesContainer) {
+      return;
+    }
+
+    const conversation = this.activeConversation();
+    const messageCount = conversation?.uiMessages?.length || 0;
+    const streamingLength = this.conversationState.streamingResponse().length;
+    const isStreaming = this.conversationState.isStreaming();
+    const hasToolCalls = this.conversationState.pendingToolCalls().length > 0;
+    
+    if (messageCount > this._lastMessageCount || 
+        (isStreaming && streamingLength > this._lastStreamingLength) ||
+        hasToolCalls) {
+      this._lastMessageCount = messageCount;
+      this._lastStreamingLength = streamingLength;
+      const shouldAutoScroll = !this._userScrolledUp || messageCount > this._lastMessageCount;
+      
+      if (shouldAutoScroll) {
+        this.scheduleScroll();
+      }
+    }
+  }
+  
+  private setupScrollSentinelObserver(): void {
+    setTimeout(() => {
+      if (!this.messagesContainer || !this.scrollSentinel) {
+        return;
+      }
+      
+      const container = this.messagesContainer.nativeElement;
+      const sentinel = this.scrollSentinel?.nativeElement;
+      
+      if (!container || !sentinel) {
+        return;
+      }
+      
+      container.addEventListener('scroll', this.onUserScroll);
+      
+      this._intersectionObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach(entry => {
+            const isNearBottom = entry.isIntersecting || 
+                                 (entry.boundingClientRect.top - container.clientHeight) < 100;
+            
+            if (isNearBottom && !this.conversationState.isStreaming()) {
+              this._userScrolledUp = false;
+            }
+          });
+        },
+        {
+          root: container,
+          rootMargin: '0px 0px 100px 0px',
+          threshold: [0, 1]
+        }
+      );
+      
+      this._intersectionObserver.observe(sentinel);
+    }, 100);
+  }
+  
+  private onUserScroll = (): void => {
+    if (!this.messagesContainer) {
+      return;
+    }
+    
+    const container = this.messagesContainer.nativeElement;
+    const scrollTop = container.scrollTop;
+    const scrollHeight = container.scrollHeight;
+    const clientHeight = container.clientHeight;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
+    
+    if (!isNearBottom && this.conversationState.isStreaming()) {
+      this._userScrolledUp = true;
+    } else if (isNearBottom && !this.conversationState.isStreaming()) {
+      this._userScrolledUp = false;
+    }
+  };
+  
+  private scheduleScroll(): void {
+    if (this._scrollRafId !== null) {
+      cancelAnimationFrame(this._scrollRafId);
+    }
+    
+    this._scrollRafId = requestAnimationFrame(() => {
+      this.scrollToBottom();
+      this._scrollRafId = null;
+    });
+  }
+  
+  private scrollToBottom(): void {
+    const isStreaming = this.conversationState.isStreaming();
+    
+    if (this.scrollSentinel?.nativeElement) {
+      this.scrollSentinel.nativeElement.scrollIntoView({ 
+        behavior: isStreaming ? 'auto' : 'smooth',
+        block: 'end'
+      });
+    } else if (this.messagesContainer) {
+      const element = this.messagesContainer.nativeElement;
+      if (isStreaming) {
+        element.scrollTop = element.scrollHeight;
+      } else {
+        element.scrollTop = element.scrollHeight;
+      }
+    }
+  }
+
+  getToolStatusMessage(toolCall: ParsedToolCall): string {
+    const toolName = toolCall.tool;
+    const statusMessages: Record<string, string> = {
+      'get_code': 'Reading code...',
+      'insert_code': 'Inserting code...',
+      'replace_code': 'Updating code...',
+      'format_code': 'Formatting code...',
+      'list_libraries': 'Listing libraries...',
+      'get_library_content': 'Loading library...',
+      'search_code': 'Searching code...',
+      'create_library': 'Creating library...',
+      'get_cursor_position': 'Getting cursor position...',
+      'get_selection': 'Getting selection...',
+      'navigate_to_line': 'Navigating...',
+      'web_search': 'Searching web...',
+      'fetch_url': 'Fetching URL...'
+    };
+    
+    return statusMessages[toolName] || `Executing ${toolName}...`;
+  }
+
+  /**
+   * Execute tool calls serially (one after another)
+   * Returns a promise that resolves with all results after sequential execution
+   */
+  private async executeToolCallsWithPromise(toolCalls: ParsedToolCall[]): Promise<ToolResult[]> {
+    if (toolCalls.length === 0) {
+      return [];
+    }
+
+    const results: ToolResult[] = [];
+    const activeConversation = this.activeConversation();
+
+    // Execute each tool call sequentially
+    for (let index = 0; index < toolCalls.length; index++) {
+      const toolCall = toolCalls[index];
+      
+      // Update plan step status if we have a plan and are executing
+      if (activeConversation?.plan && this.currentMode() === 'act') {
+        const step = activeConversation.plan.steps[index];
+        if (step) {
+          const callKey = this.toolExecutionManager.getCallKey(toolCall);
+          this.conversationManager.updatePlanStepStatus(
+            activeConversation.id,
+            step.id,
+            'in-progress',
+            callKey
+          );
+        }
+      }
+
+      try {
+        // Execute tool call and wait for it to complete before moving to next
+        const result = await new Promise<ToolResult>((resolve) => {
+          let subscription: any = null;
+          let timeoutId: any = null;
+          let resolved = false; // Guard to prevent double resolution
+
+          const cleanupAndResolve = (result: ToolResult) => {
+            if (resolved) return; // Prevent double resolution
+            resolved = true;
+            
+            if (timeoutId) {
+              clearTimeout(timeoutId);
+              timeoutId = null;
+            }
+            if (subscription && !subscription.closed) {
+              subscription.unsubscribe();
+            }
+            resolve(result);
+          };
+
+          subscription = this.toolExecutionManager.executeToolCall(toolCall).subscribe({
+            next: (result) => {
+              this.handleToolResult(toolCall, result);
+              
+              // Update plan step status on completion
+              if (activeConversation?.plan && this.currentMode() === 'act') {
+                const step = activeConversation.plan.steps[index];
+                if (step) {
+                  this.conversationManager.updatePlanStepStatus(
+                    activeConversation.id,
+                    step.id,
+                    result.success ? 'completed' : 'failed'
+                  );
+                }
+              }
+              
+              const resultJson = JSON.stringify({
+                tool: toolCall.tool,
+                success: result.success,
+                result: result.result,
+                error: result.error
+              }, null, 2);
+              
+              this.ideStateService.addJsonOutput(
+                `Tool Execution Result: ${toolCall.tool}`,
+                resultJson,
+                result.success ? 'success' : 'error'
+              );
+              
+              cleanupAndResolve(result);
+            },
+            error: (error) => {
+              // Only log actual execution errors, not validation errors (e.g., Plan Mode restrictions)
+              const isValidationError = (error as any)?.isValidationError === true;
+              if (!isValidationError) {
+                console.error(`[Component] Tool execution error for ${toolCall.tool}:`, error);
+              }
+              
+              const errorJson = JSON.stringify({
+                tool: toolCall.tool,
+                success: false,
+                error: error.message || 'Tool execution failed'
+              }, null, 2);
+              
+              this.ideStateService.addJsonOutput(
+                `Tool Execution Error: ${toolCall.tool}`,
+                errorJson,
+                'error'
+              );
+              
+              // Update plan step status on error
+              if (activeConversation?.plan && this.currentMode() === 'act') {
+                const step = activeConversation.plan.steps[index];
+                if (step) {
+                  this.conversationManager.updatePlanStepStatus(
+                    activeConversation.id,
+                    step.id,
+                    'failed'
+                  );
+                }
+              }
+              
+              cleanupAndResolve({
+                tool: toolCall.tool,
+                success: false,
+                error: error.message || 'Tool execution failed'
+              } as ToolResult);
+            },
+            complete: () => {
+              // Subscription completed - this doesn't resolve the promise
+              // The promise is resolved in next() or error() handlers
+            }
+          });
+          
+          // Set timeout for tool execution
+          timeoutId = setTimeout(() => {
+            if (!resolved && subscription && !subscription.closed) {
+              console.warn(`[Component] Tool execution timeout for ${toolCall.tool}`);
+              cleanupAndResolve({
+                tool: toolCall.tool,
+                success: false,
+                error: 'Tool execution timed out'
+              } as ToolResult);
+            }
+          }, 5000);
+        });
+
+        results.push(result);
+      } catch (error: any) {
+        // Fallback error handling
+        const errorResult: ToolResult = {
+          tool: toolCall.tool,
+          success: false,
+          error: error?.message || 'Tool execution failed'
+        };
+        results.push(errorResult);
+      }
+    }
+
+    return results;
+  }
+
+  private handleRecursiveContinuationStreamResponse(finalContinuation: string): void {
+    const finalHash = this.hashString(finalContinuation);
+    if (!this.conversationState.hasProcessedResponse(finalHash)) {
+      this.conversationState.markResponseProcessed(finalHash);
+      const currentConversation = this.activeConversation();
+      
+      // In plan mode, check for and parse plan in recursive continuation response
+      let planFound = false;
+      if (currentConversation && this.currentMode() === 'plan') {
+        const plan = this.aiService.parsePlan(finalContinuation);
+        if (plan) {
+          this.conversationManager.updatePlan(currentConversation.id, plan);
+          planFound = true;
+          console.log('[Component] Plan found and updated in recursive continuation response', plan);
+        } else {
+          console.log('[Component] No plan found in recursive continuation response', { responseLength: finalContinuation?.length });
+        }
+      }
+      
+      // If a plan was found but no text content, add a minimal message so the conversation shows progress
+      if (planFound && (!finalContinuation || finalContinuation.trim().length === 0)) {
+        if (currentConversation) {
+          this.conversationManager.addAssistantMessage(currentConversation.id, 'I\'ve created a plan based on the investigation results. Review it below and click "Execute" when ready to proceed.');
+        }
+      }
+      
+      if (currentConversation && finalContinuation && finalContinuation.trim().length > 0) {
+        // Use sanitizeMessageContent to remove plan JSON and tool results
+        let cleanedResponse = this.aiService.sanitizeMessageContent(finalContinuation);
+        if (cleanedResponse.trim().length > 0) {
+          this.conversationManager.addAssistantMessage(currentConversation.id, cleanedResponse);
+        } else if (planFound) {
+          // If plan found but cleaned response is empty, still add a message
+          this.conversationManager.addAssistantMessage(currentConversation.id, 'I\'ve created a plan based on the investigation results. Review it below and click "Execute" when ready to proceed.');
+        }
+      }
+      this.conversationState.endStreaming();
+      this._isLoading.set(false);
+      this._currentMessage.set('');
+      this._currentSubscription = null;
+    } else {
+      this.conversationState.endStreaming();
+      this._isLoading.set(false);
+      this._currentSubscription = null;
+    }
+  }
+
+  private async handleContinuationStreamResponse(continuationResponse: string): Promise<void> {
+    const responseHash = this.hashString(continuationResponse);
+    
+    if (!this.conversationState.hasProcessedResponse(responseHash)) {
+      this.conversationState.markResponseProcessed(responseHash);
+      
+      const activeConversation = this.activeConversation();
+      
+      // In plan mode, check for and parse plan in continuation response (check before processing tool calls)
+      let planFound = false;
+      if (activeConversation && this.currentMode() === 'plan') {
+        const plan = this.aiService.parsePlan(continuationResponse);
+        if (plan) {
+          this.conversationManager.updatePlan(activeConversation.id, plan);
+          planFound = true;
+          console.log('[Component] Plan found and updated in continuation response', plan);
+        } else {
+          console.log('[Component] No plan found in continuation response', { responseLength: continuationResponse?.length });
+        }
+      }
+      
+      let cleanedResponse = continuationResponse;
+      const continuationToolCalls = this.toolCallParser.parseToolCalls(cleanedResponse);
+      let continuationNewCalls: ParsedToolCall[] = [];
+      
+      if (continuationToolCalls.length > 0 && this.toolCallParser.hasCompleteToolCalls(cleanedResponse)) {
+        continuationNewCalls = this.conversationState.addToolCalls(continuationToolCalls, (c) => 
+          this.toolExecutionManager.getCallKey(c)
+        );
+        
+        cleanedResponse = this.removeToolCallJsonFromResponse(cleanedResponse, continuationToolCalls);
+        
+        if (activeConversation && cleanedResponse && cleanedResponse.trim().length > 0) {
+          this.conversationManager.addAssistantMessage(activeConversation.id, cleanedResponse);
+        }
+        
+        if (continuationNewCalls.length > 0) {
+          // Execute tools serially - wait for all to complete sequentially
+          this.executeToolCallsWithPromise(continuationNewCalls).then(() => {
+            this.conversationState.updateStateForExecutionStatus();
+            const activeConversation = this.activeConversation();
+            const continuationSummary = this.toolExecutionManager.getToolResultsSummary(continuationNewCalls);
+            if (continuationSummary && activeConversation) {
+              this.startRecursiveContinuationStream(activeConversation.editorId, continuationSummary);
+            } else {
+              this.conversationState.endStreaming();
+              this._isLoading.set(false);
+              this._currentMessage.set('');
+              this._currentSubscription = null;
+            }
+          }).catch((error) => {
+            console.error('[Component] Error in continuation tool execution:', error);
+            this.conversationState.updateStateForExecutionStatus();
+          });
+          return;
+        }
+      }
+      
+      // If a plan was found but no text content, add a minimal message so the conversation shows progress
+      if (planFound && (!cleanedResponse || cleanedResponse.trim().length === 0)) {
+        if (activeConversation) {
+          this.conversationManager.addAssistantMessage(activeConversation.id, 'I\'ve created a plan based on the investigation results. Review it below and click "Execute" when ready to proceed.');
+        }
+      }
+      
+      if (activeConversation && cleanedResponse && cleanedResponse.trim().length > 0) {
+        // Use sanitizeMessageContent to remove plan JSON and tool results
+        cleanedResponse = this.aiService.sanitizeMessageContent(cleanedResponse);
+        if (cleanedResponse.trim().length > 0) {
+          this.conversationManager.addAssistantMessage(activeConversation.id, cleanedResponse);
+        }
+      }
+      
+      this.conversationState.endStreaming();
+      this._isLoading.set(false);
+      this._currentMessage.set('');
+      this._currentSubscription = null;
+    } else {
+      this.conversationState.endStreaming();
+      this._isLoading.set(false);
+      this._currentSubscription = null;
+    }
+  }
+
+  private startRecursiveContinuationStream(editorId: string, continuationSummary: string): void {
+    this.conversationState.startStreaming();
+    this._isLoading.set(true);
+    if (this._currentSubscription) {
+      this._currentSubscription.unsubscribe();
+      this._currentSubscription = null;
+    }
+    
+    const mode = this.currentMode();
+    this._currentSubscription = this.aiService.sendStreamingMessage(
+      '',
+      editorId,
+      this.useMCPTools(),
+      this.cqlContent,
+      continuationSummary,
+      mode
+    ).subscribe({
+      next: async (event) => {
+        if (event.type === 'start') {
+        } else if (event.type === 'chunk') {
+          this.conversationState.addStreamingChunk(event.content || '');
+        } else if (event.type === 'end') {
+          const finalContinuation = this.conversationState.streamingResponse();
+          this.handleRecursiveContinuationStreamResponse(finalContinuation);
+        }
+      },
+      error: (error) => {
+        console.error('[Component] Recursive continuation error:', error);
+        this._isLoading.set(false);
+        
+        let errorMessage = 'Failed to continue response';
+        if (error?.message) {
+          errorMessage = error.message;
+        } else if (error instanceof TypeError && error.message === 'Failed to fetch') {
+          errorMessage = 'Unable to connect to Ollama server. Please check your settings and ensure the server is running.';
+        }
+        
+        this.conversationState.setError(errorMessage);
+        this.conversationState.endStreaming();
+        this._error.set(errorMessage);
+        this._currentSubscription = null;
+      },
+      complete: () => {
+        this._currentSubscription = null;
+      }
+    });
+  }
+
+  private startContinuationStream(editorId: string, summary: string): void {
+    this.conversationState.startStreaming();
+    this._isLoading.set(true);
+    
+    if (this._currentSubscription) {
+      this._currentSubscription.unsubscribe();
+      this._currentSubscription = null;
+    }
+    
+    const mode = this.currentMode();
+    this._currentSubscription = this.aiService.sendStreamingMessage(
+      '',
+      editorId,
+      this.useMCPTools(),
+      this.cqlContent,
+      summary,
+      mode
+    ).subscribe({
+      next: async (event) => {
+        if (event.type === 'start') {
+        } else if (event.type === 'chunk') {
+          this.conversationState.addStreamingChunk(event.content || '');
+        } else if (event.type === 'end') {
+          const continuationResponse = this.conversationState.streamingResponse();
+          await this.handleContinuationStreamResponse(continuationResponse);
+        }
+      },
+      error: (error) => {
+        console.error('[Component] Continuation error:', error);
+        this._isLoading.set(false);
+        
+        let errorMessage = 'Failed to continue response';
+        if (error?.message) {
+          errorMessage = error.message;
+        } else if (error instanceof TypeError && error.message === 'Failed to fetch') {
+          errorMessage = 'Unable to connect to Ollama server. Please check your settings and ensure the server is running.';
+        }
+        
+        this.conversationState.setError(errorMessage);
+        this.conversationState.endStreaming();
+        this._error.set(errorMessage);
+        this._currentSubscription = null;
+      },
+      complete: () => {
+        this._currentSubscription = null;
+      }
+    });
+  }
+
+  private async handleMainStreamResponse(finalResponse: string): Promise<void> {
+    const responseHash = this.hashString(finalResponse);
+    
+    if (!this.conversationState.hasProcessedResponse(responseHash)) {
+      this.conversationState.markResponseProcessed(responseHash);
+      
+      let parsedToolCalls: ParsedToolCall[] = [];
+      const toolCalls = this.toolCallParser.parseToolCalls(finalResponse);
+      let newCalls: ParsedToolCall[] = [];
+      
+      if (toolCalls.length > 0 && this.toolCallParser.hasCompleteToolCalls(finalResponse)) {
+        parsedToolCalls = toolCalls;
+        
+        newCalls = this.conversationState.addToolCalls(toolCalls, (c) => 
+          this.toolExecutionManager.getCallKey(c)
+        );
+        
+        if (this.conversationState.isStreaming()) {
+          this.conversationState.endStreaming();
+        }
+        
+        for (const toolCall of toolCalls) {
+          if (toolCall.raw) {
+            let formattedJson = toolCall.raw;
+            try {
+              const parsed = JSON.parse(toolCall.raw);
+              formattedJson = JSON.stringify(parsed, null, 2);
+            } catch {
+            }
+            
+            this.ideStateService.addJsonOutput(
+              `Tool Call: ${toolCall.tool}`,
+              formattedJson,
+              'pending'
+            );
+          }
+        }
+        
+        finalResponse = this.removeToolCallJsonFromResponse(finalResponse, toolCalls);
+      }
+      
+      const standaloneToolCallPattern = /\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[\s\S]*?\}\s*\}/g;
+      let cleanedResponse = finalResponse.replace(standaloneToolCallPattern, '').trim();
+      
+      // In plan mode, check for and parse plan
+      const activeConversation = this.activeConversation();
+      if (activeConversation && this.currentMode() === 'plan') {
+        const plan = this.aiService.parsePlan(finalResponse);
+        if (plan) {
+          this.conversationManager.updatePlan(activeConversation.id, plan);
+          // Remove plan JSON from cleaned response (already sanitized by sanitizeMessageContent)
+        }
+      }
+      
+      if (activeConversation && cleanedResponse && cleanedResponse.trim().length > 0) {
+        // Use sanitizeMessageContent to remove plan JSON and tool results
+        cleanedResponse = this.aiService.sanitizeMessageContent(cleanedResponse);
+        if (cleanedResponse.trim().length > 0) {
+          this.conversationManager.addAssistantMessage(activeConversation.id, cleanedResponse);
+          this.conversationManager.completeStreaming(activeConversation.id);
+        }
+      }
+      
+      if (parsedToolCalls.length > 0) {
+        try {
+          // Execute tools serially - wait for all to complete sequentially
+          await this.executeToolCallsWithPromise(newCalls);
+        } catch (error) {
+          console.error('[Component] Error waiting for tool executions:', error);
+        }
+        
+        this.conversationState.updateStateForExecutionStatus();
+        
+        const activeConversation = this.activeConversation();
+        if (activeConversation && newCalls.length > 0) {
+          const summary = this.toolExecutionManager.getToolResultsSummary(newCalls);
+          const toolNames = newCalls.map(c => c.tool).join(', ');
+          const fallbackSummary = summary || `Tools executed: ${toolNames}. Continue with your response.`;
+          
+          if (summary) {
+            this.ideStateService.addJsonOutput(
+              'Tool Execution Summary',
+              summary,
+              'success'
+            );
+          }
+          
+          this.startContinuationStream(activeConversation.editorId, summary || fallbackSummary);
+        } else {
+          const state = this.conversationState.conversationState();
+          if (state === 'idle' || state === 'results-ready') {
+            this._isLoading.set(false);
+            this._currentMessage.set('');
+            this._currentSubscription = null;
+          }
         }
       } else {
-        console.log('No change needed for context');
+        this.conversationState.endStreaming();
+        this._isLoading.set(false);
+        this._currentMessage.set('');
+        this._currentSubscription = null;
       }
-    } catch (error) {
-      console.error('Error in context change:', error);
+      
+      this._userScrolledUp = false;
+      
+      if (!this._intersectionObserver && this.scrollSentinel) {
+        this.setupScrollSentinelObserver();
+      }
     }
   }
+
+  public onExecutePlan(): void {
+    const conversation = this.activeConversation();
+    if (!conversation || !conversation.plan) {
+      return;
+    }
+    
+    // Switch to act mode to execute the plan
+    this.conversationManager.updateConversationMode(conversation.id, 'act');
+    
+    // Send a message to execute the plan
+    const planDescription = conversation.plan.description || 'Execute the plan';
+    this._currentMessage.set(`Execute the plan: ${planDescription}`);
+    this.onSendMessage();
+  }
+
+  public onRevisePlan(): void {
+    const conversation = this.activeConversation();
+    if (!conversation || !conversation.plan) {
+      return;
+    }
+    
+    // Ask user for revision instructions
+    const planDescription = conversation.plan.description || 'the plan';
+    this._currentMessage.set(`Please revise ${planDescription}. What changes would you like to make?`);
+    // Don't auto-send, let user edit the message first
+  }
+
 }

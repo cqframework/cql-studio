@@ -1,0 +1,157 @@
+@use '../../styles/ide-theme.scss' as theme;
+
+.plan-display-container {
+  padding: 0;
+}
+
+.plan-description {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: theme.$ide-text-white;
+  
+  .plan-description-label {
+    font-weight: 600;
+    color: theme.$ide-text-primary;
+  }
+  
+  .plan-description-text {
+    color: theme.$ide-text-white;
+  }
+}
+
+.plan-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.plan-step {
+  display: flex;
+  align-items: flex-start;
+  padding: 0.25rem 0.25rem 0.25rem 0;
+  border-left: 2px solid theme.$ide-border;
+  transition: border-color 0.2s ease;
+  
+  &.step-completed {
+    border-left-color: theme.$ide-success;
+    
+    .step-description {
+      color: theme.$ide-text-primary;
+      opacity: 0.7;
+    }
+    
+    .step-number i {
+      color: theme.$ide-success;
+    }
+  }
+  
+  &.step-in-progress {
+    border-left-color: theme.$ide-blue;
+    
+    .step-description {
+      color: theme.$ide-text-white;
+      font-weight: 500;
+    }
+    
+    .step-number i {
+      color: theme.$ide-blue;
+    }
+  }
+  
+  &.step-failed {
+    border-left-color: theme.$ide-error;
+    
+    .step-description {
+      color: theme.$ide-text-white;
+    }
+    
+    .step-number i {
+      color: theme.$ide-error;
+    }
+  }
+  
+  &.step-pending {
+    border-left-color: theme.$ide-border;
+    
+    .step-description {
+      color: theme.$ide-text-primary;
+    }
+    
+    .step-number i {
+      color: theme.$ide-text-primary;
+      opacity: 0.5;
+    }
+  }
+  
+  &.executing {
+    .step-number i {
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+  }
+}
+
+.step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  margin-right: 0.5rem;
+  font-size: 0.875rem;
+  flex-shrink: 0;
+  
+  i {
+    font-size: 0.875rem;
+  }
+}
+
+.step-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-description {
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  margin: 0;
+  color: theme.$ide-text-white;
+}
+
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.plan-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid theme.$ide-border;
+  
+  .btn {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+  }
+}
+
