@@ -18,7 +18,7 @@ test.describe('Deep Linking Tests', () => {
 
   test.describe('URL Parameter Deep Linking', () => {
     test('should load results directly from URL parameter', async () => {
-      await helpers.page.goto('/?url=/examples/results.json');
+      await helpers.page.goto('/results/open?url=/examples/results.json');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -33,7 +33,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should load results with status filter', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&status=fail');
+      await helpers.page.goto('/results/open?url=/examples/results.json&status=fail');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -48,7 +48,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should load results with search filter', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&search=arithmetic');
+      await helpers.page.goto('/results/open?url=/examples/results.json&search=arithmetic');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -63,7 +63,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should load results with grouping', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&groupBy=group');
+      await helpers.page.goto('/results/open?url=/examples/results.json&groupBy=group');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -78,7 +78,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should load results with sorting', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&sortBy=name&sortOrder=desc');
+      await helpers.page.goto('/results/open?url=/examples/results.json&sortBy=name&sortOrder=desc');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -97,7 +97,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should load results with multiple filters', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&status=fail&search=arithmetic&groupBy=group&sortBy=name&sortOrder=asc');
+      await helpers.page.goto('/results/open?url=/examples/results.json&status=fail&search=arithmetic&groupBy=group&sortBy=name&sortOrder=asc');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -126,7 +126,7 @@ test.describe('Deep Linking Tests', () => {
 
   test.describe('Index Parameter Deep Linking', () => {
     test('should load index file from URL parameter', async () => {
-      await helpers.page.goto('/?index=/examples/index.json');
+      await helpers.page.goto('/results/open?index=/examples/index.json');
       await helpers.waitForAppLoad();
       
       // Should be on home page
@@ -138,7 +138,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should load index file with filters', async () => {
-      await helpers.page.goto('/?index=/examples/index.json&status=fail&search=arithmetic');
+      await helpers.page.goto('/results/open?index=/examples/index.json&status=fail&search=arithmetic');
       await helpers.waitForAppLoad();
       
       // Should be on home page
@@ -155,7 +155,7 @@ test.describe('Deep Linking Tests', () => {
 
   test.describe('URL Parameter Validation', () => {
     test('should handle invalid URL parameter', async () => {
-      await helpers.page.goto('/?url=https://invalid-url.com/file.json');
+      await helpers.page.goto('/results/open?url=https://invalid-url.com/file.json');
       await helpers.waitForAppLoad();
       
       // Should redirect to home page
@@ -166,7 +166,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should handle malformed URL parameter', async () => {
-      await helpers.page.goto('/?url=not-a-valid-url');
+      await helpers.page.goto('/results/open?url=not-a-valid-url');
       await helpers.waitForAppLoad();
       
       // Should redirect to home page
@@ -177,7 +177,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should handle invalid status parameter', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&status=invalid');
+      await helpers.page.goto('/results/open?url=/examples/results.json&status=invalid');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -189,7 +189,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should handle invalid groupBy parameter', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&groupBy=invalid');
+      await helpers.page.goto('/results/open?url=/examples/results.json&groupBy=invalid');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -201,7 +201,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should handle invalid sortBy parameter', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&sortBy=invalid');
+      await helpers.page.goto('/results/open?url=/examples/results.json&sortBy=invalid');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -213,7 +213,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should handle invalid sortOrder parameter', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&sortOrder=invalid');
+      await helpers.page.goto('/results/open?url=/examples/results.json&sortOrder=invalid');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -227,7 +227,7 @@ test.describe('Deep Linking Tests', () => {
 
   test.describe('URL State Persistence', () => {
     test('should preserve URL parameters when navigating', async () => {
-      await helpers.page.goto('/?url=/examples/results.json&status=fail&search=test');
+      await helpers.page.goto('/results/open?url=/examples/results.json&status=fail&search=test');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -248,7 +248,7 @@ test.describe('Deep Linking Tests', () => {
     });
 
     test('should update URL when filters change', async () => {
-      await helpers.page.goto('/?url=/examples/results.json');
+      await helpers.page.goto('/results/open?url=/examples/results.json');
       await helpers.waitForAppLoad();
       
       // Should be on results page
@@ -281,7 +281,7 @@ test.describe('Deep Linking Tests', () => {
 
     test('should load results page with data from session storage', async () => {
       // First load data normally
-      await helpers.page.goto('/?url=/examples/results.json');
+      await helpers.page.goto('/results/open?url=/examples/results.json');
       await helpers.waitForAppLoad();
       
       // Should be on results page

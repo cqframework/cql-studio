@@ -13,10 +13,12 @@ import { RunnerComponent } from './components/runner/runner.component';
 import { FhirUploaderComponent } from './components/fhir-uploader/fhir-uploader.component';
 import { TerminologyComponent } from './components/terminology/terminology.component';
 import { AboutComponent } from './components/about/about.component';
+import { LandingComponent } from './components/landing/landing.component';
 
 export const routes: Routes = [
   // Normal app routes
-  { path: '', component: OpenComponent , pathMatch: 'full'},
+  { path: '', component: LandingComponent, pathMatch: 'full' },
+  { path: 'results/open', component: OpenComponent },
   { path: 'results', component: ResultsViewerComponent },
   { path: 'documentation', redirectTo: '/documentation/results', pathMatch: 'full' },
   { path: 'documentation/results', component: ResultsDocumentationComponent },

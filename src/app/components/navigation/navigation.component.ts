@@ -23,8 +23,9 @@ export class NavigationComponent {
     this.router.events
       .pipe(filter(event => event instanceof NavigationEnd))
       .subscribe((event: NavigationEnd) => {
-        // Show file menu only on the results-viewer component
-        this.showFileMenu.set(event.url.startsWith('/results'));
+        // Show file menu only on the results-viewer component (not on /results/open)
+        const baseUrl = event.url.split('?')[0]; // Remove query parameters for comparison
+        this.showFileMenu.set(baseUrl === '/results');
       });
   }
 
@@ -35,7 +36,7 @@ export class NavigationComponent {
     sessionStorage.removeItem(SessionStorageKeys.INITIAL_STATUS);
     sessionStorage.removeItem(SessionStorageKeys.INITIAL_SEARCH);
     sessionStorage.removeItem(SessionStorageKeys.ORIGINAL_FILENAME);
-    this.router.navigate(['/']);
+    this.router.navigate(['/results/open']);
   }
 
   onDownloadResults(): void {
@@ -68,9 +69,9 @@ export class NavigationComponent {
   goBackToIndex(): void {
     const indexUrl = sessionStorage.getItem(SessionStorageKeys.INDEX_URL);
     if (indexUrl) {
-      this.router.navigate(['/'], { queryParams: { index: indexUrl } });
+      this.router.navigate(['/results/open'], { queryParams: { index: indexUrl } });
     } else {
-      this.router.navigate(['/']);
+      this.router.navigate(['/results/open']);
     }
   }
 

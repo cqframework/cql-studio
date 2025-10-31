@@ -266,7 +266,7 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
         this.lastResultsHash = this.generateResultsHash(data);
       } catch (error) {
         console.error('Error parsing stored data:', error);
-        this.router.navigate(['/']);
+        this.router.navigate(['/results/open']);
       }
     } else {
       // Check if there's a URL parameter to load data from
@@ -274,7 +274,7 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
       if (params['url']) {
         this.loadFromUrl(params['url']);
       } else {
-        this.router.navigate(['/']);
+        this.router.navigate(['/results/open']);
       }
     }
   }
@@ -575,15 +575,15 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
   }
 
   goBack(): void {
-    this.router.navigate(['/']);
+    this.router.navigate(['/results/open']);
   }
 
   goBackToIndex(): void {
     const indexUrl = sessionStorage.getItem(SessionStorageKeys.INDEX_URL);
     if (indexUrl) {
-      this.router.navigate(['/'], { queryParams: { index: indexUrl } });
+      this.router.navigate(['/results/open'], { queryParams: { index: indexUrl } });
     } else {
-      this.router.navigate(['/']);
+      this.router.navigate(['/results/open']);
     }
   }
 
@@ -775,7 +775,7 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
       }
     } catch (error) {
       console.error('Error loading from URL:', error);
-      this.router.navigate(['/']);
+      this.router.navigate(['/results/open']);
     }
   }
 

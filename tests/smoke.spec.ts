@@ -7,6 +7,17 @@ test.describe('Smoke Tests', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     
+    // Should show the landing component
+    await expect(page.locator('app-landing')).toBeVisible();
+    
+    // Should have a link to open results
+    await expect(page.locator('#open-results-btn')).toBeVisible();
+  });
+
+  test('should load the results/open page', async ({ page }) => {
+    await page.goto('/results/open');
+    await page.waitForLoadState('networkidle');
+    
     // Should show the open component
     await expect(page.locator('app-open')).toBeVisible();
     
@@ -39,7 +50,7 @@ test.describe('Smoke Tests', () => {
   });
 
   test('should navigate to runner page', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/results/open');
     await page.waitForLoadState('networkidle');
     
     // Click runner link
@@ -50,7 +61,7 @@ test.describe('Smoke Tests', () => {
   });
 
   test('should navigate to settings page', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/results/open');
     await page.waitForLoadState('networkidle');
     
     // Click settings link
@@ -61,7 +72,7 @@ test.describe('Smoke Tests', () => {
   });
 
   test('should load example data', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/results/open');
     await page.waitForLoadState('networkidle');
     
     // Click load example button
@@ -78,7 +89,7 @@ test.describe('Smoke Tests', () => {
   });
 
   test('should handle deep linking with URL parameter', async ({ page }) => {
-    await page.goto('/?url=/examples/results.json');
+    await page.goto('/results/open?url=/examples/results.json');
     await page.waitForLoadState('networkidle');
     
     // Wait for the results to load (this might take a moment)

@@ -1,8 +1,8 @@
 // Import color variables
 @use 'app/styles/_colors' as colors;
 
-// Import Bootstrap
-@use 'bootstrap/scss/bootstrap';
+// Bootstrap is loaded via Bootswatch litera theme in angular.json
+// No need to import Bootstrap SCSS here
 
 // Import PrismJS theme overrides
 @use 'app/styles/prism-theme';
@@ -14,16 +14,16 @@ body:has([data-bs-theme=light]) {
   .navbar {
     .navbar-brand,
     .nav-link {
-      color: white !important;
+      // color: white !important;
     }
     
     .navbar-brand:hover,
     .nav-link:hover {
-      color: rgba(255, 255, 255, 0.8) !important;
+      // color: rgba(255, 255, 255, 0.8) !important;
     }
     
     .nav-link.active {
-      color: white !important;
+      // color: white !important;
     }
   }
 }

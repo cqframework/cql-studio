@@ -513,7 +513,7 @@ export class DashboardComponent implements OnInit {
       queryParams['index'] = indexUrl;
     }
     
-    this.router.navigate(['/'], { queryParams });
+    this.router.navigate(['/results/open'], { queryParams });
   }
   
   onViewFile(filename: string): void {

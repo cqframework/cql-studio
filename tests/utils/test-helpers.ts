@@ -16,14 +16,14 @@ export class TestHelpers {
    */
   async waitForAppLoad() {
     await this.page.waitForLoadState('networkidle');
-    await this.page.waitForSelector('app-open, app-results-viewer, app-dashboard, app-runner', { timeout: 10000 });
+    await this.page.waitForSelector('app-open, app-results-viewer, app-dashboard, app-runner, app-landing', { timeout: 10000 });
   }
 
   /**
-   * Navigate to the home page and wait for it to load
+   * Navigate to the home page (results/open) and wait for it to load
    */
   async goToHome() {
-    await this.page.goto('/');
+    await this.page.goto('/results/open');
     await this.waitForAppLoad();
   }
 
@@ -62,7 +62,7 @@ export class TestHelpers {
   }
 
   /**
-   * Check if we're on the home page
+   * Check if we're on the home page (results/open)
    */
   async isOnHomePage() {
     return await this.page.locator('app-open').isVisible();

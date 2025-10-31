@@ -30,9 +30,9 @@
               }
             ],
             "styles": [
-              "src/styles.scss",
-              "src/simplex.css",
+              "node_modules/bootswatch/dist/litera/bootstrap.min.css",
               "node_modules/bootstrap-icons/font/bootstrap-icons.css",
+              "src/styles.scss",
               "node_modules/prismjs/themes/prism-tomorrow.css",
               "node_modules/prismjs/plugins/line-numbers/prism-line-numbers.css"
             ],
