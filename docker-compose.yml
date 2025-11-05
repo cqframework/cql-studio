@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+
+  cql-studio-server:
+    image: p3000/cql-studio-server:latest
+    # container_name: cql-studio-server
+    ports:
+      - "3003:3003"
+    restart: unless-stopped
+
+  cql-hapi-r4:
+    image: hapiproject/hapi:v8.4.0-2
+    ports:
+      - "8080:8080"
+    environment:
+      - hapi.fhir.fhir_version=R4
+      - spring.main.allow-bean-definition-overriding=true
+      - hapi.fhir.expunge_enabled=true
+      - hapi.fhir.allow_multiple_delete=true
+      - hapi.fhir.bulk_export_enabled=true
+      - hapi.fhir.bulk_import_enabled=true
+      - hapi.fhir.enable_index_missing_fields=true
+      - hapi.fhir.cdshooks.enabled=true
+      - hapi.fhir.cr.enabled=true
+      - spring.jpa.properties.hibernate.search.enabled=true
+    restart: unless-stopped
+
+  cql-translation-service:
+    image: cqframework/cql-translation-service:latest
+    ports:
+      - "3001:8080"
+    restart: unless-stopped
+
+  cql-tests-results:
+    image: hlseven/quality-cql-tests-results:latest
+    ports:
+      - "4242:80"
+    restart: unless-stopped
+
+  cql-tests-runner:
+    image: hlseven/quality-cql-tests-runner:latest
+    ports:
+      - "3000:3000"
+    command: server
+    restart: unless-stopped
+
+  cql-fhir-controller:
+    image: p3000/fhir-controller:latest
+    ports:
+      - "4204:80"
+    restart: unless-stopped
