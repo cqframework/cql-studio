@@ -217,24 +217,6 @@
     </div>
   </div>
 
-  <!-- Additional Controls Row -->
-  @if (hasDetailedInfo()) {
-    <div class="row mb-3">
-      <div class="col">
-        <div class="d-flex gap-2 align-items-center">
-          <!-- Show All Details button (only show if there are detailed info) -->
-          <button id="toggle-all-details-btn" class="btn btn-outline-primary btn-sm" (click)="toggleAllDetails()">
-            {{ showAllDetails() ? 'Hide All Details' : 'Show All Details' }}
-          </button>
-
-          <!-- Help text (only show if there are detailed info) -->
-          <span class="text-muted small align-self-center">
-            Click any row to toggle details
-          </span>
-        </div>
-      </div>
-    </div>
-  }
 
   <!-- Results Table -->
   <div class="row">

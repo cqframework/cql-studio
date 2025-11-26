@@ -52,7 +52,6 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
   selectedStatus = signal<StatusFilter>(StatusFilter.ALL);
   searchTerm = signal<string>('');
   expandedResults = signal<Set<string>>(new Set());
-  showAllDetails = signal<boolean>(false);
   
   // Grouping and sorting controls
   groupBy = signal<GroupByOption>(GroupByOption.NONE);
@@ -606,11 +605,7 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
   }
 
   isResultExpanded(resultId: string): boolean {
-    return this.expandedResults().has(resultId) || this.showAllDetails();
-  }
-
-  toggleAllDetails(): void {
-    this.showAllDetails.set(!this.showAllDetails());
+    return this.expandedResults().has(resultId);
   }
 
   getResultId(result: TestResult): string {
