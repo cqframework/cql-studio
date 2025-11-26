@@ -14,7 +14,7 @@
         "cqlEngine": { "type": "string" },
         "cqlEngineVersion": { "type": "string" }
       },
-      "required": ["apiUrl"]
+      "required": ["apiUrl", "description", "cqlVersion", "cqlTranslator", "cqlTranslatorVersion", "cqlEngine", "cqlEngineVersion"]
     },
     "testResultsSummary": {
       "type": "object",
@@ -29,6 +29,9 @@
     "testsRunDateTime": {
       "type": "string",
       "format": "date-time"
+    },
+    "testsRunDescription": {
+      "type":  "string"
     },
     "results": {
       "type": "array",
@@ -69,6 +72,29 @@
           "invalid": {
             "type": "string",
             "enum": ["true", "false", "semantic"]
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "code":   { "type": "string" },
+                "value":  {
+                  "anyOf": [
+                    { "type": "boolean" },
+                    { "type": "string" },
+                    { "type": "number" },
+                    { "type": "object" },
+                    { "type": "array" }
+                  ]
+                },
+                "system":  { "type": "string" },
+                "display": { "type": "string" },
+                "version": { "type": "string" }
+              },
+              "required": ["code"]
+            }
           },
           "expression": {
             "type": "string"

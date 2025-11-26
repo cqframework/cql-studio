@@ -4,7 +4,7 @@ import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
-import { CqlTestResults, TestResult } from '../../models/cql-test-results.model';
+import { CqlTestResults, TestResult, Capability } from '../../models/cql-test-results.model';
 import { BaseChartDirective } from 'ng2-charts';
 import { Chart, registerables } from 'chart.js';
 import { FileLoaderService } from '../../services/file-loader.service';
@@ -618,7 +618,28 @@ export class ResultsViewerComponent implements OnInit, OnDestroy {
   }
 
   hasResultDetails(result: TestResult): boolean {
-    return !!(result.error || result.actual || result.expected);
+    return !!(result.error || result.actual || result.expected || (result.capabilities && result.capabilities.length > 0));
+  }
+
+  formatCapabilityValue(value: any): string {
+    if (value === null || value === undefined) {
+      return '';
+    }
+    if (typeof value === 'object') {
+      return JSON.stringify(value, null, 2);
+    }
+    return String(value);
+  }
+
+  isObjectValue(value: any): boolean {
+    return value !== null && typeof value === 'object' && !Array.isArray(value) || Array.isArray(value);
+  }
+
+  hasCapabilityField(capabilities: Capability[] | undefined, field: 'system' | 'display' | 'version'): boolean {
+    if (!capabilities || capabilities.length === 0) {
+      return false;
+    }
+    return capabilities.some(c => c[field] !== undefined && c[field] !== null && c[field] !== '');
   }
 
   private updateChartData(): void {

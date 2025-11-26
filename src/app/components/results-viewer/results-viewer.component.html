@@ -55,11 +55,28 @@
                     <span class="badge bg-light text-dark">{{ testResults()?.cqlengine?.cqlVersion }}</span>
                   </div>
                 }
+                @if (testResults()?.cqlengine?.cqlTranslator) {
+                  <div class="text-end">
+                    <small class="d-block text-white-50">Translator</small>
+                    <span class="badge bg-light text-dark">{{ testResults()?.cqlengine?.cqlTranslator }} {{ testResults()?.cqlengine?.cqlTranslatorVersion }}</span>
+                  </div>
+                }
+                @if (testResults()?.cqlengine?.cqlEngineVersion) {
+                  <div class="text-end">
+                    <small class="d-block text-white-50">Engine Version</small>
+                    <span class="badge bg-light text-dark">{{ testResults()?.cqlengine?.cqlEngineVersion }}</span>
+                  </div>
+                }
               </div>
             </div>
             @if (testResults()?.cqlengine?.description) {
               <div class="mt-2">
                 <small class="text-white-75">{{ testResults()?.cqlengine?.description }}</small>
+              </div>
+            }
+            @if (testResults()?.testsRunDescription) {
+              <div class="mt-2">
+                <small class="text-white-75"><strong>Description:</strong> {{ testResults()?.testsRunDescription }}</small>
               </div>
             }
           </div>
@@ -303,7 +320,6 @@
                         <div class="details-content p-3 border-top">
                           <div class="row">
                             <div class="col-12">
-                              <h6 class="mb-3">Detailed Information for {{ result.testName }}</h6>
 
                               @if (result.error) {
                                 <div class="mb-3">
@@ -335,6 +351,54 @@
                                       <app-syntax-highlighter [code]="result.actual" [language]="'auto'"></app-syntax-highlighter>
                                     </div>
                                   }
+                                </div>
+                              }
+
+                              @if (result.capabilities && result.capabilities.length > 0) {
+                                <div class="mt-3">
+                                  <strong>Capabilities:</strong>
+                                  <div class="mt-2">
+                                    <table class="table table-sm table-bordered">
+                                      <thead>
+                                        <tr>
+                                          <th>Code</th>
+                                          <th>Value</th>
+                                          @if (hasCapabilityField(result.capabilities, 'system')) {
+                                            <th>System</th>
+                                          }
+                                          @if (hasCapabilityField(result.capabilities, 'display')) {
+                                            <th>Display</th>
+                                          }
+                                          @if (hasCapabilityField(result.capabilities, 'version')) {
+                                            <th>Version</th>
+                                          }
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        @for (capability of result.capabilities; track capability.code) {
+                                          <tr>
+                                            <td><code>{{ capability.code }}</code></td>
+                                            <td>
+                                              @if (isObjectValue(capability.value)) {
+                                                <app-syntax-highlighter [code]="formatCapabilityValue(capability.value)" [language]="'json'"></app-syntax-highlighter>
+                                              } @else {
+                                                {{ capability.value }}
+                                              }
+                                            </td>
+                                            @if (hasCapabilityField(result.capabilities, 'system')) {
+                                              <td>{{ capability.system || '-' }}</td>
+                                            }
+                                            @if (hasCapabilityField(result.capabilities, 'display')) {
+                                              <td>{{ capability.display || '-' }}</td>
+                                            }
+                                            @if (hasCapabilityField(result.capabilities, 'version')) {
+                                              <td>{{ capability.version || '-' }}</td>
+                                            }
+                                          </tr>
+                                        }
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 </div>
                               }
                             </div>

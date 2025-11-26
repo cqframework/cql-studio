@@ -251,7 +251,17 @@
 
               <h4>Required Fields Validation</h4>
               <ul>
-                <li><code>cqlengine.apiUrl</code> - Must be a non-empty string</li>
+                <li><code>cqlengine</code> - Must contain all required fields:
+                  <ul>
+                    <li><code>apiUrl</code> - Must be a non-empty string</li>
+                    <li><code>description</code> - Must be a non-empty string</li>
+                    <li><code>cqlVersion</code> - Must be a non-empty string</li>
+                    <li><code>cqlTranslator</code> - Must be a non-empty string</li>
+                    <li><code>cqlTranslatorVersion</code> - Must be a non-empty string</li>
+                    <li><code>cqlEngine</code> - Must be a non-empty string</li>
+                    <li><code>cqlEngineVersion</code> - Must be a non-empty string</li>
+                  </ul>
+                </li>
                 <li><code>testResultsSummary</code> - Must contain all count fields as numbers</li>
                 <li><code>testsRunDateTime</code> - Must be a valid ISO 8601 date string</li>
                 <li><code>results</code> - Must be an array of test result objects</li>
@@ -264,6 +274,15 @@
                   Required strings</li>
                 <li><code>invalid</code> - Must be one of: true, false, semantic (if present)</li>
                 <li><code>responseStatus</code> - Must be a valid HTTP status code (if present)</li>
+                <li><code>capabilities</code> - Optional array of capability objects (if present):
+                  <ul>
+                    <li><code>code</code> - Required string</li>
+                    <li><code>value</code> - Optional boolean, string, number, object, or array</li>
+                    <li><code>system</code> - Optional string</li>
+                    <li><code>display</code> - Optional string</li>
+                    <li><code>version</code> - Optional string</li>
+                  </ul>
+                </li>
               </ul>
 
               <h3>Validation Error Handling</h3>

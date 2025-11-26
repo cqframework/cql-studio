@@ -2,12 +2,12 @@
 
 export interface CqlEngine {
   apiUrl: string;
-  description?: string;
-  cqlVersion?: string;
-  cqlTranslator?: string;
-  cqlTranslatorVersion?: string;
-  cqlEngine?: string;
-  cqlEngineVersion?: string;
+  description: string;
+  cqlVersion: string;
+  cqlTranslator: string;
+  cqlTranslatorVersion: string;
+  cqlEngine: string;
+  cqlEngineVersion: string;
 }
 
 export interface TestResultsSummary {
@@ -23,6 +23,14 @@ export interface TestError {
   stack?: string;
 }
 
+export interface Capability {
+  code: string;
+  value?: boolean | string | number | object | any[];
+  system?: string;
+  display?: string;
+  version?: string;
+}
+
 export interface TestResult {
   testStatus: 'pass' | 'fail' | 'skip' | 'error';
   responseStatus?: number;
@@ -33,6 +41,7 @@ export interface TestResult {
   groupName: string;
   testName: string;
   invalid?: 'true' | 'false' | 'semantic';
+  capabilities?: Capability[];
   expression: string;
 }
 
@@ -40,5 +49,6 @@ export interface CqlTestResults {
   cqlengine: CqlEngine;
   testResultsSummary: TestResultsSummary;
   testsRunDateTime: string;
+  testsRunDescription?: string;
   results: TestResult[];
 }
