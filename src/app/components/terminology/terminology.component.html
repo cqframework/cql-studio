@@ -58,6 +58,7 @@
       <!-- ValueSet Tab -->
       @if (activeTab() === 'valueset') {
         <div class="row">
+          <!-- Left Column: Search and Results -->
           <div class="col-md-4">
             <h6 class="mb-3">
               <i class="bi bi-search me-1"></i>Search ValueSets
@@ -70,7 +71,7 @@
               <label for="valuesetSearch">Search Term</label>
               <div class="form-text">Search for ValueSets by name or title</div>
             </div>
-            <button type="button" class="btn btn-primary w-100" 
+            <button type="button" class="btn btn-primary w-100 mb-3" 
                     (click)="searchValueSets(1)" 
                     [disabled]="valuesetLoading() || !hasValidConfiguration()">
               @if (valuesetLoading()) {
@@ -81,19 +82,18 @@
               }
             </button>
             @if (valuesetError()) {
-              <div class="alert alert-danger mt-3 mb-0" role="alert">
+              <div class="alert alert-danger mb-3" role="alert">
                 <i class="bi bi-exclamation-circle me-2"></i>{{ valuesetError() }}
               </div>
             }
-          </div>
-          <div class="col-md-8">
+            
             <div class="d-flex justify-content-between align-items-center mb-3">
-              <h5 class="mb-0">
+              <h6 class="mb-0">
                 <i class="bi bi-list me-2"></i>Search Results
                 @if (valuesetTotalCount() > 0) {
                   <span class="badge bg-primary ms-2">{{ valuesetTotalCount() }}</span>
                 }
-              </h5>
+              </h6>
               @if (valuesetResults().length > 0) {
                 <div class="d-flex align-items-center gap-2">
                   <label for="valuesetPageSizeSelect" class="small text-muted mb-0">Items per page:</label>
@@ -108,251 +108,82 @@
                 </div>
               }
             </div>
-                @if (valuesetResults().length === 0 && !valuesetLoading()) {
-                  <div class="text-center text-muted py-4">
-                    <i class="bi bi-search display-4"></i>
-                    <p class="mt-2">No ValueSets found. Try searching with different terms.</p>
+            @if (valuesetResults().length === 0 && !valuesetLoading()) {
+              <div class="text-center text-muted py-4">
+                <i class="bi bi-search display-4"></i>
+                <p class="mt-2">No ValueSets found. Try searching with different terms.</p>
+              </div>
+            } @else {
+              <div class="list-group mb-3">
+                @for (valueset of valuesetResults(); track valueset.id) {
+                  <div class="list-group-item list-group-item-action" 
+                       (click)="selectValueSet(valueset)"
+                       [class.active]="selectedValueSet()?.id === valueset.id">
+                    <div class="d-flex w-100 justify-content-between">
+                      <h6 class="mb-1">{{ valueset.name || 'Unnamed ValueSet' }}</h6>
+                      <small class="text-muted">{{ formatDate(valueset.date) }}</small>
+                    </div>
+                    <small class="text-muted">
+                      <i class="bi bi-link-45deg me-1"></i>{{ valueset.url }}
+                    </small>
                   </div>
-                } @else {
-                  <div class="list-group mb-3">
-                    @for (valueset of valuesetResults(); track valueset.id) {
-                      <div class="list-group-item list-group-item-action" 
-                           (click)="selectValueSet(valueset)"
-                           [class.active]="selectedValueSet()?.id === valueset.id">
-                        <div class="d-flex w-100 justify-content-between">
-                          <h6 class="mb-1">{{ valueset.name || 'Unnamed ValueSet' }}</h6>
-                          <small class="text-muted">{{ formatDate(valueset.date) }}</small>
-                        </div>
-                        <small class="text-muted">
-                          <i class="bi bi-link-45deg me-1"></i>{{ valueset.url }}
-                        </small>
-                      </div>
-                    }
-                  </div>
-                  
-                  <!-- Pagination Controls -->
-                  @if (valuesetTotalPages() > 1) {
-                    <nav aria-label="ValueSets page navigation">
-                      <ul class="pagination justify-content-center mb-0">
-                        <li class="page-item" [class.disabled]="!valuesetHasPreviousPage()">
-                          <button class="page-link" (click)="valuesetGoToFirstPage()" [disabled]="!valuesetHasPreviousPage()" type="button">
-                            <i class="bi bi-chevron-double-left"></i>
-                          </button>
-                        </li>
-                        <li class="page-item" [class.disabled]="!valuesetHasPreviousPage()">
-                          <button class="page-link" (click)="valuesetPreviousPage()" [disabled]="!valuesetHasPreviousPage()" type="button">
-                            <i class="bi bi-chevron-left"></i>
-                          </button>
-                        </li>
-                        <li class="page-item disabled">
-                          <span class="page-link">
-                            Page {{ valuesetCurrentPage() }} of {{ valuesetTotalPages() }}
-                          </span>
-                        </li>
-                        <li class="page-item disabled">
-                          <span class="page-link">
-                            Showing {{ valuesetStartIndex() }} - {{ valuesetEndIndex() }} of {{ valuesetTotalCount() }}
-                          </span>
-                        </li>
-                        <li class="page-item" [class.disabled]="!valuesetHasNextPage()">
-                          <button class="page-link" (click)="valuesetNextPage()" [disabled]="!valuesetHasNextPage()" type="button">
-                            <i class="bi bi-chevron-right"></i>
-                          </button>
-                        </li>
-                        <li class="page-item" [class.disabled]="!valuesetHasNextPage()">
-                          <button class="page-link" (click)="valuesetGoToLastPage()" [disabled]="!valuesetHasNextPage()" type="button">
-                            <i class="bi bi-chevron-double-right"></i>
-                          </button>
-                        </li>
-                      </ul>
-                    </nav>
-                  }
                 }
+              </div>
+              
+              <!-- Pagination Controls -->
+              @if (valuesetTotalPages() > 1) {
+                <nav aria-label="ValueSets page navigation">
+                  <ul class="pagination justify-content-center mb-0">
+                    <li class="page-item" [class.disabled]="!valuesetHasPreviousPage()">
+                      <button class="page-link" (click)="valuesetGoToFirstPage()" [disabled]="!valuesetHasPreviousPage()" type="button">
+                        <i class="bi bi-chevron-double-left"></i>
+                      </button>
+                    </li>
+                    <li class="page-item" [class.disabled]="!valuesetHasPreviousPage()">
+                      <button class="page-link" (click)="valuesetPreviousPage()" [disabled]="!valuesetHasPreviousPage()" type="button">
+                        <i class="bi bi-chevron-left"></i>
+                      </button>
+                    </li>
+                    <li class="page-item disabled">
+                      <span class="page-link">
+                        {{ valuesetCurrentPage() }}/{{ valuesetTotalPages() }}
+                      </span>
+                    </li>
+                    <li class="page-item disabled">
+                      <span class="page-link">
+                        {{ valuesetStartIndex() }}-{{ valuesetEndIndex() }} of {{ valuesetTotalCount() }}
+                      </span>
+                    </li>
+                    <li class="page-item" [class.disabled]="!valuesetHasNextPage()">
+                      <button class="page-link" (click)="valuesetNextPage()" [disabled]="!valuesetHasNextPage()" type="button">
+                        <i class="bi bi-chevron-right"></i>
+                      </button>
+                    </li>
+                    <li class="page-item" [class.disabled]="!valuesetHasNextPage()">
+                      <button class="page-link" (click)="valuesetGoToLastPage()" [disabled]="!valuesetHasNextPage()" type="button">
+                        <i class="bi bi-chevron-double-right"></i>
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
+              }
+            }
+          </div>
+          
+          <!-- Right Column: Details Pane with Expanded Codes -->
+          <div class="col-md-8">
+            <app-valueset-details-pane
+              [selectedValueSet]="selectedValueSet()"
+              [expandLoading]="expandLoading()"
+              [expandedCodes]="expandedCodes()"
+              [expandedRows]="expandedRows()"
+              [expandedCodeDetails]="expandedCodeDetails()"
+              [loadingDetails]="loadingDetails()"
+              [availablePageSizes]="availablePageSizes"
+              [onRowToggle]="toggleRowExpansion.bind(this)"
+            />
           </div>
         </div>
-
-        <!-- Selected ValueSet Details -->
-        @if (selectedValueSet()) {
-          <div class="row mt-4">
-            <div class="col-12">
-              <h5 class="mb-3">
-                <i class="bi bi-collection me-2"></i>{{ selectedValueSet()?.name }}
-                @if (expandLoading()) {
-                  <span class="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true"></span>
-                }
-              </h5>
-                  <div class="row">
-                    <div class="col-md-6">
-                      <h6>Description</h6>
-                      <p>{{ selectedValueSet()?.description || 'No description available' }}</p>
-                      
-                      <h6>URL</h6>
-                      <code>{{ selectedValueSet()?.url }}</code>
-                    </div>
-                    <div class="col-md-6">
-                      <h6>Status</h6>
-                      <span class="badge" [class.bg-success]="selectedValueSet()?.status === 'active'" 
-                            [class.bg-secondary]="selectedValueSet()?.status !== 'active'">
-                        {{ selectedValueSet()?.status }}
-                      </span>
-                      
-                      <h6 class="mt-3">Version</h6>
-                      <p>{{ selectedValueSet()?.version || 'No version specified' }}</p>
-                    </div>
-                  </div>
-                  
-                  @if (expandedCodes().length > 0) {
-                    <hr>
-                    <div class="d-flex justify-content-between align-items-center mb-3">
-                      <h6 class="mb-0">Expanded Codes ({{ expandedCodes().length }})</h6>
-                      <div class="d-flex align-items-center gap-2">
-                        <label for="pageSizeSelect" class="small text-muted mb-0">Items per page:</label>
-                        <select class="form-select form-select-sm" id="pageSizeSelect" 
-                                [(ngModel)]="currentPageSize"
-                                style="width: auto;">
-                          @for (size of availablePageSizes; track size) {
-                            <option [value]="size">{{ size }}</option>
-                          }
-                        </select>
-                      </div>
-                    </div>
-                    <div class="table-responsive">
-                      <table class="table table-sm table-striped table-hover">
-                        <thead class="table-light">
-                          <tr>
-                            <th scope="col" class="text-nowrap">Code</th>
-                            <th scope="col" class="text-nowrap">Display</th>
-                            <th scope="col" class="text-nowrap">System</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          @for (code of paginatedCodes(); track code.code) {
-                              <tr (click)="toggleRowExpansion(code)" style="cursor: pointer;">
-                              <td><code class="small">{{ code.code }}</code></td>
-                              <td class="text-muted small">{{ code.display || 'No display name' }}</td>
-                              <td><small class="text-muted small">{{ code.system }}</small></td>
-                            </tr>
-                            @if (isRowExpanded(code)) {
-                              <tr class="table-active">
-                                <td colspan="3" class="p-0">
-                                  <div class="p-3">
-                                    @if (isLoadingCodeDetails(code)) {
-                                      <div class="text-center py-2">
-                                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
-                                          <span class="visually-hidden">Loading...</span>
-                                        </div>
-                                        <small class="text-muted">Loading code details...</small>
-                                      </div>
-                                    } @else {
-                                      @if (getCodeDetails(code)?.error) {
-                                        <div class="alert alert-danger alert-sm mb-0" role="alert">
-                                          <i class="bi bi-exclamation-circle me-1"></i>
-                                          <small>{{ getCodeDetails(code).error }}</small>
-                                        </div>
-                                      } @else if (getCodeDetails(code)) {
-                                        <div class="row">
-                                          <div class="col-md-6">
-                                            <h6 class="small mb-2">Code Details</h6>
-                                            <div class="small">
-                                              <div class="mb-1">
-                                                <strong>Code:</strong> <code>{{ code.code }}</code>
-                                              </div>
-                                              <div class="mb-1">
-                                                <strong>Display:</strong> {{ code.display || 'No display name' }}
-                                              </div>
-                                              <div class="mb-1">
-                                                <strong>System:</strong> <small class="text-muted">{{ code.system }}</small>
-                                              </div>
-                                              @if (getCodeDetails(code)?.parameter) {
-                                                @for (param of getCodeDetails(code).parameter; track $index) {
-                                                  @if (param.name === 'display') {
-                                                    <div class="mb-1">
-                                                      <strong>Full Display:</strong> {{ param.valueString }}
-                                                    </div>
-                                                  }
-                                                  @if (param.name === 'definition') {
-                                                    <div class="mb-1">
-                                                      <strong>Definition:</strong> {{ param.valueString }}
-                                                    </div>
-                                                  }
-                                                }
-                                              }
-                                            </div>
-                                          </div>
-                                          <div class="col-md-6">
-                                            @if (getCodeDetails(code)?.parameter) {
-                                              <h6 class="small mb-2">Additional Properties</h6>
-                                              <div class="small">
-                                                @for (param of getCodeDetails(code).parameter; track $index) {
-                                                  @if (param.name !== 'display' && param.name !== 'definition' && param.name !== 'name') {
-                                                    <div class="mb-1">
-                                                      <strong>{{ param.name }}:</strong> 
-                                                      @if (param.valueString) {
-                                                        {{ param.valueString }}
-                                                      } @else if (param.valueBoolean !== undefined) {
-                                                        {{ param.valueBoolean }}
-                                                      } @else if (param.valueCode) {
-                                                        {{ param.valueCode }}
-                                                      }
-                                                    </div>
-                                                  }
-                                                }
-                                              </div>
-                                            }
-                                          </div>
-                                        </div>
-                                      }
-                                    }
-                                  </div>
-                                </td>
-                              </tr>
-                            }
-                          }
-                        </tbody>
-                      </table>
-                    </div>
-                    
-                    <!-- Pagination Controls -->
-                    @if (totalPages() > 1) {
-                      <nav aria-label="Page navigation">
-                        <ul class="pagination justify-content-center mb-0">
-                          <li class="page-item" [class.disabled]="!hasPreviousPage()">
-                            <button class="page-link" (click)="goToFirstPage()" [disabled]="!hasPreviousPage()" type="button">
-                              <i class="bi bi-chevron-double-left"></i>
-                            </button>
-                          </li>
-                          <li class="page-item" [class.disabled]="!hasPreviousPage()">
-                            <button class="page-link" (click)="previousPage()" [disabled]="!hasPreviousPage()" type="button">
-                              <i class="bi bi-chevron-left"></i>
-                            </button>
-                          </li>
-                          <li class="page-item disabled">
-                            <span class="page-link">
-                              Page {{ currentPage() }} of {{ totalPages() }}
-                            </span>
-                          </li>
-                          <li class="page-item disabled">
-                            <span class="page-link">
-                              Showing {{ startIndex() }} - {{ endIndex() }} of {{ expandedCodes().length }}
-                            </span>
-                          </li>
-                          <li class="page-item" [class.disabled]="!hasNextPage()">
-                            <button class="page-link" (click)="nextPage()" [disabled]="!hasNextPage()" type="button">
-                              <i class="bi bi-chevron-right"></i>
-                            </button>
-                          </li>
-                          <li class="page-item" [class.disabled]="!hasNextPage()">
-                            <button class="page-link" (click)="goToLastPage()" [disabled]="!hasNextPage()" type="button">
-                              <i class="bi bi-chevron-double-right"></i>
-                            </button>
-                          </li>
-                        </ul>
-                      </nav>
-                    }
-                  }
-            </div>
-          </div>
-        }
       }
 
 
@@ -441,164 +272,125 @@
       <!-- ConceptMap Tab -->
       @if (activeTab() === 'conceptmap') {
         <div class="row">
+          <!-- Left Column: Search and Results -->
           <div class="col-md-4">
-            <div class="card">
-            <div class="card-header">
-              <h6 class="card-title mb-0">
-                <i class="bi bi-search me-1"></i>Search ConceptMaps
+            <h6 class="mb-3">
+              <i class="bi bi-search me-1"></i>Search ConceptMaps
+            </h6>
+            <div class="form-floating mb-3">
+              <input type="text" class="form-control" id="conceptmapSearch" 
+                     [(ngModel)]="conceptmapSearchTerm" 
+                     (keydown.enter)="searchConceptMaps(1)"
+                     placeholder="Enter ConceptMap name or title">
+              <label for="conceptmapSearch">Search Term</label>
+              <div class="form-text">Search for ConceptMaps by name or title</div>
+            </div>
+            <button type="button" class="btn btn-primary w-100 mb-3" 
+                    (click)="searchConceptMaps(1)" 
+                    [disabled]="conceptmapLoading() || !hasValidConfiguration()">
+              @if (conceptmapLoading()) {
+                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Searching...
+              } @else {
+                <i class="bi bi-search me-2"></i>Search ConceptMaps
+              }
+            </button>
+            @if (conceptmapError()) {
+              <div class="alert alert-danger mb-3" role="alert">
+                <i class="bi bi-exclamation-circle me-2"></i>{{ conceptmapError() }}
+              </div>
+            }
+            
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h6 class="mb-0">
+                <i class="bi bi-list me-2"></i>Search Results
+                @if (conceptmapTotalCount() > 0) {
+                  <span class="badge bg-primary ms-2">{{ conceptmapTotalCount() }}</span>
+                }
               </h6>
-            </div>
-              <div class="card-body">
-                <div class="form-floating mb-3">
-                  <input type="text" class="form-control" id="conceptmapSearch" 
-                         [(ngModel)]="conceptmapSearchTerm" 
-                         placeholder="Enter ConceptMap name or title">
-                  <label for="conceptmapSearch">Search Term</label>
-                  <div class="form-text">Search for ConceptMaps by name or title</div>
-                </div>
-                <button type="button" class="btn btn-primary w-100" 
-                        (click)="searchConceptMaps()" 
-                        [disabled]="conceptmapLoading() || !hasValidConfiguration()">
-                  @if (conceptmapLoading()) {
-                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                    Searching...
-                  } @else {
-                    <i class="bi bi-search me-2"></i>Search ConceptMaps
-                  }
-                </button>
-                @if (conceptmapError()) {
-                  <div class="alert alert-danger mt-3 mb-0" role="alert">
-                    <i class="bi bi-exclamation-circle me-2"></i>{{ conceptmapError() }}
-                  </div>
-                }
-              </div>
-            </div>
-          </div>
-          <div class="col-md-8">
-            <div class="card">
-              <div class="card-header">
-                <h5 class="card-title mb-0">
-                  <i class="bi bi-list me-2"></i>ConceptMap Results
-                  @if (conceptmapResults().length > 0) {
-                    <span class="badge bg-primary ms-2">{{ conceptmapResults().length }}</span>
-                  }
-                </h5>
-              </div>
-              <div class="card-body">
-                @if (conceptmapResults().length === 0 && !conceptmapLoading()) {
-                  <div class="text-center text-muted py-4">
-                    <i class="bi bi-search display-4"></i>
-                    <p class="mt-2">No ConceptMaps found. Try searching with different terms.</p>
-                  </div>
-                } @else {
-                  <div class="list-group">
-                    @for (conceptmap of conceptmapResults(); track conceptmap.id) {
-                      <div class="list-group-item list-group-item-action" 
-                           (click)="selectConceptMap(conceptmap)"
-                           [class.active]="selectedConceptMap()?.id === conceptmap.id">
-                        <div class="d-flex w-100 justify-content-between">
-                          <h6 class="mb-1">{{ conceptmap.name || 'Unnamed ConceptMap' }}</h6>
-                          <span class="badge bg-secondary">{{ conceptmap.status }}</span>
-                        </div>
-                        <p class="mb-1">{{ truncateText(conceptmap.description || 'No description available') }}</p>
-                        <small class="text-muted">
-                          <i class="bi bi-link-45deg me-1"></i>{{ conceptmap.url }}
-                        </small>
-                      </div>
+              @if (conceptmapResults().length > 0) {
+                <div class="d-flex align-items-center gap-2">
+                  <label for="conceptmapPageSizeSelect" class="small text-muted mb-0">Items per page:</label>
+                  <select class="form-select form-select-sm" id="conceptmapPageSizeSelect" 
+                          [ngModel]="conceptmapPageSize()"
+                          (ngModelChange)="setConceptMapPageSize(+$event)"
+                          style="width: auto;">
+                    @for (size of conceptmapAvailablePageSizes; track size) {
+                      <option [value]="size">{{ size }}</option>
                     }
+                  </select>
+                </div>
+              }
+            </div>
+            @if (conceptmapResults().length === 0 && !conceptmapLoading()) {
+              <div class="text-center text-muted py-4">
+                <i class="bi bi-search display-4"></i>
+                <p class="mt-2">No ConceptMaps found. Try searching with different terms.</p>
+              </div>
+            } @else {
+              <div class="list-group mb-3">
+                @for (conceptmap of conceptmapResults(); track conceptmap.id) {
+                  <div class="list-group-item list-group-item-action" 
+                       (click)="selectConceptMap(conceptmap)"
+                       [class.active]="selectedConceptMap()?.id === conceptmap.id">
+                    <div class="d-flex w-100 justify-content-between">
+                      <h6 class="mb-1">{{ conceptmap.name || 'Unnamed ConceptMap' }}</h6>
+                      <span class="badge bg-secondary">{{ conceptmap.status }}</span>
+                    </div>
+                    <small class="text-muted">
+                      <i class="bi bi-link-45deg me-1"></i>{{ conceptmap.url }}
+                    </small>
                   </div>
                 }
               </div>
-            </div>
+              
+              <!-- Pagination Controls -->
+              @if (conceptmapResults().length > 0 || conceptmapTotalCount() > 0) {
+                <nav aria-label="ConceptMaps page navigation">
+                  <ul class="pagination justify-content-center mb-0">
+                    <li class="page-item" [class.disabled]="!conceptmapHasPreviousPage()">
+                      <button class="page-link" (click)="conceptmapGoToFirstPage()" [disabled]="!conceptmapHasPreviousPage()" type="button">
+                        <i class="bi bi-chevron-double-left"></i>
+                      </button>
+                    </li>
+                    <li class="page-item" [class.disabled]="!conceptmapHasPreviousPage()">
+                      <button class="page-link" (click)="conceptmapPreviousPage()" [disabled]="!conceptmapHasPreviousPage()" type="button">
+                        <i class="bi bi-chevron-left"></i>
+                      </button>
+                    </li>
+                    <li class="page-item disabled">
+                      <span class="page-link">
+                        {{ conceptmapCurrentPage() }}/{{ conceptmapTotalPages() }}
+                      </span>
+                    </li>
+                    <li class="page-item disabled">
+                      <span class="page-link">
+                        {{ conceptmapStartIndex() }}-{{ conceptmapEndIndex() }} of {{ conceptmapTotalCount() }}
+                      </span>
+                    </li>
+                    <li class="page-item" [class.disabled]="!conceptmapHasNextPage()">
+                      <button class="page-link" (click)="conceptmapNextPage()" [disabled]="!conceptmapHasNextPage()" type="button">
+                        <i class="bi bi-chevron-right"></i>
+                      </button>
+                    </li>
+                    <li class="page-item" [class.disabled]="!conceptmapHasNextPage()">
+                      <button class="page-link" (click)="conceptmapGoToLastPage()" [disabled]="!conceptmapHasNextPage()" type="button">
+                        <i class="bi bi-chevron-double-right"></i>
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
+              }
+            }
+          </div>
+          
+          <!-- Right Column: Details Pane -->
+          <div class="col-md-8">
+            <app-conceptmap-details-pane
+              [selectedConceptMap]="selectedConceptMap()"
+            />
           </div>
         </div>
-
-        <!-- Translation Section -->
-        @if (selectedConceptMap()) {
-          <div class="row mt-4">
-            <div class="col-md-6">
-              <div class="card">
-                <div class="card-header">
-                  <h6 class="card-title mb-0">
-                    <i class="bi bi-arrow-left-right me-1"></i>Translate Concept
-                  </h6>
-                </div>
-                <div class="card-body">
-                  <div class="form-floating mb-3">
-                    <input type="text" class="form-control" id="translateCode" 
-                           [(ngModel)]="translateCode" 
-                           placeholder="e.g., 12345-6">
-                    <label for="translateCode">Source Code</label>
-                    <div class="form-text">The code to translate</div>
-                  </div>
-                  <div class="form-floating mb-3">
-                    <input type="url" class="form-control" id="translateSystem" 
-                           [(ngModel)]="translateSystem" 
-                           placeholder="e.g., http://loinc.org">
-                    <label for="translateSystem">Source System</label>
-                    <div class="form-text">The source code system</div>
-                  </div>
-                  <div class="form-floating mb-3">
-                    <input type="url" class="form-control" id="translateTarget" 
-                           [(ngModel)]="translateTarget" 
-                           placeholder="e.g., http://snomed.info/sct">
-                    <label for="translateTarget">Target System (Optional)</label>
-                    <div class="form-text">Limit translation to specific target system</div>
-                  </div>
-                  <button type="button" class="btn btn-primary w-100" 
-                          (click)="translateConcept()" 
-                          [disabled]="translationLoading() || !hasValidConfiguration()">
-                    @if (translationLoading()) {
-                      <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-                      Translating...
-                    } @else {
-                      <i class="bi bi-arrow-left-right me-2"></i>Translate Concept
-                    }
-                  </button>
-                  @if (translationError()) {
-                    <div class="alert alert-danger mt-3 mb-0" role="alert">
-                      <i class="bi bi-exclamation-circle me-2"></i>{{ translationError() }}
-                    </div>
-                  }
-                </div>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="card">
-                <div class="card-header">
-                  <h5 class="card-title mb-0">
-                    <i class="bi bi-list me-2"></i>Translation Results
-                    @if (translationResult().length > 0) {
-                      <span class="badge bg-primary ms-2">{{ translationResult().length }}</span>
-                    }
-                  </h5>
-                </div>
-                <div class="card-body">
-                  @if (translationResult().length === 0 && !translationLoading()) {
-                    <div class="text-center text-muted py-4">
-                      <i class="bi bi-arrow-up display-4"></i>
-                      <p class="mt-2">Enter source code details and click "Translate Concept" to see results</p>
-                    </div>
-                  } @else {
-                    <div class="list-group">
-                      @for (result of translationResult(); track result.code) {
-                        <div class="list-group-item">
-                          <div class="d-flex w-100 justify-content-between">
-                            <h6 class="mb-1">{{ result.display }}</h6>
-                            <code>{{ result.code }}</code>
-                          </div>
-                          <small class="text-muted">
-                            <i class="bi bi-link-45deg me-1"></i>{{ result.system }}
-                          </small>
-                        </div>
-                      }
-                    </div>
-                  }
-                </div>
-              </div>
-            </div>
-          </div>
-        }
       }
 
       <!-- Code Systems Tab -->
@@ -777,6 +569,11 @@
                                         @if (codeSystem.date) {
                                           <div class="mb-1">
                                             <strong>Date:</strong> {{ formatDate(codeSystem.date) }}
+                                          </div>
+                                        }
+                                        @if (codeSystem.version) {
+                                          <div class="mb-1">
+                                            <strong>Version:</strong> {{ codeSystem.version }}
                                           </div>
                                         }
                                         @if (codeSystem.purpose) {

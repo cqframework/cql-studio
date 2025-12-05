@@ -1,0 +1,435 @@
+@if (selectedConceptMap()) {
+  <div class="card h-100">
+    <div class="card-header">
+      <h5 class="card-title mb-0">
+        <i class="bi bi-arrow-left-right me-2"></i>{{ selectedConceptMap()?.name || selectedConceptMap()?.title || 'ConceptMap' }}
+      </h5>
+    </div>
+    <div class="card-body">
+      <!-- Basic Information -->
+      <div class="mb-4">
+        <h6 class="border-bottom pb-2 mb-3">Basic Information</h6>
+        <div class="row">
+          <div class="col-md-6">
+            @if (selectedConceptMap()?.id) {
+              <div class="mb-2">
+                <strong>ID:</strong> <code class="small">{{ selectedConceptMap()?.id }}</code>
+              </div>
+            }
+            @if (selectedConceptMap()?.name) {
+              <div class="mb-2">
+                <strong>Name:</strong> <span class="small">{{ selectedConceptMap()?.name }}</span>
+              </div>
+            }
+            @if (selectedConceptMap()?.title) {
+              <div class="mb-2">
+                <strong>Title:</strong> <span class="small">{{ selectedConceptMap()?.title }}</span>
+              </div>
+            }
+            @if (selectedConceptMap()?.url) {
+              <div class="mb-2">
+                <strong>URL:</strong> <code class="small">{{ selectedConceptMap()?.url }}</code>
+              </div>
+            }
+            @if (selectedConceptMap()?.version) {
+              <div class="mb-2">
+                <strong>Version:</strong> <span class="small">{{ selectedConceptMap()?.version }}</span>
+              </div>
+            }
+            @if (selectedConceptMap()?.status) {
+              <div class="mb-2">
+                <strong>Status:</strong>
+                <span class="badge ms-2" 
+                      [class.bg-success]="selectedConceptMap()?.status === 'active'" 
+                      [class.bg-warning]="selectedConceptMap()?.status === 'draft'"
+                      [class.bg-danger]="selectedConceptMap()?.status === 'retired'"
+                      [class.bg-secondary]="selectedConceptMap()?.status !== 'active' && selectedConceptMap()?.status !== 'draft' && selectedConceptMap()?.status !== 'retired'">
+                  {{ selectedConceptMap()?.status }}
+                </span>
+              </div>
+            }
+            @if (selectedConceptMap()?.experimental !== undefined) {
+              <div class="mb-2">
+                <strong>Experimental:</strong>
+                <span class="badge ms-2" 
+                      [class.bg-warning]="selectedConceptMap()?.experimental" 
+                      [class.bg-success]="!selectedConceptMap()?.experimental">
+                  {{ selectedConceptMap()?.experimental ? 'Yes' : 'No' }}
+                </span>
+              </div>
+            }
+            @if (selectedConceptMap()?.date) {
+              <div class="mb-2">
+                <strong>Date:</strong> <span class="small">{{ formatDate(selectedConceptMap()?.date) }}</span>
+              </div>
+            }
+            @if (selectedConceptMap()?.publisher) {
+              <div class="mb-2">
+                <strong>Publisher:</strong> <span class="small">{{ selectedConceptMap()?.publisher }}</span>
+              </div>
+            }
+          </div>
+          <div class="col-md-6">
+            @if (selectedConceptMap()?.description) {
+              <div class="mb-2">
+                <strong>Description:</strong>
+                <p class="small mt-1 mb-0">{{ selectedConceptMap()?.description }}</p>
+              </div>
+            }
+            @if (selectedConceptMap()?.purpose) {
+              <div class="mb-2">
+                <strong>Purpose:</strong>
+                <p class="small mt-1 mb-0">{{ selectedConceptMap()?.purpose }}</p>
+              </div>
+            }
+            @if (selectedConceptMap()?.copyright) {
+              <div class="mb-2">
+                <strong>Copyright:</strong>
+                <p class="small mt-1 mb-0">{{ selectedConceptMap()?.copyright }}</p>
+              </div>
+            }
+            @if (selectedConceptMap()?.sourceUri) {
+              <div class="mb-2">
+                <strong>Source URI:</strong> <code class="small">{{ selectedConceptMap()?.sourceUri }}</code>
+              </div>
+            }
+            @if (selectedConceptMap()?.targetUri) {
+              <div class="mb-2">
+                <strong>Target URI:</strong> <code class="small">{{ selectedConceptMap()?.targetUri }}</code>
+              </div>
+            }
+            @if (selectedConceptMap()?.sourceCanonical) {
+              <div class="mb-2">
+                <strong>Source Canonical:</strong> <code class="small">{{ selectedConceptMap()?.sourceCanonical }}</code>
+              </div>
+            }
+            @if (selectedConceptMap()?.targetCanonical) {
+              <div class="mb-2">
+                <strong>Target Canonical:</strong> <code class="small">{{ selectedConceptMap()?.targetCanonical }}</code>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+
+      <!-- Identifiers -->
+      @if (getIdentifiers(selectedConceptMap()).length > 0) {
+        <div class="mb-4">
+          <h6 class="border-bottom pb-2 mb-3">Identifiers</h6>
+          <div class="small">
+            @for (identifier of getIdentifiers(selectedConceptMap()); track $index) {
+              <div class="mb-2">
+                @if (identifier?.system) {
+                  <strong>System:</strong> <code class="small">{{ identifier.system }}</code>
+                }
+                @if (identifier?.value) {
+                  <span class="ms-2"><strong>Value:</strong> {{ identifier.value }}</span>
+                }
+                @if (identifier?.use) {
+                  <span class="badge bg-secondary ms-2">{{ identifier.use }}</span>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Contact Information -->
+      @if (selectedConceptMap()?.contact && selectedConceptMap()!.contact!.length > 0) {
+        <div class="mb-4">
+          <h6 class="border-bottom pb-2 mb-3">Contact</h6>
+          <div class="small">
+            @for (contact of selectedConceptMap()!.contact!; track $index) {
+              <div class="mb-2">
+                @if (contact.name) {
+                  <strong>Name:</strong> {{ contact.name }}
+                }
+                @if (contact.telecom && contact.telecom.length > 0) {
+                  <div class="mt-1">
+                    @for (telecom of contact.telecom; track $index) {
+                      <div>
+                        <strong>{{ telecom.system }}:</strong> 
+                        <a [href]="telecom.system === 'email' ? 'mailto:' + telecom.value : telecom.system === 'phone' ? 'tel:' + telecom.value : telecom.value" 
+                           [target]="telecom.system === 'url' ? '_blank' : undefined">
+                          {{ telecom.value }}
+                        </a>
+                        @if (telecom.use) {
+                          <span class="badge bg-secondary ms-1">{{ telecom.use }}</span>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Use Context -->
+      @if (selectedConceptMap()?.useContext && selectedConceptMap()!.useContext!.length > 0) {
+        <div class="mb-4">
+          <h6 class="border-bottom pb-2 mb-3">Use Context</h6>
+          <div class="small">
+            @for (context of selectedConceptMap()!.useContext!; track $index) {
+              <div class="mb-2">
+                @if (context.code) {
+                  <strong>Code:</strong> 
+                  @if (context.code.code) {
+                    <code class="small ms-1">{{ context.code.code }}</code>
+                    @if (context.code.display) {
+                      <span class="ms-1">({{ context.code.display }})</span>
+                    }
+                    @if (context.code.system) {
+                      <small class="text-muted ms-1">[{{ context.code.system }}]</small>
+                    }
+                  }
+                }
+                @if (context.valueCodeableConcept) {
+                  <div class="mt-1">
+                    <strong>Value:</strong>
+                    @if (context.valueCodeableConcept.coding && context.valueCodeableConcept.coding.length > 0) {
+                      @for (coding of context.valueCodeableConcept.coding; track $index) {
+                        <code class="small ms-1">{{ coding.code }}</code>
+                        @if (coding.display) {
+                          <span class="ms-1">({{ coding.display }})</span>
+                        }
+                      }
+                    } @else if (context.valueCodeableConcept.text) {
+                      {{ context.valueCodeableConcept.text }}
+                    }
+                  </div>
+                } @else if (context.valueQuantity) {
+                  <div class="mt-1">
+                    <strong>Value:</strong> {{ context.valueQuantity.value }}
+                    @if (context.valueQuantity.unit) {
+                      {{ context.valueQuantity.unit }}
+                    }
+                  </div>
+                } @else if (context.valueRange) {
+                  <div class="mt-1">
+                    <strong>Value:</strong> Range
+                  </div>
+                } @else if (context.valueReference) {
+                  <div class="mt-1">
+                    <strong>Value:</strong> 
+                    @if (context.valueReference.reference) {
+                      {{ context.valueReference.reference }}
+                    }
+                    @if (context.valueReference.display) {
+                      ({{ context.valueReference.display }})
+                    }
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Jurisdiction -->
+      @if (selectedConceptMap()?.jurisdiction && selectedConceptMap()!.jurisdiction!.length > 0) {
+        <div class="mb-4">
+          <h6 class="border-bottom pb-2 mb-3">Jurisdiction</h6>
+          <div class="small">
+            @for (jurisdiction of selectedConceptMap()!.jurisdiction!; track $index) {
+              <div class="mb-1">
+                @if (jurisdiction?.coding && jurisdiction.coding && jurisdiction.coding.length > 0) {
+                  @for (coding of jurisdiction?.coding!; track $index) {
+                    <code class="small">{{ coding?.code }}</code>
+                    @if (coding?.display) {
+                      <span class="ms-1">({{ coding.display }})</span>
+                    }
+                    @if (coding?.system) {
+                      <small class="text-muted ms-1">[{{ coding.system }}]</small>
+                    }
+                  }
+                } @else if (jurisdiction?.text) {
+                  {{ jurisdiction.text }}
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Groups (Mappings) -->
+      @if (selectedConceptMap()?.group && selectedConceptMap()!.group!.length > 0) {
+        <div class="mb-4">
+          <h6 class="border-bottom pb-2 mb-3">Mapping Groups ({{ selectedConceptMap()!.group!.length }})</h6>
+          <div class="small">
+            @for (group of selectedConceptMap()!.group!; track $index) {
+              <div class="card mb-3">
+                <div class="card-header">
+                  <strong>Group {{ $index + 1 }}</strong>
+                </div>
+                <div class="card-body">
+                  @if (group.source) {
+                    <div class="mb-2">
+                      <strong>Source:</strong> <code class="small">{{ group.source }}</code>
+                      @if (group.sourceVersion) {
+                        <span class="ms-2"><strong>Version:</strong> {{ group.sourceVersion }}</span>
+                      }
+                    </div>
+                  }
+                  @if (group.target) {
+                    <div class="mb-2">
+                      <strong>Target:</strong> <code class="small">{{ group.target }}</code>
+                      @if (group.targetVersion) {
+                        <span class="ms-2"><strong>Version:</strong> {{ group.targetVersion }}</span>
+                      }
+                    </div>
+                  }
+                  @if (group.element && group.element.length > 0) {
+                    <div class="mb-2">
+                      <strong>Elements ({{ group.element.length }}):</strong>
+                      <div class="table-responsive mt-2">
+                        <table class="table table-sm table-bordered">
+                          <thead class="table-light">
+                            <tr>
+                              <th>Source Code</th>
+                              <th>Source Display</th>
+                              <th>Target Code</th>
+                              <th>Target Display</th>
+                              <th>Equivalence</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            @for (element of group.element; track element.code || $index) {
+                              <tr>
+                                <td><code class="small">{{ element?.code || '-' }}</code></td>
+                                <td>{{ element?.display || '-' }}</td>
+                                <td>
+                                  @if (element?.target && element.target && element.target.length > 0) {
+                                    @for (target of element?.target!; track target?.code || $index) {
+                                      <div>
+                                        <code class="small">{{ target?.code || '-' }}</code>
+                                      </div>
+                                    }
+                                  } @else {
+                                    -
+                                  }
+                                </td>
+                                <td>
+                                  @if (element?.target && element.target && element.target.length > 0) {
+                                    @for (target of element?.target!; track target?.code || $index) {
+                                      <div>{{ target?.display || '-' }}</div>
+                                    }
+                                  } @else {
+                                    -
+                                  }
+                                </td>
+                                <td>
+                                  @if (element?.target && element.target && element.target.length > 0) {
+                                    @for (target of element?.target!; track target?.code || $index) {
+                                      <div>
+                                        <span class="badge bg-secondary">{{ target?.equivalence || '-' }}</span>
+                                      </div>
+                                    }
+                                  } @else {
+                                    -
+                                  }
+                                </td>
+                              </tr>
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  }
+                  @if (group.unmapped) {
+                    <div class="mb-2">
+                      <strong>Unmapped:</strong>
+                      <div class="ms-2">
+                        @if (group.unmapped.mode) {
+                          <div><strong>Mode:</strong> <span class="badge bg-warning">{{ group.unmapped.mode }}</span></div>
+                        }
+                        @if (group.unmapped.code) {
+                          <div><strong>Code:</strong> <code class="small">{{ group.unmapped.code }}</code></div>
+                        }
+                        @if (group.unmapped.display) {
+                          <div><strong>Display:</strong> {{ group.unmapped.display }}</div>
+                        }
+                        @if (group.unmapped.url) {
+                          <div><strong>URL:</strong> <code class="small">{{ group.unmapped.url }}</code></div>
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      <!-- Meta Information -->
+      @if (selectedConceptMap()?.meta) {
+        <div class="mb-4">
+          <h6 class="border-bottom pb-2 mb-3">Meta Information</h6>
+          <div class="small">
+            @if (selectedConceptMap()?.meta?.versionId) {
+              <div class="mb-1">
+                <strong>Version ID:</strong> <code class="small">{{ selectedConceptMap()?.meta?.versionId }}</code>
+              </div>
+            }
+            @if (selectedConceptMap()?.meta?.lastUpdated) {
+              <div class="mb-1">
+                <strong>Last Updated:</strong> <span>{{ formatDate(selectedConceptMap()?.meta?.lastUpdated) }}</span>
+              </div>
+            }
+            @if (selectedConceptMap()?.meta?.profile && selectedConceptMap()!.meta!.profile!.length > 0) {
+              <div class="mb-1">
+                <strong>Profiles:</strong>
+                @for (profile of selectedConceptMap()!.meta!.profile!; track profile) {
+                  <code class="small ms-1">{{ profile }}</code>
+                }
+              </div>
+            }
+                @if (selectedConceptMap()?.meta?.security && selectedConceptMap()!.meta!.security!.length > 0) {
+              <div class="mb-1">
+                <strong>Security:</strong>
+                @for (security of selectedConceptMap()!.meta!.security!; track $index) {
+                  @if (security?.code) {
+                    <code class="small ms-1">{{ security.code }}</code>
+                    @if (security?.display) {
+                      <span class="ms-1">({{ security.display }})</span>
+                    }
+                    @if (security?.system) {
+                      <small class="text-muted ms-1">[{{ security.system }}]</small>
+                    }
+                  }
+                }
+              </div>
+            }
+            @if (selectedConceptMap()?.meta?.tag && selectedConceptMap()!.meta!.tag!.length > 0) {
+              <div class="mb-1">
+                <strong>Tags:</strong>
+                @for (tag of selectedConceptMap()!.meta!.tag!; track $index) {
+                  <span class="badge bg-secondary ms-1">
+                    @if (tag.code) {
+                      {{ tag.code }}
+                    }
+                    @if (tag.display) {
+                      ({{ tag.display }})
+                    }
+                  </span>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+} @else {
+  <div class="card h-100">
+    <div class="card-body d-flex align-items-center justify-content-center" style="min-height: 400px;">
+      <div class="text-center text-muted">
+        <i class="bi bi-arrow-left display-4"></i>
+        <p class="mt-3">Select a ConceptMap from the results to view details</p>
+      </div>
+    </div>
+  </div>
+}
+

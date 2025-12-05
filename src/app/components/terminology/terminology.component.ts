@@ -7,6 +7,8 @@ import { Router } from '@angular/router';
 import { SettingsService } from '../../services/settings.service';
 import { TerminologyService } from '../../services/terminology.service';
 import { ValueSet, CodeSystem, ConceptMap, Bundle, Parameters } from 'fhir/r4';
+import { ValueSetDetailsPaneComponent } from './valueset-details-pane/valueset-details-pane.component';
+import { ConceptMapDetailsPaneComponent } from './conceptmap-details-pane/conceptmap-details-pane.component';
 
 interface SearchResult {
   id: string;
@@ -26,7 +28,7 @@ interface ValidationResult {
 @Component({
   selector: 'app-terminology',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ValueSetDetailsPaneComponent, ConceptMapDetailsPaneComponent],
   templateUrl: './terminology.component.html',
   styleUrl: './terminology.component.scss'
 })
@@ -41,6 +43,7 @@ export class TerminologyComponent {
   protected readonly valuesetLoading = signal<boolean>(false);
   protected readonly valuesetError = signal<string | null>(null);
   protected readonly selectedValueSet = signal<ValueSet | null>(null);
+  protected readonly expandedValueSet = signal<ValueSet | null>(null);
   protected readonly expandedCodes = signal<any[]>([]);
   protected readonly expandLoading = signal<boolean>(false);
   
@@ -114,6 +117,12 @@ export class TerminologyComponent {
   protected readonly conceptmapLoading = signal<boolean>(false);
   protected readonly conceptmapError = signal<string | null>(null);
   protected readonly selectedConceptMap = signal<ConceptMap | null>(null);
+  
+  // Pagination for ConceptMaps
+  protected readonly conceptmapCurrentPage = signal<number>(1);
+  protected readonly conceptmapPageSize = signal<number>(20);
+  protected readonly conceptmapTotalCount = signal<number>(0);
+  protected readonly conceptmapAvailablePageSizes = [10, 20, 50, 100];
 
   // Translation
   protected readonly translateCode = signal<string>('');
@@ -182,13 +191,18 @@ export class TerminologyComponent {
     this.activeTab.set(tab);
     
     // Auto-load ValueSets when ValueSets tab is activated
-    if (tab === 'valueset' && this.valuesetResults().length === 0 && !this.valuesetLoading()) {
-      this.searchValueSets();
+    if (tab === 'valueset' && this.serverAvailable() && !this.valuesetLoading()) {
+      this.searchValueSets(1);
+    }
+    
+    // Auto-load ConceptMaps when ConceptMaps tab is activated
+    if (tab === 'conceptmap' && this.serverAvailable() && !this.conceptmapLoading()) {
+      this.searchConceptMaps(1);
     }
     
     // Auto-load ValueSets when Browser tab is activated
-    if (tab === 'codes' && this.valuesetResults().length === 0 && !this.valuesetLoading()) {
-      this.searchValueSets();
+    if (tab === 'codes' && this.serverAvailable() && !this.valuesetLoading()) {
+      this.searchValueSets(1);
     }
   }
 
@@ -321,6 +335,7 @@ export class TerminologyComponent {
       }
 
       const result = await this.terminologyService.expandValueSet(params).toPromise();
+      this.expandedValueSet.set(result || null);
       this.expandedCodes.set(result?.expansion?.contains || []);
       this.currentPage.set(1); // Reset to first page when expanding new ValueSet
     } catch (error) {
@@ -440,6 +455,57 @@ export class TerminologyComponent {
     this.valuesetPageSize.set(size);
     // Reset to first page and re-search
     this.searchValueSets(1);
+  }
+
+  // Pagination methods for ConceptMaps
+  protected readonly conceptmapTotalPages = computed(() => {
+    const total = this.conceptmapTotalCount();
+    const size = this.conceptmapPageSize();
+    return Math.max(1, Math.ceil(total / size));
+  });
+
+  protected readonly conceptmapHasPreviousPage = computed(() => {
+    return this.conceptmapCurrentPage() > 1;
+  });
+
+  protected readonly conceptmapHasNextPage = computed(() => {
+    return this.conceptmapCurrentPage() < this.conceptmapTotalPages();
+  });
+
+  protected readonly conceptmapStartIndex = computed(() => {
+    return (this.conceptmapCurrentPage() - 1) * this.conceptmapPageSize() + 1;
+  });
+
+  protected readonly conceptmapEndIndex = computed(() => {
+    const total = this.conceptmapTotalCount();
+    const end = this.conceptmapCurrentPage() * this.conceptmapPageSize();
+    return Math.min(end, total);
+  });
+
+  conceptmapPreviousPage(): void {
+    if (this.conceptmapHasPreviousPage()) {
+      this.searchConceptMaps(this.conceptmapCurrentPage() - 1);
+    }
+  }
+
+  conceptmapNextPage(): void {
+    if (this.conceptmapHasNextPage()) {
+      this.searchConceptMaps(this.conceptmapCurrentPage() + 1);
+    }
+  }
+
+  conceptmapGoToFirstPage(): void {
+    this.searchConceptMaps(1);
+  }
+
+  conceptmapGoToLastPage(): void {
+    this.searchConceptMaps(this.conceptmapTotalPages());
+  }
+
+  setConceptMapPageSize(size: number): void {
+    this.conceptmapPageSize.set(size);
+    // Reset to first page and re-search
+    this.searchConceptMaps(1);
   }
 
   // Row expansion methods for Expanded Codes table
@@ -751,7 +817,7 @@ export class TerminologyComponent {
   }
 
   // ConceptMap operations
-  async searchConceptMaps(): Promise<void> {
+  async searchConceptMaps(page: number = 1): Promise<void> {
     if (!this.hasValidConfiguration()) {
       this.conceptmapError.set('Please configure terminology service settings first.');
       return;
@@ -759,10 +825,16 @@ export class TerminologyComponent {
 
     this.conceptmapLoading.set(true);
     this.conceptmapError.set(null);
+    this.conceptmapCurrentPage.set(page);
 
     try {
       const searchTerm = this.conceptmapSearchTerm().trim();
-      const params: any = { _count: 20 };
+      const pageSize = this.conceptmapPageSize();
+      const offset = (page - 1) * pageSize;
+      const params: any = { 
+        _count: pageSize,
+        _offset: offset
+      };
       
       if (searchTerm) {
         params.name = searchTerm;
@@ -770,6 +842,21 @@ export class TerminologyComponent {
 
       const result = await this.terminologyService.searchConceptMaps(params).toPromise();
       this.conceptmapResults.set(result?.entry?.map(e => e.resource!) || []);
+      
+      // Update total count from bundle
+      if (result?.total !== undefined) {
+        this.conceptmapTotalCount.set(result.total);
+      } else {
+        // Estimate total if not provided
+        const currentResults = this.conceptmapResults().length;
+        if (currentResults === pageSize) {
+          // Might have more results
+          this.conceptmapTotalCount.set((page * pageSize) + 1);
+        } else {
+          // This is likely the last page
+          this.conceptmapTotalCount.set((page - 1) * pageSize + currentResults);
+        }
+      }
     } catch (error) {
       this.conceptmapError.set(this.getErrorMessage(error));
     } finally {
@@ -777,7 +864,7 @@ export class TerminologyComponent {
     }
   }
 
-  async selectConceptMap(conceptmap: ConceptMap): Promise<void> {
+  selectConceptMap(conceptmap: ConceptMap): void {
     this.selectedConceptMap.set(conceptmap);
   }
 
