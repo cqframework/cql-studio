@@ -65,12 +65,13 @@
             <div class="form-floating mb-3">
               <input type="text" class="form-control" id="valuesetSearch" 
                      [(ngModel)]="valuesetSearchTerm" 
+                     (keydown.enter)="searchValueSets(1)"
                      placeholder="Enter ValueSet name or title">
               <label for="valuesetSearch">Search Term</label>
               <div class="form-text">Search for ValueSets by name or title</div>
             </div>
             <button type="button" class="btn btn-primary w-100" 
-                    (click)="searchValueSets()" 
+                    (click)="searchValueSets(1)" 
                     [disabled]="valuesetLoading() || !hasValidConfiguration()">
               @if (valuesetLoading()) {
                 <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
@@ -86,19 +87,34 @@
             }
           </div>
           <div class="col-md-8">
-            <h5 class="mb-3">
-              <i class="bi bi-list me-2"></i>Search Results
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5 class="mb-0">
+                <i class="bi bi-list me-2"></i>Search Results
+                @if (valuesetTotalCount() > 0) {
+                  <span class="badge bg-primary ms-2">{{ valuesetTotalCount() }}</span>
+                }
+              </h5>
               @if (valuesetResults().length > 0) {
-                <span class="badge bg-primary ms-2">{{ valuesetResults().length }}</span>
+                <div class="d-flex align-items-center gap-2">
+                  <label for="valuesetPageSizeSelect" class="small text-muted mb-0">Items per page:</label>
+                  <select class="form-select form-select-sm" id="valuesetPageSizeSelect" 
+                          [ngModel]="valuesetPageSize()"
+                          (ngModelChange)="setValueSetPageSize(+$event)"
+                          style="width: auto;">
+                    @for (size of valuesetAvailablePageSizes; track size) {
+                      <option [value]="size">{{ size }}</option>
+                    }
+                  </select>
+                </div>
               }
-            </h5>
+            </div>
                 @if (valuesetResults().length === 0 && !valuesetLoading()) {
                   <div class="text-center text-muted py-4">
                     <i class="bi bi-search display-4"></i>
                     <p class="mt-2">No ValueSets found. Try searching with different terms.</p>
                   </div>
                 } @else {
-                  <div class="list-group">
+                  <div class="list-group mb-3">
                     @for (valueset of valuesetResults(); track valueset.id) {
                       <div class="list-group-item list-group-item-action" 
                            (click)="selectValueSet(valueset)"
@@ -107,13 +123,50 @@
                           <h6 class="mb-1">{{ valueset.name || 'Unnamed ValueSet' }}</h6>
                           <small class="text-muted">{{ formatDate(valueset.date) }}</small>
                         </div>
-                        <p class="mb-1">{{ truncateText(valueset.description || 'No description available') }}</p>
                         <small class="text-muted">
                           <i class="bi bi-link-45deg me-1"></i>{{ valueset.url }}
                         </small>
                       </div>
                     }
                   </div>
+                  
+                  <!-- Pagination Controls -->
+                  @if (valuesetTotalPages() > 1) {
+                    <nav aria-label="ValueSets page navigation">
+                      <ul class="pagination justify-content-center mb-0">
+                        <li class="page-item" [class.disabled]="!valuesetHasPreviousPage()">
+                          <button class="page-link" (click)="valuesetGoToFirstPage()" [disabled]="!valuesetHasPreviousPage()" type="button">
+                            <i class="bi bi-chevron-double-left"></i>
+                          </button>
+                        </li>
+                        <li class="page-item" [class.disabled]="!valuesetHasPreviousPage()">
+                          <button class="page-link" (click)="valuesetPreviousPage()" [disabled]="!valuesetHasPreviousPage()" type="button">
+                            <i class="bi bi-chevron-left"></i>
+                          </button>
+                        </li>
+                        <li class="page-item disabled">
+                          <span class="page-link">
+                            Page {{ valuesetCurrentPage() }} of {{ valuesetTotalPages() }}
+                          </span>
+                        </li>
+                        <li class="page-item disabled">
+                          <span class="page-link">
+                            Showing {{ valuesetStartIndex() }} - {{ valuesetEndIndex() }} of {{ valuesetTotalCount() }}
+                          </span>
+                        </li>
+                        <li class="page-item" [class.disabled]="!valuesetHasNextPage()">
+                          <button class="page-link" (click)="valuesetNextPage()" [disabled]="!valuesetHasNextPage()" type="button">
+                            <i class="bi bi-chevron-right"></i>
+                          </button>
+                        </li>
+                        <li class="page-item" [class.disabled]="!valuesetHasNextPage()">
+                          <button class="page-link" (click)="valuesetGoToLastPage()" [disabled]="!valuesetHasNextPage()" type="button">
+                            <i class="bi bi-chevron-double-right"></i>
+                          </button>
+                        </li>
+                      </ul>
+                    </nav>
+                  }
                 }
           </div>
         </div>
@@ -563,7 +616,7 @@
                   } @else {
                     <i class="bi bi-arrow-clockwise me-1"></i>
                   }
-                  Load Code Systems
+                  Reload Code Systems
                 </button>
                 <button type="button" class="btn btn-sm btn-outline-success" (click)="verifyCodeSystems()" [disabled]="!hasValidConfiguration()">
                   <i class="bi bi-check-circle me-1"></i>

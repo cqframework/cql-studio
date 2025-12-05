@@ -9,8 +9,8 @@ services:
       - "3003:3003"
     restart: unless-stopped
 
-  cql-hapi-r4:
-    image: hapiproject/hapi:v8.4.0-2
+  cql-hapi-r4-data:
+    image: hapiproject/hapi:v8.6.0-1
     ports:
       - "8080:8080"
     environment:
@@ -24,6 +24,37 @@ services:
       - hapi.fhir.cdshooks.enabled=true
       - hapi.fhir.cr.enabled=true
       - spring.jpa.properties.hibernate.search.enabled=true
+      - spring.jpa.properties.hibernate.search.backend.type=lucene
+      - spring.jpa.properties.hibernate.search.backend.analysis.configurer=ca.uhn.fhir.jpa.search.HapiHSearchAnalysisConfigurers$HapiLuceneAnalysisConfigurer
+      - JAVA_TOOL_OPTIONS=-Xms1g -Xmx8g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    deploy:
+      resources:
+        reservations:
+          memory: 1G
+    restart: unless-stopped
+
+  cql-hapi-r4-terminology:
+    image: hapiproject/hapi:v8.6.0-1
+    ports:
+      - "8081:8080"
+    environment:
+      - hapi.fhir.fhir_version=R4
+      - spring.main.allow-bean-definition-overriding=true
+      - hapi.fhir.expunge_enabled=true
+      - hapi.fhir.allow_multiple_delete=true
+      - hapi.fhir.bulk_export_enabled=true
+      - hapi.fhir.bulk_import_enabled=true
+      - hapi.fhir.enable_index_missing_fields=true
+      - hapi.fhir.cdshooks.enabled=true
+      - hapi.fhir.cr.enabled=true
+      - spring.jpa.properties.hibernate.search.enabled=true
+      - spring.jpa.properties.hibernate.search.backend.type=lucene
+      - spring.jpa.properties.hibernate.search.backend.analysis.configurer=ca.uhn.fhir.jpa.search.HapiHSearchAnalysisConfigurers$HapiLuceneAnalysisConfigurer
+      - JAVA_TOOL_OPTIONS=-Xms1g -Xmx8g -XX:+UseG1GC -XX:MaxGCPauseMillis=200
+    deploy:
+      resources:
+        reservations:
+          memory: 1G
     restart: unless-stopped
 
   cql-translation-service:

@@ -44,6 +44,12 @@ export class TerminologyComponent {
   protected readonly expandedCodes = signal<any[]>([]);
   protected readonly expandLoading = signal<boolean>(false);
   
+  // Pagination for ValueSets
+  protected readonly valuesetCurrentPage = signal<number>(1);
+  protected readonly valuesetPageSize = signal<number>(20);
+  protected readonly valuesetTotalCount = signal<number>(0);
+  protected readonly valuesetAvailablePageSizes = [10, 20, 50, 100];
+  
   // Pagination for Expanded Codes
   protected readonly currentPage = signal<number>(1);
   protected readonly pageSize = signal<number>(50);
@@ -175,6 +181,11 @@ export class TerminologyComponent {
   setActiveTab(tab: string): void {
     this.activeTab.set(tab);
     
+    // Auto-load ValueSets when ValueSets tab is activated
+    if (tab === 'valueset' && this.valuesetResults().length === 0 && !this.valuesetLoading()) {
+      this.searchValueSets();
+    }
+    
     // Auto-load ValueSets when Browser tab is activated
     if (tab === 'codes' && this.valuesetResults().length === 0 && !this.valuesetLoading()) {
       this.searchValueSets();
@@ -229,7 +240,7 @@ export class TerminologyComponent {
   }
 
   // ValueSet operations
-  async searchValueSets(): Promise<void> {
+  async searchValueSets(page: number = 1): Promise<void> {
     if (!this.hasValidConfiguration()) {
       this.valuesetError.set('Please configure terminology service settings first.');
       return;
@@ -237,10 +248,16 @@ export class TerminologyComponent {
 
     this.valuesetLoading.set(true);
     this.valuesetError.set(null);
+    this.valuesetCurrentPage.set(page);
 
     try {
       const searchTerm = this.valuesetSearchTerm().trim();
-      const params: any = { _count: 20 };
+      const pageSize = this.valuesetPageSize();
+      const offset = (page - 1) * pageSize;
+      const params: any = { 
+        _count: pageSize,
+        _offset: offset
+      };
       
       if (searchTerm) {
         // Try searching by name first, then title
@@ -249,6 +266,21 @@ export class TerminologyComponent {
 
       const result = await this.terminologyService.searchValueSets(params).toPromise();
       this.valuesetResults.set(result?.entry?.map(e => e.resource!) || []);
+      
+      // Update total count from bundle
+      if (result?.total !== undefined) {
+        this.valuesetTotalCount.set(result.total);
+      } else {
+        // Estimate total if not provided
+        const currentResults = this.valuesetResults().length;
+        if (currentResults === pageSize) {
+          // Might have more results
+          this.valuesetTotalCount.set((page * pageSize) + 1);
+        } else {
+          // This is likely the last page
+          this.valuesetTotalCount.set((page - 1) * pageSize + currentResults);
+        }
+      }
     } catch (error) {
       this.valuesetError.set(this.getErrorMessage(error));
     } finally {
@@ -321,7 +353,7 @@ export class TerminologyComponent {
     }
   }
 
-  // Pagination methods
+  // Pagination methods for Expanded Codes
   setPage(page: number): void {
     this.currentPage.set(Math.max(1, Math.min(page, this.totalPages())));
   }
@@ -357,6 +389,57 @@ export class TerminologyComponent {
 
   goToLastPage(): void {
     this.currentPage.set(this.totalPages());
+  }
+
+  // Pagination methods for ValueSets
+  protected readonly valuesetTotalPages = computed(() => {
+    const total = this.valuesetTotalCount();
+    const size = this.valuesetPageSize();
+    return Math.max(1, Math.ceil(total / size));
+  });
+
+  protected readonly valuesetHasPreviousPage = computed(() => {
+    return this.valuesetCurrentPage() > 1;
+  });
+
+  protected readonly valuesetHasNextPage = computed(() => {
+    return this.valuesetCurrentPage() < this.valuesetTotalPages();
+  });
+
+  protected readonly valuesetStartIndex = computed(() => {
+    return (this.valuesetCurrentPage() - 1) * this.valuesetPageSize() + 1;
+  });
+
+  protected readonly valuesetEndIndex = computed(() => {
+    const total = this.valuesetTotalCount();
+    const end = this.valuesetCurrentPage() * this.valuesetPageSize();
+    return Math.min(end, total);
+  });
+
+  valuesetPreviousPage(): void {
+    if (this.valuesetHasPreviousPage()) {
+      this.searchValueSets(this.valuesetCurrentPage() - 1);
+    }
+  }
+
+  valuesetNextPage(): void {
+    if (this.valuesetHasNextPage()) {
+      this.searchValueSets(this.valuesetCurrentPage() + 1);
+    }
+  }
+
+  valuesetGoToFirstPage(): void {
+    this.searchValueSets(1);
+  }
+
+  valuesetGoToLastPage(): void {
+    this.searchValueSets(this.valuesetTotalPages());
+  }
+
+  setValueSetPageSize(size: number): void {
+    this.valuesetPageSize.set(size);
+    // Reset to first page and re-search
+    this.searchValueSets(1);
   }
 
   // Row expansion methods for Expanded Codes table
