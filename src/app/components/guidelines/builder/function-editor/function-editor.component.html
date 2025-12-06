@@ -1,0 +1,137 @@
+<div class="function-editor">
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h6 class="mb-0">{{ func().name || 'New Function' }}</h6>
+      <div class="btn-group btn-group-sm">
+        <button
+          class="btn btn-success"
+          (click)="onSave()"
+          [disabled]="!isValid()"
+          type="button"
+          title="Save"
+        >
+          <i class="bi bi-check"></i> Save
+        </button>
+        <button
+          class="btn btn-secondary"
+          (click)="onCancel()"
+          type="button"
+          title="Cancel"
+        >
+          <i class="bi bi-x"></i> Cancel
+        </button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row g-3 mb-3">
+        <div class="col-md-4">
+          <label for="func-name" class="form-label form-label-sm">Function Name <span class="text-danger">*</span></label>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            id="func-name"
+            [value]="func().name"
+            (input)="onNameChange($any($event.target).value)"
+            placeholder="FunctionName"
+            pattern="^[A-Za-z][A-Za-z0-9_]*$"
+            required
+          />
+          <small class="form-text text-muted">Must start with a letter and contain only letters, numbers, and underscores</small>
+        </div>
+        <div class="col-md-4">
+          <label for="func-return-type" class="form-label form-label-sm">Return Type <span class="text-danger">*</span></label>
+          <select
+            class="form-select form-select-sm"
+            id="func-return-type"
+            [value]="func().returnType"
+            (change)="onReturnTypeChange($any($event.target).value)"
+            required
+          >
+            @for (type of dataTypes; track type) {
+              <option [value]="type">{{ type }}</option>
+            }
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="func-description" class="form-label form-label-sm">Description</label>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            id="func-description"
+            [value]="func().description || ''"
+            (input)="onDescriptionChange($any($event.target).value)"
+            placeholder="Optional description"
+          />
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Parameters</label>
+        <div class="row g-2 mb-2">
+          <div class="col-md-5">
+            <input
+              type="text"
+              class="form-control form-control-sm"
+              [value]="newParameterName()"
+              (input)="newParameterName.set($any($event.target).value)"
+              placeholder="Parameter name"
+              (keyup.enter)="onAddParameter()"
+            />
+          </div>
+          <div class="col-md-4">
+            <select
+              class="form-select form-select-sm"
+              [value]="newParameterType()"
+              (change)="newParameterType.set($any($event.target).value)"
+            >
+              @for (type of dataTypes; track type) {
+                <option [value]="type">{{ type }}</option>
+              }
+            </select>
+          </div>
+          <div class="col-md-3">
+            <button
+              class="btn btn-primary btn-sm w-100"
+              (click)="onAddParameter()"
+              [disabled]="!newParameterName().trim() || !/^[A-Za-z][A-Za-z0-9_]*$/.test(newParameterName().trim())"
+              type="button"
+            >
+              <i class="bi bi-plus"></i> Add
+            </button>
+          </div>
+        </div>
+        @if (func().parameters.length > 0) {
+          <div class="list-group list-group-flush">
+            @for (param of func().parameters; track param.name; let i = $index) {
+              <div class="list-group-item px-0 py-1">
+                <div class="d-flex justify-content-between align-items-center">
+                  <code>{{ param.name }}: {{ param.type }}</code>
+                  <button
+                    class="btn btn-sm btn-outline-danger"
+                    (click)="onDeleteParameter(i)"
+                    type="button"
+                    title="Remove"
+                  >
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label form-label-sm">Function Body <span class="text-danger">*</span></label>
+        @if (func().body) {
+          <app-conjunction-group
+            [tree]="$any(func().body)"
+            [treeName]="'function-body'"
+            (updateTree)="onUpdateBody($event)">
+          </app-conjunction-group>
+        }
+      </div>
+    </div>
+  </div>
+</div>
+

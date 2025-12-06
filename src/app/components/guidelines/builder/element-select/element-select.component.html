@@ -1,0 +1,27 @@
+<div class="element-select card">
+  <div class="card-body">
+    <h6 class="card-title">Add Element</h6>
+    <div class="d-flex gap-2">
+      <select
+        class="form-select form-select-sm"
+        [(ngModel)]="selectedType"
+        id="element-type-select"
+      >
+        <option value="">Select element type...</option>
+        @for (type of elementTypes; track type.value) {
+          <option [value]="type.value">{{ type.label }}</option>
+        }
+      </select>
+      <button
+        class="btn btn-primary btn-sm"
+        (click)="onAddElement()"
+        [disabled]="!selectedType"
+        type="button"
+        id="add-element-btn"
+      >
+        <i class="bi bi-plus-circle me-1"></i>Add
+      </button>
+    </div>
+  </div>
+</div>
+

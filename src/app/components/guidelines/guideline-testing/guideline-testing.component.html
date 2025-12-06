@@ -1,0 +1,352 @@
+<div class="guideline-testing">
+  <!-- Header -->
+  <div class="testing-header bg-light border-bottom p-3">
+    <div class="d-flex justify-content-between align-items-center">
+      <div>
+        <h4 class="mb-0">
+          <i class="bi bi-play-circle me-2"></i>Test Guideline
+          @if (library.name) {
+            <span class="text-muted ms-2">- {{ library.name }}</span>
+          }
+        </h4>
+      </div>
+      <div class="btn-group">
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          (click)="onBackToBrowser()"
+          type="button"
+          id="back-to-browser-btn"
+        >
+          <i class="bi bi-arrow-left me-1"></i>Back to Browser
+        </button>
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          (click)="onClose()"
+          type="button"
+          id="back-to-editor-btn"
+        >
+          <i class="bi bi-arrow-left me-1"></i>Back to Editor
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Alert -->
+  @if (error()) {
+    <div class="alert alert-danger m-3" role="alert">
+      <i class="bi bi-exclamation-triangle me-2"></i>{{ error() }}
+    </div>
+  }
+
+  <!-- Main Content -->
+  <div class="testing-content p-3">
+    <!-- Patient Selection -->
+    <div class="mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        @if (selectedPatients().length > 0) {
+          <button
+            class="btn btn-sm btn-outline-secondary"
+            (click)="onClearSelection()"
+            type="button"
+          >
+            Clear Selection ({{ selectedPatients().length }})
+          </button>
+        }
+      </div>
+      <!-- Search -->
+      <div class="mb-3">
+        <div class="input-group">
+          <input
+            type="text"
+            class="form-control"
+            [value]="searchTerm()"
+            (input)="searchTerm.set($any($event.target).value)"
+            (keyup.enter)="onSearch()"
+            placeholder="Search patients by name..."
+            id="patient-search-input"
+          />
+          <button
+            class="btn btn-outline-secondary"
+            (click)="onSearch()"
+            type="button"
+            [disabled]="isLoadingPatients()"
+          >
+            <i class="bi bi-search"></i>
+          </button>
+          @if (searchTerm()) {
+            <button
+              class="btn btn-outline-secondary"
+              (click)="searchTerm.set(''); loadPatients()"
+              type="button"
+            >
+              <i class="bi bi-x"></i>
+            </button>
+          }
+        </div>
+      </div>
+
+      <!-- Patient Table -->
+      @if (isLoadingPatients()) {
+        <div class="text-center py-3">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+        </div>
+      } @else if (patients().length === 0) {
+        <div class="alert alert-info">
+          <i class="bi bi-info-circle me-2"></i>No patients found.
+        </div>
+      } @else {
+        <div class="table-responsive">
+          <table class="table table-hover">
+            <thead>
+              <tr>
+                <th style="width: 40px;"></th>
+                <th>Name</th>
+                <th>Birth Date</th>
+                <th>Gender</th>
+                <th>ID</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (patient of paginatedPatients(); track patient.id) {
+                <tr
+                  (click)="togglePatient(patient)"
+                  style="cursor: pointer;"
+                  [class.table-active]="isPatientSelected(patient)"
+                >
+                  <td>
+                    <input
+                      type="checkbox"
+                      class="form-check-input"
+                      [checked]="isPatientSelected(patient)"
+                      (change)="togglePatient(patient); $event.stopPropagation()"
+                      (click)="$event.stopPropagation()"
+                      [attr.id]="'patient-' + patient.id"
+                    />
+                  </td>
+                  <td>{{ getPatientName(patient) }}</td>
+                  <td>
+                    @if (patient.birthDate) {
+                      {{ patient.birthDate | date:'shortDate' }}
+                    } @else {
+                      -
+                    }
+                  </td>
+                  <td>{{ patient.gender || '-' }}</td>
+                  <td><code>{{ patient.id }}</code></td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        @if (totalPages() > 1) {
+          <nav aria-label="Patient pagination" class="mt-3">
+            <div class="d-flex justify-content-between align-items-center">
+              <div class="d-flex align-items-center gap-2">
+                <label for="page-size-select" class="form-label mb-0 small">Items per page:</label>
+                <select
+                  class="form-select form-select-sm"
+                  style="width: auto;"
+                  [value]="pageSize()"
+                  (change)="onPageSizeChange(+$any($event.target).value)"
+                  id="page-size-select"
+                >
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+                <span class="text-muted small">
+                  Showing {{ startIndex() }} - {{ endIndex() }} of {{ patients().length }}
+                </span>
+              </div>
+              <ul class="pagination mb-0">
+                <li class="page-item" [class.disabled]="currentPage() === 1">
+                  <button
+                    class="page-link"
+                    (click)="previousPage()"
+                    [disabled]="currentPage() === 1"
+                    type="button"
+                  >
+                    Previous
+                  </button>
+                </li>
+                @for (page of [].constructor(totalPages()); track $index; let i = $index) {
+                  <li class="page-item" [class.active]="currentPage() === i + 1">
+                    <button
+                      class="page-link"
+                      (click)="goToPage(i + 1)"
+                      type="button"
+                    >
+                      {{ i + 1 }}
+                    </button>
+                  </li>
+                }
+                <li class="page-item" [class.disabled]="currentPage() === totalPages()">
+                  <button
+                    class="page-link"
+                    (click)="nextPage()"
+                    [disabled]="currentPage() === totalPages()"
+                    type="button"
+                  >
+                    Next
+                  </button>
+                </li>
+              </ul>
+            </div>
+          </nav>
+        }
+      }
+    </div>
+
+    <!-- Execute Button -->
+    <div class="mb-3">
+      <button
+        class="btn btn-primary"
+        (click)="onExecute()"
+        [disabled]="isExecuting() || selectedPatients().length === 0"
+        type="button"
+        id="execute-test-btn"
+      >
+        @if (isExecuting()) {
+          <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+          Executing...
+        } @else {
+          <i class="bi bi-play-circle me-2"></i>
+          Execute on {{ selectedPatients().length }} Patient(s)
+        }
+      </button>
+    </div>
+
+    <!-- Test Results -->
+    @if (testResults().length > 0) {
+      <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="mb-0">Test Results</h6>
+          <button
+            class="btn btn-sm btn-outline-secondary"
+            (click)="toggleAllAccordions()"
+            type="button"
+            id="toggle-all-accordions-btn"
+          >
+            @if (allExpanded()) {
+              <i class="bi bi-chevron-up me-1"></i>Collapse All
+            } @else {
+              <i class="bi bi-chevron-down me-1"></i>Expand All
+            }
+          </button>
+        </div>
+        <div class="accordion" id="testResultsAccordion">
+          @for (testResult of testResults(); track testResult.patientId; let i = $index) {
+            <div class="accordion-item">
+              <h2 class="accordion-header">
+                <button
+                  class="accordion-button"
+                  [class.collapsed]="!isAccordionExpanded(testResult.patientId)"
+                  type="button"
+                  (click)="toggleAccordion(testResult.patientId)"
+                  [attr.data-bs-target]="'#collapse' + testResult.patientId"
+                  [attr.aria-expanded]="isAccordionExpanded(testResult.patientId)"
+                  [attr.aria-controls]="'collapse' + testResult.patientId"
+                >
+                  <div class="d-flex justify-content-between align-items-center w-100 me-3">
+                    <div>
+                      <i class="bi bi-person-circle me-2"></i>
+                      <strong>{{ testResult.patientName }}</strong>
+                      <span class="text-muted ms-2">({{ testResult.executionTime }}ms)</span>
+                    </div>
+                    @if (testResult.error) {
+                      <span class="badge bg-danger">Error</span>
+                    } @else {
+                      <span class="badge bg-success">Success</span>
+                    }
+                  </div>
+                </button>
+              </h2>
+              <div
+                [id]="'collapse' + testResult.patientId"
+                class="accordion-collapse collapse"
+                [class.show]="isAccordionExpanded(testResult.patientId)"
+                [attr.data-bs-parent]="'#testResultsAccordion'"
+              >
+                <div class="accordion-body">
+                  @if (testResult.error) {
+                    <div class="alert alert-danger">
+                      <strong>Execution Error:</strong>
+                      <pre class="mb-0 mt-2">{{ testResult.error.message || stringify(testResult.error) }}</pre>
+                    </div>
+                  } @else {
+                    <div class="row g-3">
+                      <div class="col-md-6">
+                        <div class="table-responsive">
+                          <table class="table table-sm">
+                            <thead>
+                              <tr>
+                                <th>Result</th>
+                                <th>Value</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td><strong>Meets Inclusion Criteria</strong></td>
+                                <td>
+                                  @if (getResultValue(testResult.result, 'MeetsInclusionCriteria') === true) {
+                                    <i class="bi bi-check-circle text-success"></i> Yes
+                                  } @else if (getResultValue(testResult.result, 'MeetsInclusionCriteria') === false) {
+                                    <i class="bi bi-x-circle text-danger"></i> No
+                                  } @else {
+                                    {{ formatResultValue(getResultValue(testResult.result, 'MeetsInclusionCriteria')) }}
+                                  }
+                                </td>
+                              </tr>
+                              <tr>
+                                <td><strong>Meets Exclusion Criteria</strong></td>
+                                <td>
+                                  @if (getResultValue(testResult.result, 'MeetsExclusionCriteria') === true) {
+                                    <i class="bi bi-check-circle text-success"></i> Yes
+                                  } @else if (getResultValue(testResult.result, 'MeetsExclusionCriteria') === false) {
+                                    <i class="bi bi-x-circle text-danger"></i> No
+                                  } @else {
+                                    {{ formatResultValue(getResultValue(testResult.result, 'MeetsExclusionCriteria')) }}
+                                  }
+                                </td>
+                              </tr>
+                              <tr>
+                                <td><strong>Recommendation</strong></td>
+                                <td>{{ formatResultValue(getResultValue(testResult.result, 'Recommendation')) }}</td>
+                              </tr>
+                              <tr>
+                                <td><strong>Rationale</strong></td>
+                                <td>{{ formatResultValue(getResultValue(testResult.result, 'Rationale')) }}</td>
+                              </tr>
+                              @if (getResultValue(testResult.result, 'Errors')) {
+                                <tr>
+                                  <td><strong>Errors</strong></td>
+                                  <td class="text-danger">{{ formatResultValue(getResultValue(testResult.result, 'Errors')) }}</td>
+                                </tr>
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <div class="d-flex align-items-center mb-2">
+                          <strong>Full Response</strong>
+                        </div>
+                        <pre class="p-2 bg-light border rounded" style="max-height: 400px; overflow: auto; font-size: 0.875rem;">{{ stringify(testResult.result) }}</pre>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+  </div>
+</div>
+

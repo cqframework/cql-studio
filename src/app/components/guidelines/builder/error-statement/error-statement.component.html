@@ -1,0 +1,57 @@
+<div class="error-statement">
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h6 class="mb-0">Handle Errors</h6>
+      @if (hasErrorStatement()) {
+        <button
+          class="btn btn-sm btn-outline-danger"
+          (click)="onRemoveErrorStatement()"
+          type="button"
+        >
+          <i class="bi bi-trash"></i> Remove
+        </button>
+      }
+    </div>
+    <div class="card-body">
+      @if (hasErrorStatement()) {
+        <div class="mb-3">
+          <label class="form-label">If Condition</label>
+          <textarea
+            class="form-control"
+            rows="3"
+            placeholder="Define the condition that triggers the error..."
+          ></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Then Clause</label>
+          <textarea
+            class="form-control"
+            rows="3"
+            placeholder="Define what happens when the condition is true..."
+          ></textarea>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Else Clause</label>
+          <textarea
+            class="form-control"
+            rows="3"
+            placeholder="Define what happens when the condition is false..."
+          ></textarea>
+        </div>
+      } @else {
+        <div class="text-center py-4">
+          <p class="text-muted">No error statement defined.</p>
+          <button
+            class="btn btn-primary"
+            (click)="onAddErrorStatement()"
+            type="button"
+            id="add-error-statement-btn"
+          >
+            <i class="bi bi-plus-circle me-2"></i>Add Error Statement
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+</div>
+

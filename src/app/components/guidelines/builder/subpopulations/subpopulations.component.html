@@ -1,0 +1,42 @@
+<div class="subpopulations">
+  @if (subpopulations().length > 0) {
+    @for (subpop of subpopulations(); track subpop.uniqueId; let i = $index) {
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <input
+            type="text"
+            class="form-control form-control-sm d-inline-block"
+            style="width: auto;"
+            [value]="subpop.subpopulationName"
+            (blur)="onNameChange(i, $any($event.target).value)"
+            placeholder="Subpopulation name"
+          />
+          <button
+            class="btn btn-sm btn-outline-danger"
+            (click)="onDeleteSubpopulation(i)"
+            type="button"
+          >
+            <i class="bi bi-trash"></i>
+          </button>
+        </div>
+        <div class="card-body">
+          <app-conjunction-group
+            [tree]="$any(subpop)"
+            [treeName]="'subpopulations'"
+            (updateTree)="onUpdateSubpopulation(i, $any($event))">
+          </app-conjunction-group>
+        </div>
+      </div>
+    }
+  }
+
+  <button
+    class="btn btn-primary"
+    (click)="onAddSubpopulation()"
+    type="button"
+    id="add-subpopulation-btn"
+  >
+    <i class="bi bi-plus-circle me-2"></i>New Subpopulation
+  </button>
+</div>
+

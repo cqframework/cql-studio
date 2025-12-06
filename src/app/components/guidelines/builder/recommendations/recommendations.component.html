@@ -1,0 +1,120 @@
+<div class="recommendations">
+  <div class="card mb-3">
+    <div class="card-header">
+      <h6 class="mb-0">Add Recommendation</h6>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-5">
+          <label for="rec-label" class="form-label">Label</label>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            id="rec-label"
+            [(ngModel)]="newRecommendation.label"
+            placeholder="Recommendation label"
+          />
+        </div>
+        <div class="col-md-6">
+          <label for="rec-description" class="form-label">Description</label>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            id="rec-description"
+            [(ngModel)]="newRecommendation.description"
+            placeholder="Optional description"
+          />
+        </div>
+        <div class="col-md-1">
+          <label class="form-label">&nbsp;</label>
+          <button
+            class="btn btn-primary btn-sm w-100"
+            (click)="onAddRecommendation()"
+            [disabled]="!newRecommendation.label"
+            type="button"
+            id="add-recommendation-btn"
+          >
+            <i class="bi bi-plus"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  @if (recommendations().length > 0) {
+    <div class="list-group">
+      @for (rec of recommendations(); track rec.id; let i = $index) {
+        <div class="list-group-item">
+          @if (editingIndex === i) {
+            <div class="row g-2">
+              <div class="col-md-5">
+                <input
+                  type="text"
+                  class="form-control form-control-sm"
+                  [(ngModel)]="editingRecommendation.label"
+                  placeholder="Label"
+                />
+              </div>
+              <div class="col-md-6">
+                <input
+                  type="text"
+                  class="form-control form-control-sm"
+                  [(ngModel)]="editingRecommendation.description"
+                  placeholder="Description"
+                />
+              </div>
+              <div class="col-md-1">
+                <div class="btn-group btn-group-sm">
+                  <button
+                    class="btn btn-success"
+                    (click)="onSaveEdit()"
+                    type="button"
+                    title="Save"
+                  >
+                    <i class="bi bi-check"></i>
+                  </button>
+                  <button
+                    class="btn btn-secondary"
+                    (click)="cancelEdit()"
+                    type="button"
+                    title="Cancel"
+                  >
+                    <i class="bi bi-x"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          } @else {
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <strong>{{ rec.label }}</strong>
+                @if (rec.description) {
+                  <p class="mb-0 text-muted small">{{ rec.description }}</p>
+                }
+              </div>
+              <div class="btn-group btn-group-sm">
+                <button
+                  class="btn btn-outline-primary"
+                  (click)="onEditRecommendation(i)"
+                  type="button"
+                  title="Edit"
+                >
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button
+                  class="btn btn-outline-danger"
+                  (click)="onDeleteRecommendation(i)"
+                  type="button"
+                  title="Delete"
+                >
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>
+

@@ -1,0 +1,15 @@
+<div class="base-elements">
+  @if (baseElements().length > 0) {
+    @for (element of baseElements(); track element.uniqueId; let i = $index) {
+      <app-artifact-element
+        [element]="element"
+        [index]="i"
+        (update)="onUpdateElement(i, $event)"
+        (delete)="onDeleteElement(i)"
+      ></app-artifact-element>
+    }
+  }
+
+  <app-element-select (addElement)="onAddElement($event)"></app-element-select>
+</div>
+

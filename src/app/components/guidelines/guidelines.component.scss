@@ -1,0 +1,30 @@
+.guidelines-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  
+  app-guideline-testing {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+}
+
+.guidelines-header {
+  flex-shrink: 0;
+}
+
+.guidelines-content {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.nav-tabs {
+  border-bottom: 1px solid #dee2e6;
+}
+
+.tab-content {
+  min-height: 400px;
+}
+

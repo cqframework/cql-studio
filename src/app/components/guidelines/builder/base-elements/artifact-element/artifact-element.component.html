@@ -1,0 +1,29 @@
+<div class="artifact-element card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <div class="flex-grow-1">
+      <input
+        type="text"
+        class="form-control form-control-sm d-inline-block"
+        style="width: auto; min-width: 200px;"
+        [value]="elementName"
+        (blur)="onNameChange($any($event.target).value)"
+        placeholder="Element name"
+      />
+      <span class="badge bg-secondary ms-2">{{ elementType }}</span>
+    </div>
+    <button
+      class="btn btn-sm btn-outline-danger"
+      (click)="onDelete()"
+      type="button"
+      title="Delete element"
+    >
+      <i class="bi bi-trash"></i>
+    </button>
+  </div>
+  <div class="card-body">
+    <p class="text-muted small mb-0">
+      Element configuration will be displayed here.
+    </p>
+  </div>
+</div>
+

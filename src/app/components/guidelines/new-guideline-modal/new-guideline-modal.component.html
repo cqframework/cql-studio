@@ -1,0 +1,103 @@
+<div class="modal fade show d-block" [class.show]="isVisible" tabindex="-1" role="dialog" id="newGuidelineModal">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Create New Guideline</h5>
+        <button
+          type="button"
+          class="btn-close"
+          (click)="onCancel()"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <form>
+          <div class="mb-3">
+            <label for="library-name" class="form-label">Name <span class="text-danger">*</span></label>
+            <input
+              type="text"
+              class="form-control"
+              [class.is-invalid]="errors()['name']"
+              id="library-name"
+              [(ngModel)]="library.name"
+              (ngModelChange)="onNameChange()"
+              name="name"
+              required
+              placeholder="e.g., MyGuideline"
+              pattern="^[A-Za-z][A-Za-z0-9_]*$"
+            />
+            @if (errors()['name']) {
+              <div class="invalid-feedback">{{ errors()['name'] }}</div>
+            } @else {
+              <div class="form-text">Must start with a letter and contain only letters, numbers, and underscores</div>
+            }
+          </div>
+          <div class="mb-3">
+            <label for="library-title" class="form-label">Title</label>
+            <input
+              type="text"
+              class="form-control"
+              id="library-title"
+              [(ngModel)]="library.title"
+              name="title"
+              placeholder="e.g., My Clinical Guideline"
+            />
+            <div class="form-text">Optional display title for the guideline</div>
+          </div>
+          <div class="mb-3">
+            <label for="library-version" class="form-label">Version <span class="text-danger">*</span></label>
+            <input
+              type="text"
+              class="form-control"
+              [class.is-invalid]="errors()['version']"
+              id="library-version"
+              [(ngModel)]="library.version"
+              (ngModelChange)="onVersionChange()"
+              name="version"
+              required
+              placeholder="e.g., 1.0.0"
+              pattern="^\d+\.\d+\.\d+"
+            />
+            @if (errors()['version']) {
+              <div class="invalid-feedback">{{ errors()['version'] }}</div>
+            } @else {
+              <div class="form-text">Required for library execution. Use semantic versioning (e.g., 1.0.0)</div>
+            }
+          </div>
+          <div class="mb-3">
+            <label for="library-description" class="form-label">Description</label>
+            <textarea
+              class="form-control"
+              id="library-description"
+              [(ngModel)]="library.description"
+              name="description"
+              rows="3"
+              placeholder="Optional description of the guideline"
+            ></textarea>
+            <div class="form-text">Optional description of the guideline</div>
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          (click)="onCancel()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-primary"
+          (click)="onCreate()"
+          [disabled]="!isValid()"
+          id="create-guideline-submit-btn"
+        >
+          Create
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop fade show" [class.show]="isVisible"></div>
+

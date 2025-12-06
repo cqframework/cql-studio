@@ -14,6 +14,7 @@ import { FhirUploaderComponent } from './components/fhir-uploader/fhir-uploader.
 import { TerminologyComponent } from './components/terminology/terminology.component';
 import { AboutComponent } from './components/about/about.component';
 import { LandingComponent } from './components/landing/landing.component';
+import { GuidelinesComponent } from './components/guidelines/guidelines.component';
 
 export const routes: Routes = [
   // Normal app routes
@@ -28,6 +29,9 @@ export const routes: Routes = [
   { path: 'runner', component: RunnerComponent },
   { path: 'uploader', component: FhirUploaderComponent },
   { path: 'terminology', component: TerminologyComponent },
+  { path: 'guidelines', component: GuidelinesComponent },
+  { path: 'guidelines/:id/testing', component: GuidelinesComponent },
+  { path: 'guidelines/:id', component: GuidelinesComponent },
   { path: 'about', component: AboutComponent },
   
   // IDE routes with separate layout

@@ -1,0 +1,131 @@
+<div class="summary">
+  <div class="row g-4">
+    <!-- Library Metadata -->
+    <div class="col-md-6">
+      @if (artifact()?.metadata) {
+        <div>
+          <h5 class="mb-3">Library Information</h5>
+          <div class="row g-3">
+            <div class="col-12">
+              <div class="form-floating">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="metadata-name"
+                  [value]="artifact()!.metadata!.name"
+                  (blur)="onMetadataChange('name', $any($event.target).value)"
+                  placeholder="Library name"
+                  required
+                />
+                <label for="metadata-name">Name <span class="text-danger">*</span></label>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="form-floating">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="metadata-title"
+                  [value]="artifact()!.metadata!.title || ''"
+                  (blur)="onMetadataChange('title', $any($event.target).value)"
+                  placeholder="Title"
+                />
+                <label for="metadata-title">Title</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="form-floating">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="metadata-version"
+                  [value]="artifact()!.metadata!.version || ''"
+                  (blur)="onMetadataChange('version', $any($event.target).value)"
+                  placeholder="Version"
+                  required
+                />
+                <label for="metadata-version">Version <span class="text-danger">*</span></label>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="form-floating">
+                <textarea
+                  class="form-control"
+                  id="metadata-description"
+                  [value]="artifact()!.metadata!.description || ''"
+                  (blur)="onMetadataChange('description', $any($event.target).value)"
+                  placeholder="Description"
+                  style="height: 80px"
+                ></textarea>
+                <label for="metadata-description">Description</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="form-floating">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="metadata-url"
+                  [value]="artifact()!.metadata!.url || library.url || ''"
+                  (blur)="onMetadataChange('url', $any($event.target).value)"
+                  placeholder="Library URL (namespace URI)"
+                  title="Library URL (namespace URI) - used by server to identify the library. Auto-generated on creation, but can be edited."
+                />
+                <label for="metadata-url">URL (Namespace URI) <span class="text-danger">*</span></label>
+              </div>
+              <small class="form-text text-muted mt-1">Required for execution. Auto-generated on creation, but can be edited.</small>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Guideline Summary -->
+    <div class="col-md-6">
+      <div>
+        <h5 class="mb-3">Guideline Summary</h5>
+        @if (artifact()) {
+          <div class="row g-2">
+            <div class="col-12">
+              <div class="d-flex align-items-center p-2">
+                <span class="badge bg-primary me-2">{{ getInclusionsCount() }}</span>
+                <span>Inclusions</span>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="d-flex align-items-center p-2">
+                <span class="badge bg-primary me-2">{{ getExclusionsCount() }}</span>
+                <span>Exclusions</span>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="d-flex align-items-center p-2">
+                <span class="badge bg-primary me-2">{{ getSubpopulationsCount() }}</span>
+                <span>Subpopulations</span>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="d-flex align-items-center p-2">
+                <span class="badge bg-primary me-2">{{ getBaseElementsCount() }}</span>
+                <span>Base Elements</span>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="d-flex align-items-center p-2">
+                <span class="badge bg-primary me-2">{{ getRecommendationsCount() }}</span>
+                <span>Recommendations</span>
+              </div>
+            </div>
+            <div class="col-12">
+              <div class="d-flex align-items-center p-2">
+                <span class="badge bg-primary me-2">{{ getParametersCount() }}</span>
+                <span>Parameters</span>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+</div>
+

@@ -1,0 +1,55 @@
+<div class="modal fade show d-block" [class.show]="isVisible" tabindex="-1" role="dialog" id="conversionModal">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bi bi-exclamation-triangle text-warning me-2"></i>
+          Library Format Warning
+        </h5>
+        <button
+          type="button"
+          class="btn-close"
+          (click)="onCancel()"
+          aria-label="Close"
+        ></button>
+      </div>
+      <div class="modal-body">
+        <p>
+          The library <strong>{{ library.name || library.id }}</strong> does not appear to be in the expected guideline format.
+        </p>
+        @if (issues.length > 0) {
+          <div class="alert alert-warning">
+            <strong>Issues detected:</strong>
+            <ul class="mb-0 mt-2">
+              @for (issue of issues; track issue) {
+                <li>{{ issue }}</li>
+              }
+            </ul>
+          </div>
+        }
+        <p>
+          Would you like to try to open it anyway? The system will attempt to convert it to the guideline format, which may result in some data loss or require manual adjustments.
+        </p>
+      </div>
+      <div class="modal-footer">
+        <button
+          type="button"
+          class="btn btn-secondary"
+          (click)="onCancel()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="btn btn-warning"
+          (click)="onProceed()"
+          id="proceed-conversion-btn"
+        >
+          <i class="bi bi-exclamation-triangle me-2"></i>Open Anyway
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal-backdrop fade show" [class.show]="isVisible"></div>
+

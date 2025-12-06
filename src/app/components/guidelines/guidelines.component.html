@@ -1,0 +1,42 @@
+<div class="guidelines-container">
+  @if (showBrowser()) {
+    <app-guidelines-browser
+      (openLibrary)="onOpenLibrary($event)"
+      (testLibrary)="onTestLibrary($event)"
+      (deleteLibrary)="onDeleteLibrary($event)"
+      (createNew)="onCreateNew()">
+    </app-guidelines-browser>
+  }
+
+  @if (showEditor() && currentLibrary()) {
+    <app-guideline-editor
+      [library]="currentLibrary()!"
+      (close)="onEditorClose()">
+    </app-guideline-editor>
+  }
+
+  @if (showTesting() && currentLibrary()) {
+    <app-guideline-testing
+      [library]="currentLibrary()!"
+      (close)="onTestingClose()">
+    </app-guideline-testing>
+  }
+
+  @if (showNewModal()) {
+    <app-new-guideline-modal
+      [settingsService]="settingsService"
+      [libraryService]="libraryService"
+      (create)="onNewGuidelineCreate($event)"
+      (cancel)="onNewGuidelineCancel()">
+    </app-new-guideline-modal>
+  }
+
+  @if (showConversionModal() && currentLibrary()) {
+    <app-conversion-modal
+      [library]="currentLibrary()!"
+      [issues]="conversionIssues()"
+      (proceed)="onProceedWithConversion()"
+      (cancel)="onCancelConversion()">
+    </app-conversion-modal>
+  }
+</div>

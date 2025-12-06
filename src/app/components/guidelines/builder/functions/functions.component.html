@@ -1,0 +1,58 @@
+<div class="functions">
+  @if (showEditor()) {
+    <app-guideline-function-editor
+      [function]="editingFunction()!"
+      (save)="onSaveFunction($event)"
+      (cancel)="onCloseEditor()">
+    </app-guideline-function-editor>
+  } @else {
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="mb-0">Functions</h6>
+      <button
+        class="btn btn-primary btn-sm"
+        (click)="onAddFunction()"
+        type="button"
+        id="add-function-btn"
+      >
+        <i class="bi bi-plus-circle me-1"></i>New Function
+      </button>
+    </div>
+
+    @if (functions().length > 0) {
+      <div class="list-group">
+        @for (func of functions(); track func.id; let i = $index) {
+          <div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <strong>{{ func.name || 'Unnamed Function' }}</strong>
+                <code class="ms-2 small text-muted">{{ getFunctionSignature(func) }}</code>
+                @if (func.description) {
+                  <p class="mb-0 text-muted small mt-1">{{ func.description }}</p>
+                }
+              </div>
+              <div class="btn-group btn-group-sm">
+                <button
+                  class="btn btn-outline-primary"
+                  (click)="onEditFunction(i)"
+                  type="button"
+                  title="Edit"
+                >
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button
+                  class="btn btn-outline-danger"
+                  (click)="onDeleteFunction(i)"
+                  type="button"
+                  title="Delete"
+                >
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+</div>
+

@@ -1,0 +1,143 @@
+<div class="parameters">
+  <div class="card mb-3">
+    <div class="card-header">
+      <h6 class="mb-0">Add Parameter</h6>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label for="param-name" class="form-label">Name</label>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            id="param-name"
+            [(ngModel)]="newParameter.name"
+            placeholder="Parameter name"
+          />
+        </div>
+        <div class="col-md-3">
+          <label for="param-type" class="form-label">Type</label>
+          <select
+            class="form-select form-select-sm"
+            id="param-type"
+            [(ngModel)]="newParameter.type"
+          >
+            @for (type of parameterTypes; track type) {
+              <option [value]="type">{{ type }}</option>
+            }
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label for="param-description" class="form-label">Description</label>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            id="param-description"
+            [(ngModel)]="newParameter.description"
+            placeholder="Optional description"
+          />
+        </div>
+        <div class="col-md-1">
+          <label class="form-label">&nbsp;</label>
+          <button
+            class="btn btn-primary btn-sm w-100"
+            (click)="onAddParameter()"
+            [disabled]="!newParameter.name"
+            type="button"
+            id="add-parameter-btn"
+          >
+            <i class="bi bi-plus"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  @if (parameters().length > 0) {
+    <div class="list-group">
+      @for (param of parameters(); track param.name; let i = $index) {
+        <div class="list-group-item">
+          @if (editingIndex === i) {
+            <div class="row g-2">
+              <div class="col-md-4">
+                <input
+                  type="text"
+                  class="form-control form-control-sm"
+                  [(ngModel)]="editingParameter.name"
+                  placeholder="Name"
+                />
+              </div>
+              <div class="col-md-3">
+                <select
+                  class="form-select form-select-sm"
+                  [(ngModel)]="editingParameter.type"
+                >
+                  @for (type of parameterTypes; track type) {
+                    <option [value]="type">{{ type }}</option>
+                  }
+                </select>
+              </div>
+              <div class="col-md-4">
+                <input
+                  type="text"
+                  class="form-control form-control-sm"
+                  [(ngModel)]="editingParameter.description"
+                  placeholder="Description"
+                />
+              </div>
+              <div class="col-md-1">
+                <div class="btn-group btn-group-sm">
+                  <button
+                    class="btn btn-success"
+                    (click)="onSaveEdit()"
+                    type="button"
+                    title="Save"
+                  >
+                    <i class="bi bi-check"></i>
+                  </button>
+                  <button
+                    class="btn btn-secondary"
+                    (click)="cancelEdit()"
+                    type="button"
+                    title="Cancel"
+                  >
+                    <i class="bi bi-x"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          } @else {
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <strong>{{ param.name }}</strong>
+                <span class="badge bg-secondary ms-2">{{ param.type }}</span>
+                @if (param.description) {
+                  <p class="mb-0 text-muted small">{{ param.description }}</p>
+                }
+              </div>
+              <div class="btn-group btn-group-sm">
+                <button
+                  class="btn btn-outline-primary"
+                  (click)="onEditParameter(i)"
+                  type="button"
+                  title="Edit"
+                >
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button
+                  class="btn btn-outline-danger"
+                  (click)="onDeleteParameter(i)"
+                  type="button"
+                  title="Delete"
+                >
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>
+

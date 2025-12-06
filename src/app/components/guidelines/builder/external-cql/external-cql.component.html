@@ -1,0 +1,141 @@
+<div class="external-cql">
+  <div class="card mb-3">
+    <div class="card-header">
+      <h6 class="mb-0">Add External CQL Library</h6>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-4">
+          <label for="ext-name" class="form-label">Name</label>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            id="ext-name"
+            [(ngModel)]="newExternalCql.name"
+            placeholder="Library name"
+          />
+        </div>
+        <div class="col-md-3">
+          <label for="ext-version" class="form-label">Version</label>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            id="ext-version"
+            [(ngModel)]="newExternalCql.version"
+            placeholder="Version"
+          />
+        </div>
+        <div class="col-md-4">
+          <label for="ext-url" class="form-label">URL</label>
+          <input
+            type="text"
+            class="form-control form-control-sm"
+            id="ext-url"
+            [(ngModel)]="newExternalCql.url"
+            placeholder="Library URL"
+          />
+        </div>
+        <div class="col-md-1">
+          <label class="form-label">&nbsp;</label>
+          <button
+            class="btn btn-primary btn-sm w-100"
+            (click)="onAddExternalCql()"
+            [disabled]="!newExternalCql.name"
+            type="button"
+            id="add-external-cql-btn"
+          >
+            <i class="bi bi-plus"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  @if (externalCql().length > 0) {
+    <div class="list-group">
+      @for (ext of externalCql(); track ext.id; let i = $index) {
+        <div class="list-group-item">
+          @if (editingIndex === i) {
+            <div class="row g-2">
+              <div class="col-md-4">
+                <input
+                  type="text"
+                  class="form-control form-control-sm"
+                  [(ngModel)]="editingExternalCql.name"
+                  placeholder="Name"
+                />
+              </div>
+              <div class="col-md-3">
+                <input
+                  type="text"
+                  class="form-control form-control-sm"
+                  [(ngModel)]="editingExternalCql.version"
+                  placeholder="Version"
+                />
+              </div>
+              <div class="col-md-4">
+                <input
+                  type="text"
+                  class="form-control form-control-sm"
+                  [(ngModel)]="editingExternalCql.url"
+                  placeholder="URL"
+                />
+              </div>
+              <div class="col-md-1">
+                <div class="btn-group btn-group-sm">
+                  <button
+                    class="btn btn-success"
+                    (click)="onSaveEdit()"
+                    type="button"
+                    title="Save"
+                  >
+                    <i class="bi bi-check"></i>
+                  </button>
+                  <button
+                    class="btn btn-secondary"
+                    (click)="cancelEdit()"
+                    type="button"
+                    title="Cancel"
+                  >
+                    <i class="bi bi-x"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          } @else {
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <strong>{{ ext.name }}</strong>
+                @if (ext.version) {
+                  <span class="text-muted small ms-2">v{{ ext.version }}</span>
+                }
+                @if (ext.url) {
+                  <p class="mb-0 text-muted small">{{ ext.url }}</p>
+                }
+              </div>
+              <div class="btn-group btn-group-sm">
+                <button
+                  class="btn btn-outline-primary"
+                  (click)="onEditExternalCql(i)"
+                  type="button"
+                  title="Edit"
+                >
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button
+                  class="btn btn-outline-danger"
+                  (click)="onDeleteExternalCql(i)"
+                  type="button"
+                  title="Delete"
+                >
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</div>
+

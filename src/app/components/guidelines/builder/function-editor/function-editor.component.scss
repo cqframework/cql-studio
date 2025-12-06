@@ -1,0 +1,15 @@
+.function-editor {
+  .card-body {
+    .form-label-sm {
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+  }
+
+  .list-group-item {
+    background-color: transparent;
+    border: none;
+    border-bottom: 1px solid var(--bs-border-color);
+  }
+}
+

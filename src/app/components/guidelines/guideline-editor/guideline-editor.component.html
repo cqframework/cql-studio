@@ -1,0 +1,325 @@
+<div class="guidelines-container">
+  <!-- Header -->
+  <div class="guidelines-header bg-light border-bottom p-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div>
+        <h4 class="mb-0">
+          <i class="bi bi-diagram-3 me-2"></i>Guidelines Visual Builder
+          @if (library.name) {
+            <span class="text-muted ms-2">- {{ library.name }}</span>
+          }
+        </h4>
+        @if (statusMessage()) {
+          <small class="text-muted">{{ statusMessage() }}</small>
+        }
+      </div>
+      <div class="d-flex gap-2">
+        <button 
+          class="btn btn-outline-secondary btn-sm" 
+          (click)="onClose()"
+          [disabled]="isSaving()"
+          id="close-guideline-btn"
+        >
+          <i class="bi bi-arrow-left me-1"></i>Back to Browser
+        </button>
+        <button 
+          class="btn btn-primary btn-sm" 
+          (click)="saveGuideline()"
+          [disabled]="isSaving() || !isDirty()"
+          id="save-guideline-btn"
+        >
+          @if (isSaving()) {
+            <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+            Saving...
+          } @else {
+            <i class="bi bi-save me-1"></i>Save
+          }
+        </button>
+        <button 
+          class="btn btn-outline-primary btn-sm" 
+          (click)="onTest()"
+          [disabled]="isSaving()"
+          id="test-guideline-btn"
+        >
+          <i class="bi bi-play-circle me-1"></i>Test
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Error Alert -->
+  @if (error()) {
+    <div class="alert alert-danger m-3" role="alert">
+      <i class="bi bi-exclamation-triangle me-2"></i>{{ error() }}
+    </div>
+  }
+
+  <!-- Main Content -->
+  <div class="guidelines-content">
+    <!-- Tabs - Matching CDS Connect order -->
+    <ul class="nav nav-tabs m-3" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'summary'"
+          (click)="setActiveTab('summary')"
+          type="button"
+          id="summary-tab"
+        >
+          Summary
+          @if (tabMetadata().summary.hasContent && !tabMetadata().summary.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().summary.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'functions'"
+          (click)="setActiveTab('functions')"
+          type="button"
+          id="functions-tab"
+        >
+          Functions
+          @if (tabMetadata().functions.hasContent && !tabMetadata().functions.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().functions.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'inclusions'"
+          (click)="setActiveTab('inclusions')"
+          type="button"
+          id="inclusions-tab"
+        >
+          Inclusions
+          @if (tabMetadata().inclusions.hasContent && !tabMetadata().inclusions.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().inclusions.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'exclusions'"
+          (click)="setActiveTab('exclusions')"
+          type="button"
+          id="exclusions-tab"
+        >
+          Exclusions
+          @if (tabMetadata().exclusions.hasContent && !tabMetadata().exclusions.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().exclusions.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'subpopulations'"
+          (click)="setActiveTab('subpopulations')"
+          type="button"
+          id="subpopulations-tab"
+        >
+          Subpopulations
+          @if (tabMetadata().subpopulations.hasContent && !tabMetadata().subpopulations.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().subpopulations.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'base-elements'"
+          (click)="setActiveTab('base-elements')"
+          type="button"
+          id="base-elements-tab"
+        >
+          Base Elements
+          @if (tabMetadata().baseElements.hasContent && !tabMetadata().baseElements.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().baseElements.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'recommendations'"
+          (click)="setActiveTab('recommendations')"
+          type="button"
+          id="recommendations-tab"
+        >
+          Recommendations
+          @if (tabMetadata().recommendations.hasContent && !tabMetadata().recommendations.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().recommendations.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'parameters'"
+          (click)="setActiveTab('parameters')"
+          type="button"
+          id="parameters-tab"
+        >
+          Parameters
+          @if (tabMetadata().parameters.hasContent && !tabMetadata().parameters.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().parameters.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'handle-errors'"
+          (click)="setActiveTab('handle-errors')"
+          type="button"
+          id="handle-errors-tab"
+        >
+          Handle Errors
+          @if (tabMetadata().handleErrors.hasContent && !tabMetadata().handleErrors.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().handleErrors.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'external-cql'"
+          (click)="setActiveTab('external-cql')"
+          type="button"
+          id="external-cql-tab"
+        >
+          <i class="bi bi-journal-text me-1"></i>External CQL
+          @if (tabMetadata().externalCql.hasContent && !tabMetadata().externalCql.hasError) {
+            <i class="bi bi-check-circle ms-1 text-success"></i>
+          }
+          @if (tabMetadata().externalCql.hasError) {
+            <i class="bi bi-exclamation-circle ms-1 text-danger"></i>
+          }
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button 
+          class="nav-link" 
+          [class.active]="activeTab() === 'cql-preview'"
+          (click)="setActiveTab('cql-preview')"
+          type="button"
+          id="cql-preview-tab"
+        >
+          <i class="bi bi-code-square me-1"></i>CQL Preview
+        </button>
+      </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content p-3">
+      @if (activeTab() === 'summary') {
+        <div class="tab-pane active">
+          <app-summary
+            [library]="library"
+            (metadataChange)="onMetadataChange($event.field, $event.value)">
+          </app-summary>
+        </div>
+      }
+
+      @if (activeTab() === 'functions') {
+        <div class="tab-pane active">
+          <app-functions></app-functions>
+        </div>
+      }
+
+      @if (activeTab() === 'inclusions') {
+        <div class="tab-pane active">
+          <app-inclusions></app-inclusions>
+        </div>
+      }
+
+      @if (activeTab() === 'exclusions') {
+        <div class="tab-pane active">
+          <app-exclusions></app-exclusions>
+        </div>
+      }
+
+      @if (activeTab() === 'subpopulations') {
+        <div class="tab-pane active">
+          <app-subpopulations></app-subpopulations>
+        </div>
+      }
+
+      @if (activeTab() === 'base-elements') {
+        <div class="tab-pane active">
+          <app-base-elements></app-base-elements>
+        </div>
+      }
+
+      @if (activeTab() === 'recommendations') {
+        <div class="tab-pane active">
+          <app-recommendations></app-recommendations>
+        </div>
+      }
+
+      @if (activeTab() === 'parameters') {
+        <div class="tab-pane active">
+          <app-parameters></app-parameters>
+        </div>
+      }
+
+      @if (activeTab() === 'handle-errors') {
+        <div class="tab-pane active">
+          <app-error-statement></app-error-statement>
+        </div>
+      }
+
+      @if (activeTab() === 'external-cql') {
+        <div class="tab-pane active">
+          <app-external-cql></app-external-cql>
+        </div>
+      }
+
+      @if (activeTab() === 'cql-preview') {
+        <div class="tab-pane active">
+          <div class="cql-preview-container">
+            @if (cqlPreview()) {
+              <pre class="cql-preview-code"><code>{{ cqlPreview() }}</code></pre>
+            } @else {
+              <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>No CQL content available. The CQL will be generated when you save the guideline.
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+</div>
+

@@ -1,0 +1,13 @@
+.recommendations {
+  .list-group-item {
+    .btn-group {
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+  }
+
+  .list-group-item:hover .btn-group {
+    opacity: 1;
+  }
+}
+

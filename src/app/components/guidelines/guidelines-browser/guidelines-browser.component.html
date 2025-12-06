@@ -1,0 +1,199 @@
+<div class="guidelines-browser">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0">
+      <i class="bi bi-journal-text me-2"></i>Guidelines
+    </h4>
+    <button
+      class="btn btn-primary"
+      (click)="onCreateNew()"
+      type="button"
+      id="create-new-guideline-btn"
+    >
+      <i class="bi bi-plus-circle me-2"></i>New Guideline
+    </button>
+  </div>
+
+  <!-- Search -->
+  <div class="mb-3">
+    <div class="input-group">
+      <input
+        type="text"
+        class="form-control"
+        [(ngModel)]="searchTerm"
+        (keyup.enter)="onSearch()"
+        placeholder="Search libraries..."
+        id="library-search-input"
+      />
+      <button
+        class="btn btn-outline-secondary"
+        (click)="onSearch()"
+        type="button"
+        [disabled]="isLoading"
+      >
+        <i class="bi bi-search"></i>
+      </button>
+      @if (searchTerm) {
+        <button
+          class="btn btn-outline-secondary"
+          (click)="onClearSearch()"
+          type="button"
+        >
+          <i class="bi bi-x"></i>
+        </button>
+      }
+    </div>
+  </div>
+
+  <!-- Library List -->
+  @if (isLoading) {
+    <div class="text-center py-5">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+    </div>
+  } @else if (libraries.length === 0) {
+    <div class="alert alert-info">
+      <i class="bi bi-info-circle me-2"></i>No libraries found.
+    </div>
+  } @else {
+    <div class="table-responsive">
+      <table class="table table-hover">
+        <thead>
+          <tr>
+            <th>
+              <button
+                class="btn btn-link p-0 text-decoration-none"
+                (click)="onSort('name')"
+                type="button"
+              >
+                Name
+                @if (sortBy === 'name') {
+                  <i class="bi bi-arrow-{{ sortOrder === 'asc' ? 'up' : 'down' }} ms-1"></i>
+                }
+              </button>
+            </th>
+            <th>
+              <button
+                class="btn btn-link p-0 text-decoration-none"
+                (click)="onSort('version')"
+                type="button"
+              >
+                Version
+                @if (sortBy === 'version') {
+                  <i class="bi bi-arrow-{{ sortOrder === 'asc' ? 'up' : 'down' }} ms-1"></i>
+                }
+              </button>
+            </th>
+            <th>Title</th>
+            <th>
+              <button
+                class="btn btn-link p-0 text-decoration-none"
+                (click)="onSort('date')"
+                type="button"
+              >
+                Date
+                @if (sortBy === 'date') {
+                  <i class="bi bi-arrow-{{ sortOrder === 'asc' ? 'up' : 'down' }} ms-1"></i>
+                }
+              </button>
+            </th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (library of libraries; track library.id) {
+            <tr>
+              <td>
+                <strong>{{ library.name || library.id }}</strong>
+              </td>
+              <td>{{ library.version || 'N/A' }}</td>
+              <td>{{ library.title || '-' }}</td>
+              <td>
+                @if (library.date) {
+                  {{ library.date | date:'short' }}
+                } @else {
+                  -
+                }
+              </td>
+              <td>
+                <div class="d-flex gap-2">
+                  <div class="btn-group btn-group-sm">
+                    <button
+                      class="btn btn-primary"
+                      (click)="onOpenLibrary(library)"
+                      type="button"
+                      [attr.id]="'edit-library-' + library.id"
+                      title="Edit guideline"
+                    >
+                      <i class="bi bi-pencil me-1"></i>Edit
+                    </button>
+                    <button
+                      class="btn btn-outline-primary"
+                      (click)="onTestLibrary(library)"
+                      type="button"
+                      [attr.id]="'test-library-' + library.id"
+                      title="Test guideline with patients"
+                    >
+                      <i class="bi bi-play-circle me-1"></i>Test
+                    </button>
+                  </div>
+                  <div class="btn-group btn-group-sm">
+                    <button
+                      class="btn btn-outline-danger"
+                      (click)="onDeleteLibrary(library)"
+                      type="button"
+                      [attr.id]="'delete-library-' + library.id"
+                      title="Delete guideline"
+                    >
+                      <i class="bi bi-trash me-1"></i>Delete
+                    </button>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pagination -->
+    @if (totalPages > 1) {
+      <nav aria-label="Library pagination">
+        <ul class="pagination justify-content-center">
+          <li class="page-item" [class.disabled]="currentPage === 1">
+            <button
+              class="page-link"
+              (click)="goToPage(currentPage - 1)"
+              [disabled]="currentPage === 1"
+              type="button"
+            >
+              Previous
+            </button>
+          </li>
+          @for (page of [].constructor(totalPages); track $index; let i = $index) {
+            <li class="page-item" [class.active]="currentPage === i + 1">
+              <button
+                class="page-link"
+                (click)="goToPage(i + 1)"
+                type="button"
+              >
+                {{ i + 1 }}
+              </button>
+            </li>
+          }
+          <li class="page-item" [class.disabled]="currentPage === totalPages">
+            <button
+              class="page-link"
+              (click)="goToPage(currentPage + 1)"
+              [disabled]="currentPage === totalPages"
+              type="button"
+            >
+              Next
+            </button>
+          </li>
+        </ul>
+      </nav>
+    }
+  }
+</div>
+
