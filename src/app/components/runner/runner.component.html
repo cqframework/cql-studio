@@ -241,6 +241,15 @@
                 </div>
                 <div class="form-text">CQL engine version for version-based test filtering</div>
 <hr>
+                <div class="form-floating mb-3">
+                  <input 
+                    type="text" 
+                    class="form-control" 
+                    id="testsRunDescription"
+                    [(ngModel)]="config().Build.testsRunDescription"
+                    placeholder="Quick Test Run">
+                  <label for="testsRunDescription">Test Run Description</label>
+                </div>
                 <div class="form-check">
                   <input 
                     class="form-check-input" 

@@ -198,6 +198,22 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
             ...historyKeymap,
             ...searchKeymap,
             {
+              key: 'Tab',
+              run: (view) => {
+                // Insert tab character at cursor position
+                const selection = view.state.selection.main;
+                view.dispatch({
+                  changes: {
+                    from: selection.from,
+                    to: selection.to,
+                    insert: '\t'
+                  },
+                  selection: { anchor: selection.from + 1 }
+                });
+                return true;
+              }
+            },
+            {
               key: 'Ctrl-Shift-f',
               run: () => {
                 this.formatCode();
@@ -452,8 +468,196 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
   }
 
   private formatCqlCode(code: string): string {
-    // Enhanced CQL formatting logic would go here
-    return code;
+    if (!code || !code.trim()) {
+      return code;
+    }
+
+    const grammar = this.grammarManager.getCurrentGrammar();
+    const keywords = grammar.keywords;
+    const operators = grammar.operators;
+    const functions = grammar.functions;
+    
+    // Build regex patterns for grammar-aware tokenization
+    const keywordPattern = new RegExp(`\\b(${keywords.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'i');
+    const functionPattern = new RegExp(`\\b(${functions.map(f => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`, 'i');
+    
+    const lines = code.split('\n');
+    const formatted: string[] = [];
+    let indentLevel = 0;
+    const indentSize = 2;
+    let previousSection: string = '';
+    let inMultiLineComment = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+      const trimmed = line.trim();
+
+      // Track multi-line comments
+      if (trimmed.includes('/*')) {
+        inMultiLineComment = true;
+      }
+      if (trimmed.includes('*/')) {
+        inMultiLineComment = false;
+      }
+
+      // Skip empty lines but preserve one between sections
+      if (!trimmed) {
+        if (formatted.length > 0 && formatted[formatted.length - 1].trim()) {
+          formatted.push('');
+        }
+        continue;
+      }
+
+      // Detect section type using grammar keywords
+      let sectionType = '';
+      if (trimmed.match(/^library\s+/i)) sectionType = 'library';
+      else if (trimmed.match(/^using\s+/i)) sectionType = 'using';
+      else if (trimmed.match(/^context\s+/i)) sectionType = 'context';
+      else if (trimmed.match(/^parameter\s+/i)) sectionType = 'parameter';
+      else if (trimmed.match(/^function\s+/i)) sectionType = 'function';
+      else if (trimmed.match(/^define\s+/i)) sectionType = 'define';
+
+      // Add blank line between major sections
+      if (sectionType && previousSection && previousSection !== sectionType) {
+        if (formatted.length > 0 && formatted[formatted.length - 1].trim()) {
+          formatted.push('');
+        }
+      }
+      if (sectionType) {
+        previousSection = sectionType;
+      }
+
+      // Calculate indentation - decrease for closing braces
+      if (trimmed.match(/^[}\]\)]/) && !inMultiLineComment) {
+        indentLevel = Math.max(0, indentLevel - 1);
+      }
+
+      // Format line with proper indentation
+      const indent = ' '.repeat(indentLevel * indentSize);
+      let formattedLine = trimmed;
+
+      // Enhanced formatting: grammar-aware spacing (but preserve strings and comments)
+      if (!inMultiLineComment && !trimmed.match(/^\/\//) && !trimmed.match(/\/\*/)) {
+        // Preserve strings by temporarily replacing them
+        const stringPlaceholders: string[] = [];
+        let placeholderIndex = 0;
+        const placeholderPrefix = `__CQL_STRING_PLACEHOLDER_${Date.now()}_`;
+        
+        // Replace strings with placeholders (handle both single and double quotes)
+        formattedLine = formattedLine.replace(/"([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)'/g, (match) => {
+          const placeholder = `${placeholderPrefix}${placeholderIndex++}__`;
+          stringPlaceholders.push(match);
+          return placeholder;
+        });
+
+        // Normalize whitespace
+        formattedLine = formattedLine.replace(/\s+/g, ' ').trim();
+
+        // Add spaces around operators (sorted by length to match longer operators first)
+        const operatorsNeedingSpace = operators.sort((a, b) => b.length - a.length);
+        operatorsNeedingSpace.forEach(op => {
+          if (op.length > 0) {
+            const escapedOp = op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Add space around operator, avoiding double spaces
+            formattedLine = formattedLine.replace(
+              new RegExp(`([^\\s])${escapedOp}([^\\s])`, 'g'),
+              `$1 ${op} $2`
+            );
+            // Handle operators at start/end of line
+            formattedLine = formattedLine.replace(
+              new RegExp(`^${escapedOp}([^\\s])`, 'g'),
+              `${op} $1`
+            );
+            formattedLine = formattedLine.replace(
+              new RegExp(`([^\\s])${escapedOp}$`, 'g'),
+              `$1 ${op}`
+            );
+          }
+        });
+
+        // Normalize spaces around punctuation
+        formattedLine = formattedLine
+          .replace(/\s*:\s*/g, ' : ')  // Colons: space around
+          .replace(/\s*,\s*/g, ', ')   // Commas: space after
+          .replace(/\s*;\s*/g, '; ')   // Semicolons: space after
+          // Normalize spaces around parentheses (will be cleaned up by final normalize)
+          .replace(/\s*\(\s*/g, '(')   // Opening paren: remove surrounding spaces
+          .replace(/\s*\)\s*/g, ')')   // Closing paren: remove surrounding spaces
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        // Ensure space after keywords (but not for keywords that are part of larger constructs)
+        const keywordsNeedingSpace = ['library', 'using', 'context', 'parameter', 'function', 'define', 'return', 'if', 'then', 'else', 'where', 'let', 'with', 'as'];
+        keywordsNeedingSpace.forEach(keyword => {
+          // Add space after keyword if not already followed by space, parenthesis, or colon
+          // Use word boundary and negative lookahead to avoid matching inside other words
+          formattedLine = formattedLine.replace(
+            new RegExp(`\\b${keyword}\\b(?!\\s*[(:])(?=\\S)`, 'gi'),
+            (match) => {
+              // Only add space if not already present
+              return match + ' ';
+            }
+          );
+        });
+        // Clean up any double spaces created
+        formattedLine = formattedLine.replace(/\s+/g, ' ').trim();
+
+        // Restore strings
+        stringPlaceholders.forEach((originalString, index) => {
+          const placeholder = `${placeholderPrefix}${index}__`;
+          formattedLine = formattedLine.replace(placeholder, originalString);
+        });
+
+        // Final cleanup: normalize multiple spaces
+        formattedLine = formattedLine.replace(/\s+/g, ' ').trim();
+      }
+
+      formatted.push(indent + formattedLine);
+
+      // Increase indent after opening braces or for define/function/parameter bodies
+      if (!inMultiLineComment) {
+        const hasOpenBrace = trimmed.includes('{') || trimmed.includes('[') || trimmed.includes('(');
+        const hasCloseBrace = trimmed.includes('}') || trimmed.includes(']') || trimmed.includes(')');
+        
+        if (hasOpenBrace && !hasCloseBrace) {
+          indentLevel++;
+        } else if (sectionType && (sectionType === 'define' || sectionType === 'function' || sectionType === 'parameter')) {
+          // Check if next line is part of the body (not a new declaration)
+          if (i < lines.length - 1) {
+            const nextLine = lines[i + 1]?.trim() || '';
+            if (nextLine && !nextLine.match(/^(define|function|parameter|library|using|context)\s+/i)) {
+              // Also check if current line ends with colon (CQL pattern)
+              if (trimmed.endsWith(':') || trimmed.match(/:\s*$/)) {
+                indentLevel++;
+              }
+            }
+          }
+        }
+        
+        // Increase indent for control flow keywords (but be conservative)
+        // Only indent for 'if', 'then', 'where', 'let', 'with' that start a block
+        if (trimmed.match(/^\s*(if|then|where|let|with)\s+/i) && 
+            !trimmed.match(/^(define|function|parameter)\s+/i)) {
+          // Check if this is a multi-line construct
+          if (i < lines.length - 1) {
+            const nextLine = lines[i + 1]?.trim() || '';
+            if (nextLine && !nextLine.match(/^(define|function|parameter|library|using|context|if|then|else|end)\s+/i)) {
+              // Only indent if current line doesn't have a complete expression ending with semicolon
+              if (!trimmed.match(/;\s*$/)) {
+                indentLevel++;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Remove trailing empty lines
+    while (formatted.length > 0 && !formatted[formatted.length - 1].trim()) {
+      formatted.pop();
+    }
+
+    return formatted.join('\n') + (code.endsWith('\n') ? '\n' : '');
   }
 
   private setupResizeObserver(): void {
@@ -558,7 +762,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
   }
 
   onFormatCql(): void {
-    this.formatCql.emit();
+    this.formatCode();
   }
 
   onValidateCql(): void {
