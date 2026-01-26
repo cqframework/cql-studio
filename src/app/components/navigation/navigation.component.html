@@ -4,15 +4,15 @@
       <i class="bi bi-clipboard-data me-2"></i>{{ title() }}
     </a>
 
-    <button id="navbar-toggler" class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
-      aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+    <button id="navbar-toggler" class="navbar-toggler" type="button" data-bs-toggle="collapse"
+      data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
       <span class="navbar-toggler-icon"></span>
     </button>
 
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav me-auto">
         @if (showFileMenu()) {
-          <li class="nav-item dropdown">
+        <li class="nav-item dropdown">
           <a class="nav-link dropdown-toggle" href="#" id="fileDropdown" role="button" data-bs-toggle="dropdown">
             <i class="bi bi-folder me-1"></i>File
           </a>
@@ -28,18 +28,22 @@
               </a>
             </li>
             @if (hasIndexUrl()) {
-              <li><hr class="dropdown-divider"></li>
-              <li>
-                <a id="back-to-home-menu-item" class="dropdown-item" href="#" (click)="goBackToIndex(); $event.preventDefault()">
-                  <i class="bi bi-arrow-left me-2"></i>Back to Home
-                </a>
-              </li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li>
+              <a id="back-to-home-menu-item" class="dropdown-item" href="#"
+                (click)="goBackToIndex(); $event.preventDefault()">
+                <i class="bi bi-arrow-left me-2"></i>Back to Home
+              </a>
+            </li>
             }
           </ul>
-          </li>
+        </li>
         }
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" id="testingDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <a class="nav-link dropdown-toggle" href="#" id="testingDropdown" role="button" data-bs-toggle="dropdown"
+            aria-expanded="false">
             <i class="bi bi-clipboard-check me-1"></i>Testing
           </a>
           <ul class="dropdown-menu" aria-labelledby="testingDropdown">
@@ -55,27 +59,35 @@
             </li>
           </ul>
         </li>
-        @if (settingsService.settings().experimental) {
-          <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle" href="#" id="authoringDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-              <i class="bi bi-pencil-square me-1"></i>Authoring
-            </a>
-            <ul class="dropdown-menu" aria-labelledby="authoringDropdown">
-              <li>
-                <a id="cql-with-fhir-nav-link" class="dropdown-item" routerLink="/ide" routerLinkActive="active">
-                  <i class="bi bi-code-square me-2"></i>CQL IDE
-                </a>
-              </li>
-              <li>
-                <a id="guidelines-nav-link" class="dropdown-item" routerLink="/guidelines" routerLinkActive="active">
-                  <i class="bi bi-diagram-3 me-2"></i>Guidelines
-                </a>
-              </li>
-            </ul>
-          </li>
-        }
+
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" id="toolsDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <a class="nav-link dropdown-toggle" href="#" id="authoringDropdown" role="button" data-bs-toggle="dropdown"
+            aria-expanded="false">
+            <i class="bi bi-pencil-square me-1"></i>Authoring
+          </a>
+          <ul class="dropdown-menu" aria-labelledby="authoringDropdown">
+            <li>
+              <a id="terminology-nav-link" class="dropdown-item" routerLink="/terminology" routerLinkActive="active">
+                <i class="bi bi-book me-2"></i>Terminology Browser
+              </a>
+            </li>
+            @if (settingsService.settings().experimental) {
+            <li>
+              <a id="cql-with-fhir-nav-link" class="dropdown-item" routerLink="/ide" routerLinkActive="active">
+                <i class="bi bi-code-square me-2"></i>CQL IDE
+              </a>
+            </li>
+            <li>
+              <a id="guidelines-nav-link" class="dropdown-item" routerLink="/guidelines" routerLinkActive="active">
+                <i class="bi bi-diagram-3 me-2"></i>Guidelines
+              </a>
+            </li>
+            }
+          </ul>
+        </li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" id="toolsDropdown" role="button" data-bs-toggle="dropdown"
+            aria-expanded="false">
             <i class="bi bi-tools me-1"></i>Tools
           </a>
           <ul class="dropdown-menu" aria-labelledby="toolsDropdown">
@@ -84,33 +96,31 @@
                 <i class="bi bi-upload me-2"></i>FHIR Uploader
               </a>
             </li>
-            @if (settingsService.settings().experimental) {
-              <li>
-                <a id="terminology-nav-link" class="dropdown-item" routerLink="/terminology" routerLinkActive="active">
-                  <i class="bi bi-book me-2"></i>Terminology Browser
-                </a>
-              </li>
-            }
           </ul>
         </li>
       </ul>
       <ul class="navbar-nav">
         <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" id="documentationDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <a class="nav-link dropdown-toggle" href="#" id="documentationDropdown" role="button"
+            data-bs-toggle="dropdown" aria-expanded="false">
             <i class="bi bi-book me-1"></i>Documentation
           </a>
           <ul class="dropdown-menu" aria-labelledby="documentationDropdown">
             <li>
-              <a id="runner-documentation-menu-item" class="dropdown-item" routerLink="/documentation/runner" routerLinkActive="active">
+              <a id="runner-documentation-menu-item" class="dropdown-item" routerLink="/documentation/runner"
+                routerLinkActive="active">
                 <i class="bi bi-play-circle me-2"></i>Test Runner
               </a>
             </li>
             <li>
-              <a id="results-documentation-menu-item" class="dropdown-item" routerLink="/documentation/results" routerLinkActive="active">
+              <a id="results-documentation-menu-item" class="dropdown-item" routerLink="/documentation/results"
+                routerLinkActive="active">
                 <i class="bi bi-clipboard-data me-2"></i>Test Results
               </a>
             </li>
-            <li><hr class="dropdown-divider"></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
             <li>
               <a id="about-menu-item" class="dropdown-item" routerLink="/about" routerLinkActive="active">
                 <i class="bi bi-info-circle me-2"></i>About

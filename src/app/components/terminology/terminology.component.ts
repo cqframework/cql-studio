@@ -26,6 +26,8 @@ interface ValidationResult {
   display?: string;
 }
 
+type TerminologyTab = 'valueset' | 'validation' | 'conceptmap' | 'codesystems';
+
 @Component({
   selector: 'app-terminology',
   standalone: true,
@@ -36,7 +38,7 @@ interface ValidationResult {
 export class TerminologyComponent implements OnInit {
 
   // Active tab
-  protected readonly activeTab = signal<string>('codes');
+  protected readonly activeTab = signal<TerminologyTab>('valueset');
 
   // ValueSet search
   protected readonly valuesetSearchTerm = signal<string>('');
@@ -47,18 +49,18 @@ export class TerminologyComponent implements OnInit {
   protected readonly expandedValueSet = signal<ValueSet | null>(null);
   protected readonly expandedCodes = signal<any[]>([]);
   protected readonly expandLoading = signal<boolean>(false);
-  
+
   // Pagination for ValueSets
   protected readonly valuesetCurrentPage = signal<number>(1);
   protected readonly valuesetPageSize = signal<number>(20);
   protected readonly valuesetTotalCount = signal<number>(0);
   protected readonly valuesetAvailablePageSizes = [10, 20, 50, 100];
-  
+
   // Pagination for Expanded Codes
   protected readonly currentPage = signal<number>(1);
   protected readonly pageSize = signal<number>(50);
   protected readonly availablePageSizes = [25, 50, 100, 200];
-  
+
   // Expanded row state for Expanded Codes table
   protected readonly expandedRows = signal<Set<string>>(new Set());
   protected readonly expandedCodeDetails = signal<Map<string, any>>(new Map());
@@ -100,7 +102,7 @@ export class TerminologyComponent implements OnInit {
   protected readonly codeDetailsLoading = signal<boolean>(false);
   protected readonly codeParents = signal<any[]>([]);
   protected readonly codeChildren = signal<any[]>([]);
-  
+
   // Available CodeSystems for dropdown
   protected readonly availableCodeSystems = signal<any[]>([]);
 
@@ -118,7 +120,7 @@ export class TerminologyComponent implements OnInit {
   protected readonly conceptmapLoading = signal<boolean>(false);
   protected readonly conceptmapError = signal<string | null>(null);
   protected readonly selectedConceptMap = signal<ConceptMap | null>(null);
-  
+
   // Pagination for ConceptMaps
   protected readonly conceptmapCurrentPage = signal<number>(1);
   protected readonly conceptmapPageSize = signal<number>(20);
@@ -141,7 +143,12 @@ export class TerminologyComponent implements OnInit {
   protected readonly codeSystemsSortBy = signal<'name' | 'url' | 'title' | 'version' | 'status'>('name');
   protected readonly codeSystemsSortOrder = signal<'asc' | 'desc'>('asc');
   protected readonly codeSystemsDeleting = signal<Set<string>>(new Set());
-  
+
+  // Pagination for Code Systems
+  protected readonly codeSystemsCurrentPage = signal<number>(1);
+  protected readonly codeSystemsPageSize = signal<number>(20);
+  protected readonly codeSystemsAvailablePageSizes = [10, 20, 50, 100];
+
   // CodeSystem row expansion state
   protected readonly expandedCodeSystemRows = signal<Set<string>>(new Set());
 
@@ -188,22 +195,17 @@ export class TerminologyComponent implements OnInit {
   }
 
   // Tab management
-  setActiveTab(tab: string): void {
+  setActiveTab(tab: TerminologyTab): void {
     this.activeTab.set(tab);
-    
+
     // Auto-load ValueSets when ValueSets tab is activated
     if (tab === 'valueset' && this.serverAvailable() && !this.valuesetLoading()) {
       this.searchValueSets(1);
     }
-    
+
     // Auto-load ConceptMaps when ConceptMaps tab is activated
     if (tab === 'conceptmap' && this.serverAvailable() && !this.conceptmapLoading()) {
       this.searchConceptMaps(1);
-    }
-    
-    // Auto-load ValueSets when Browser tab is activated
-    if (tab === 'codes' && this.serverAvailable() && !this.valuesetLoading()) {
-      this.searchValueSets(1);
     }
   }
 
@@ -223,9 +225,17 @@ export class TerminologyComponent implements OnInit {
       // Check server availability and get resource counts
       await this.checkServerAvailability();
       this.serverAvailable.set(true);
-      
+
       // Load code systems automatically
       await this.loadCodeSystems();
+
+      // Auto-load default tab content if server is available
+      const currentTab = this.activeTab();
+      if (currentTab === 'valueset' && !this.valuesetLoading()) {
+        this.searchValueSets(1);
+      } else if (currentTab === 'conceptmap' && !this.conceptmapLoading()) {
+        this.searchConceptMaps(1);
+      }
     } catch (error) {
       this.serverAvailable.set(false);
       this.serverError.set(this.getErrorMessage(error));
@@ -269,11 +279,11 @@ export class TerminologyComponent implements OnInit {
       const searchTerm = this.valuesetSearchTerm().trim();
       const pageSize = this.valuesetPageSize();
       const offset = (page - 1) * pageSize;
-      const params: any = { 
+      const params: any = {
         _count: pageSize,
         _offset: offset
       };
-      
+
       if (searchTerm) {
         // Try searching by name first, then title
         params.name = searchTerm;
@@ -281,7 +291,7 @@ export class TerminologyComponent implements OnInit {
 
       const result = await firstValueFrom(this.terminologyService.searchValueSets(params));
       this.valuesetResults.set(result?.entry?.map(e => e.resource!) || []);
-      
+
       // Update total count from bundle
       if (result?.total !== undefined) {
         this.valuesetTotalCount.set(result.total);
@@ -341,7 +351,7 @@ export class TerminologyComponent implements OnInit {
       this.currentPage.set(1); // Reset to first page when expanding new ValueSet
     } catch (error) {
       console.error('ValueSet expansion error:', error);
-      
+
       // If error mentions unknown ValueSet, try alternative approach
       if ((error as any)?.error?.issue?.[0]?.diagnostics?.includes('Unknown ValueSet')) {
         console.log('ValueSet not found, trying alternative approach...');
@@ -353,7 +363,7 @@ export class TerminologyComponent implements OnInit {
             includeDefinition: true,
             activeOnly: true
           };
-          
+
           const result = await firstValueFrom(this.terminologyService.expandValueSet(alternativeParams));
           this.expandedCodes.set(result?.expansion?.contains || []);
           this.currentPage.set(1);
@@ -362,7 +372,7 @@ export class TerminologyComponent implements OnInit {
           console.error('Alternative expansion also failed:', altError);
         }
       }
-      
+
       this.valuesetError.set(this.getErrorMessage(error));
     } finally {
       this.expandLoading.set(false);
@@ -377,9 +387,9 @@ export class TerminologyComponent implements OnInit {
   setPageSize(size: number): void {
     const currentPage = this.currentPage();
     const totalCodes = this.expandedCodes().length;
-    
+
     this.pageSize.set(size);
-    
+
     // Adjust current page if necessary - recalculate max pages with new size
     const maxPage = Math.max(1, Math.ceil(totalCodes / size));
     if (currentPage > maxPage) {
@@ -433,14 +443,17 @@ export class TerminologyComponent implements OnInit {
   });
 
   valuesetPreviousPage(): void {
-    if (this.valuesetHasPreviousPage()) {
-      this.searchValueSets(this.valuesetCurrentPage() - 1);
+    const currentPage = this.valuesetCurrentPage();
+    if (currentPage > 1) {
+      this.searchValueSets(currentPage - 1);
     }
   }
 
   valuesetNextPage(): void {
-    if (this.valuesetHasNextPage()) {
-      this.searchValueSets(this.valuesetCurrentPage() + 1);
+    const currentPage = this.valuesetCurrentPage();
+    const totalPages = this.valuesetTotalPages();
+    if (currentPage < totalPages) {
+      this.searchValueSets(currentPage + 1);
     }
   }
 
@@ -484,14 +497,17 @@ export class TerminologyComponent implements OnInit {
   });
 
   conceptmapPreviousPage(): void {
-    if (this.conceptmapHasPreviousPage()) {
-      this.searchConceptMaps(this.conceptmapCurrentPage() - 1);
+    const currentPage = this.conceptmapCurrentPage();
+    if (currentPage > 1) {
+      this.searchConceptMaps(currentPage - 1);
     }
   }
 
   conceptmapNextPage(): void {
-    if (this.conceptmapHasNextPage()) {
-      this.searchConceptMaps(this.conceptmapCurrentPage() + 1);
+    const currentPage = this.conceptmapCurrentPage();
+    const totalPages = this.conceptmapTotalPages();
+    if (currentPage < totalPages) {
+      this.searchConceptMaps(currentPage + 1);
     }
   }
 
@@ -513,7 +529,7 @@ export class TerminologyComponent implements OnInit {
   toggleRowExpansion(code: any): void {
     const codeKey = `${code.code}-${code.system}`;
     const expanded = new Set(this.expandedRows());
-    
+
     if (expanded.has(codeKey)) {
       expanded.delete(codeKey);
     } else {
@@ -523,7 +539,7 @@ export class TerminologyComponent implements OnInit {
         this.loadCodeDetailsForExpansion(code, codeKey);
       }
     }
-    
+
     this.expandedRows.set(expanded);
   }
 
@@ -559,12 +575,12 @@ export class TerminologyComponent implements OnInit {
       };
 
       const result = await firstValueFrom(this.terminologyService.lookupCode(params));
-      
+
       // Store the result
       const details = new Map(this.expandedCodeDetails());
       details.set(codeKey, result);
       this.expandedCodeDetails.set(details);
-      
+
     } catch (error) {
       console.error('Failed to load code details:', error);
       // Store error in details
@@ -611,14 +627,14 @@ export class TerminologyComponent implements OnInit {
     try {
       const searchTerm = this.codeSearchTerm().trim();
       const selectedValueSet = this.selectedValueSet();
-      
+
       if (!selectedValueSet) {
         this.codeError.set('Please select a ValueSet to search codes.');
         return;
       }
 
       console.log('Searching for codes in ValueSet:', selectedValueSet.url, 'with term:', searchTerm);
-      
+
       // Expand the ValueSet to get codes with pagination and filtering
       const params: any = {
         url: selectedValueSet.url,
@@ -637,14 +653,14 @@ export class TerminologyComponent implements OnInit {
       console.log('Expanding ValueSet with params:', params);
       const result = await firstValueFrom(this.terminologyService.expandValueSet(params));
       let codes = result?.expansion?.contains || [];
-      
+
       // If no search term was provided, we still need to filter the results
       // since we're limited to 1000 codes and the server might return more than we can handle
       if (!searchTerm && codes.length >= 1000) {
         console.log('ValueSet has many codes, showing first 1000. Consider using a search term to narrow results.');
         codes = codes.slice(0, 1000);
       }
-      
+
       console.log('Found codes:', codes.length);
       this.codeResults.set(codes);
       this.autoSelectFirstResult();
@@ -669,37 +685,37 @@ export class TerminologyComponent implements OnInit {
     try {
       const searchTerm = this.codeSearchTerm().trim();
       const systemUrl = this.codeSystemUrl().trim();
-      
+
       if (!systemUrl) {
         this.codeError.set('Please select a CodeSystem to browse codes.');
         return;
       }
 
       console.log('Searching for codes in CodeSystem:', systemUrl, 'with term:', searchTerm);
-      
+
       // Get the specific CodeSystem to access its concepts
       const codeSystemResult = await firstValueFrom(this.terminologyService.getCodeSystemByUrl(systemUrl));
-      
+
       if (!codeSystemResult) {
         this.codeError.set('CodeSystem not found. Please check the selection.');
         return;
       }
 
       console.log('CodeSystem found:', codeSystemResult);
-      
+
       // Extract concepts from the CodeSystem
       let concepts = codeSystemResult.concept || [];
-      
+
       // Filter concepts by search term using client-side contains matching
       if (searchTerm) {
         console.log('Filtering concepts with search term:', searchTerm);
-        concepts = concepts.filter((concept: any) => 
+        concepts = concepts.filter((concept: any) =>
           concept.code?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           concept.display?.toLowerCase().includes(searchTerm.toLowerCase()) ||
           concept.definition?.toLowerCase().includes(searchTerm.toLowerCase())
         );
       }
-      
+
       console.log('Found concepts:', concepts.length);
       this.codeResults.set(concepts);
       this.autoSelectFirstResult();
@@ -741,7 +757,7 @@ export class TerminologyComponent implements OnInit {
     }
 
     this.codeSystemsLoading.set(true);
-    
+
     try {
       const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource!).filter(r => r !== undefined) || [];
@@ -800,11 +816,11 @@ export class TerminologyComponent implements OnInit {
       }
 
       const result = await firstValueFrom(this.terminologyService.validateCode(params));
-      
+
       // Parse validation result
       const validParam = result?.parameter?.find(p => p.name === 'result');
       const displayParam = result?.parameter?.find(p => p.name === 'display');
-      
+
       this.validationResult.set({
         valid: validParam?.valueBoolean || false,
         message: validParam?.valueBoolean ? 'Code is valid' : 'Code is not valid',
@@ -832,18 +848,18 @@ export class TerminologyComponent implements OnInit {
       const searchTerm = this.conceptmapSearchTerm().trim();
       const pageSize = this.conceptmapPageSize();
       const offset = (page - 1) * pageSize;
-      const params: any = { 
+      const params: any = {
         _count: pageSize,
         _offset: offset
       };
-      
+
       if (searchTerm) {
         params.name = searchTerm;
       }
 
       const result = await firstValueFrom(this.terminologyService.searchConceptMaps(params));
       this.conceptmapResults.set(result?.entry?.map(e => e.resource!) || []);
-      
+
       // Update total count from bundle
       if (result?.total !== undefined) {
         this.conceptmapTotalCount.set(result.total);
@@ -898,7 +914,7 @@ export class TerminologyComponent implements OnInit {
       }
 
       const result = await firstValueFrom(this.terminologyService.translateConcept(params));
-      
+
       // Parse translation result
       const matchParams = result?.parameter?.filter(p => p.name === 'match') || [];
       this.translationResult.set(matchParams.map(p => p.valueCoding));
@@ -960,7 +976,7 @@ export class TerminologyComponent implements OnInit {
   // Handle column header clicks for sorting
   onCodeSystemColumnClick(column: 'name' | 'url' | 'title' | 'version' | 'status'): void {
     const currentSortBy = this.codeSystemsSortBy();
-    
+
     if (currentSortBy === column) {
       // Same column clicked - toggle sort order
       this.toggleCodeSystemsSortOrder();
@@ -973,11 +989,11 @@ export class TerminologyComponent implements OnInit {
 
   getFilteredAndSortedCodeSystems(): CodeSystem[] {
     let results = this.codeSystemsResults();
-    
+
     // Apply filter
     const filter = this.codeSystemsFilter().toLowerCase();
     if (filter) {
-      results = results.filter(cs => 
+      results = results.filter(cs =>
         cs.name?.toLowerCase().includes(filter) ||
         cs.title?.toLowerCase().includes(filter) ||
         cs.url?.toLowerCase().includes(filter)
@@ -987,11 +1003,11 @@ export class TerminologyComponent implements OnInit {
     // Apply sorting
     const sortBy = this.codeSystemsSortBy();
     const sortOrder = this.codeSystemsSortOrder();
-    
+
     results.sort((a, b) => {
       let aValue = '';
       let bValue = '';
-      
+
       switch (sortBy) {
         case 'name':
           aValue = a.name || '';
@@ -1014,12 +1030,84 @@ export class TerminologyComponent implements OnInit {
           bValue = b.status || '';
           break;
       }
-      
+
       const comparison = aValue.localeCompare(bValue);
       return sortOrder === 'asc' ? comparison : -comparison;
     });
 
     return results;
+  }
+
+  // Pagination computed properties for Code Systems
+  protected readonly codeSystemsTotalCount = computed(() => {
+    return this.getFilteredAndSortedCodeSystems().length;
+  });
+
+  protected readonly codeSystemsTotalPages = computed(() => {
+    const total = this.codeSystemsTotalCount();
+    const size = this.codeSystemsPageSize();
+    return Math.max(1, Math.ceil(total / size));
+  });
+
+  protected readonly codeSystemsHasPreviousPage = computed(() => {
+    return this.codeSystemsCurrentPage() > 1;
+  });
+
+  protected readonly codeSystemsHasNextPage = computed(() => {
+    return this.codeSystemsCurrentPage() < this.codeSystemsTotalPages();
+  });
+
+  protected readonly codeSystemsStartIndex = computed(() => {
+    return (this.codeSystemsCurrentPage() - 1) * this.codeSystemsPageSize() + 1;
+  });
+
+  protected readonly codeSystemsEndIndex = computed(() => {
+    const total = this.codeSystemsTotalCount();
+    const end = this.codeSystemsCurrentPage() * this.codeSystemsPageSize();
+    return Math.min(end, total);
+  });
+
+  protected readonly paginatedCodeSystems = computed(() => {
+    const allResults = this.getFilteredAndSortedCodeSystems();
+    const page = this.codeSystemsCurrentPage();
+    const size = this.codeSystemsPageSize();
+    const startIndex = (page - 1) * size;
+    const endIndex = startIndex + size;
+    return allResults.slice(startIndex, endIndex);
+  });
+
+  // Pagination methods for Code Systems
+  codeSystemsPreviousPage(): void {
+    const currentPage = this.codeSystemsCurrentPage();
+    if (currentPage > 1) {
+      this.codeSystemsCurrentPage.set(currentPage - 1);
+    }
+  }
+
+  codeSystemsNextPage(): void {
+    const currentPage = this.codeSystemsCurrentPage();
+    const totalPages = this.codeSystemsTotalPages();
+    if (currentPage < totalPages) {
+      this.codeSystemsCurrentPage.set(currentPage + 1);
+    }
+  }
+
+  codeSystemsGoToFirstPage(): void {
+    this.codeSystemsCurrentPage.set(1);
+  }
+
+  codeSystemsGoToLastPage(): void {
+    this.codeSystemsCurrentPage.set(this.codeSystemsTotalPages());
+  }
+
+  setCodeSystemsPageSize(size: number): void {
+    this.codeSystemsPageSize.set(size);
+    this.codeSystemsCurrentPage.set(1);
+  }
+
+  onCodeSystemsFilterChange(value: string): void {
+    this.codeSystemsFilter.set(value);
+    this.codeSystemsCurrentPage.set(1);
   }
 
   async deleteCodeSystem(codeSystem: CodeSystem): Promise<void> {
@@ -1045,11 +1133,11 @@ export class TerminologyComponent implements OnInit {
 
     try {
       await firstValueFrom(this.terminologyService.deleteCodeSystem(codeSystem.id));
-      
+
       // Remove from results
       const results = this.codeSystemsResults().filter(cs => cs.id !== codeSystem.id);
       this.codeSystemsResults.set(results);
-      
+
       console.log(`CodeSystem "${codeSystem.name || codeSystem.id}" deleted successfully`);
     } catch (error) {
       console.error('Failed to delete CodeSystem:', error);
@@ -1070,13 +1158,13 @@ export class TerminologyComponent implements OnInit {
   toggleCodeSystemRowExpansion(codeSystem: CodeSystem): void {
     const codeSystemId = codeSystem.id || codeSystem.url || '';
     const expanded = new Set(this.expandedCodeSystemRows());
-    
+
     if (expanded.has(codeSystemId)) {
       expanded.delete(codeSystemId);
     } else {
       expanded.add(codeSystemId);
     }
-    
+
     this.expandedCodeSystemRows.set(expanded);
   }
 
@@ -1136,7 +1224,7 @@ export class TerminologyComponent implements OnInit {
       if (code.resourceType === 'CodeSystem') {
         const codeSystemDetails = await firstValueFrom(this.terminologyService.getCodeSystem(code.id));
         this.codeDetails.set(codeSystemDetails);
-        
+
         // Extract concepts from the CodeSystem to show as "children"
         if (codeSystemDetails?.concept) {
           const concepts = codeSystemDetails.concept;
@@ -1188,26 +1276,26 @@ export class TerminologyComponent implements OnInit {
     }
 
     console.log('🔍 Starting CodeSystem verification...');
-    
+
     try {
       // Test 1: Verify CodeSystems can be retrieved
       await this.verifyCodeSystemRetrieval();
-      
+
       // Test 2: Verify version integrity
       await this.verifyVersionIntegrity();
-      
+
       // Test 3: Verify expansion functionality
       await this.verifyExpansionFunctionality();
-      
+
       // Test 4: Verify lookup operations
       await this.verifyLookupOperations();
-      
+
       // Test 5: Verify search functionality
       await this.verifySearchFunctionality();
-      
+
       // Test 6: Verify error handling
       await this.verifyErrorHandling();
-      
+
       console.log('✅ CodeSystem verification completed successfully');
     } catch (error) {
       console.error('❌ CodeSystem verification failed:', error);
@@ -1216,18 +1304,18 @@ export class TerminologyComponent implements OnInit {
 
   private async verifyCodeSystemRetrieval(): Promise<void> {
     console.log('📋 Testing CodeSystem retrieval...');
-    
+
     try {
       const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
-      
+
       console.log(`Found ${codeSystems.length} CodeSystems on server`);
-      
+
       if (codeSystems.length === 0) {
         console.warn('⚠️ No CodeSystems found on server');
         return;
       }
-      
+
       // Verify each CodeSystem has required fields
       for (const cs of codeSystems) {
         if (!cs.id) {
@@ -1240,7 +1328,7 @@ export class TerminologyComponent implements OnInit {
           console.warn(`⚠️ CodeSystem missing status: ${cs.name || cs.title || cs.id}`);
         }
       }
-      
+
       console.log('✅ CodeSystem retrieval verification passed');
     } catch (error) {
       console.error('❌ CodeSystem retrieval verification failed:', error);
@@ -1250,18 +1338,18 @@ export class TerminologyComponent implements OnInit {
 
   private async verifyVersionIntegrity(): Promise<void> {
     console.log('🔢 Testing version integrity...');
-    
+
     try {
       const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
-      
+
       let versionedCount = 0;
       let versionIntegrityIssues = 0;
-      
+
       for (const cs of codeSystems) {
         if (cs.version) {
           versionedCount++;
-          
+
           // Test that we can retrieve the CodeSystem by URL with version
           try {
             const byUrlResult = await firstValueFrom(this.terminologyService.getCodeSystemByUrl(cs.url!));
@@ -1275,7 +1363,7 @@ export class TerminologyComponent implements OnInit {
           }
         }
       }
-      
+
       console.log(`Found ${versionedCount} versioned CodeSystems`);
       if (versionIntegrityIssues === 0) {
         console.log('✅ Version integrity verification passed');
@@ -1290,30 +1378,30 @@ export class TerminologyComponent implements OnInit {
 
   private async verifyExpansionFunctionality(): Promise<void> {
     console.log('🔍 Testing expansion functionality...');
-    
+
     try {
       const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
-      
+
       let expansionTestsPassed = 0;
       let expansionTestsFailed = 0;
-      
+
       // Test expansion on first few CodeSystems that have concepts
       for (const cs of codeSystems.slice(0, 3)) {
         try {
           // Try to get the CodeSystem to see if it has concepts
           const fullCodeSystem = await firstValueFrom(this.terminologyService.getCodeSystem(cs.id!));
-          
+
           if (fullCodeSystem && fullCodeSystem.concept && fullCodeSystem.concept.length > 0) {
             console.log(`Testing expansion for CodeSystem: ${cs.name || cs.id}`);
-            
+
             // Test lookup on first concept
             const firstConcept = fullCodeSystem.concept[0];
             const lookupResult = await firstValueFrom(this.terminologyService.lookupCode({
               code: firstConcept.code!,
               system: cs.url!
             }));
-            
+
             if (lookupResult && lookupResult.parameter) {
               expansionTestsPassed++;
               console.log(`✅ Expansion test passed for ${cs.name || cs.id}`);
@@ -1329,7 +1417,7 @@ export class TerminologyComponent implements OnInit {
           console.warn(`⚠️ Expansion test failed for ${cs.name || cs.id}:`, error);
         }
       }
-      
+
       console.log(`Expansion tests: ${expansionTestsPassed} passed, ${expansionTestsFailed} failed`);
       if (expansionTestsPassed > 0) {
         console.log('✅ Expansion functionality verification passed');
@@ -1344,35 +1432,35 @@ export class TerminologyComponent implements OnInit {
 
   private async verifyLookupOperations(): Promise<void> {
     console.log('🔎 Testing lookup operations...');
-    
+
     try {
       const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
-      
+
       let lookupTestsPassed = 0;
       let lookupTestsFailed = 0;
-      
+
       // Test lookup operations on first few CodeSystems
       for (const cs of codeSystems.slice(0, 2)) {
         try {
           const fullCodeSystem = await firstValueFrom(this.terminologyService.getCodeSystem(cs.id!));
-          
+
           if (fullCodeSystem && fullCodeSystem.concept && fullCodeSystem.concept.length > 0) {
             const testConcept = fullCodeSystem.concept[0];
-            
+
             console.log(`Testing lookup for code ${testConcept.code} in ${cs.name || cs.id}`);
-            
+
             const lookupResult = await firstValueFrom(this.terminologyService.lookupCode({
               code: testConcept.code!,
               system: cs.url!,
               version: cs.version
             }));
-            
+
             if (lookupResult && lookupResult.parameter) {
               // Check if we got expected parameters
               const hasDisplay = lookupResult.parameter.some((p: any) => p.name === 'display');
               const hasDefinition = lookupResult.parameter.some((p: any) => p.name === 'definition');
-              
+
               if (hasDisplay || hasDefinition) {
                 lookupTestsPassed++;
                 console.log(`✅ Lookup test passed for ${cs.name || cs.id}`);
@@ -1390,7 +1478,7 @@ export class TerminologyComponent implements OnInit {
           console.warn(`⚠️ Lookup test failed for ${cs.name || cs.id}:`, error);
         }
       }
-      
+
       console.log(`Lookup tests: ${lookupTestsPassed} passed, ${lookupTestsFailed} failed`);
       if (lookupTestsPassed > 0) {
         console.log('✅ Lookup operations verification passed');
@@ -1405,46 +1493,46 @@ export class TerminologyComponent implements OnInit {
 
   private async verifySearchFunctionality(): Promise<void> {
     console.log('🔍 Testing search functionality...');
-    
+
     try {
       // Test search by name
-      const nameSearchResult = await firstValueFrom(this.terminologyService.searchCodeSystems({ 
+      const nameSearchResult = await firstValueFrom(this.terminologyService.searchCodeSystems({
         name: 'test',
-        _count: 5 
+        _count: 5
       }));
-      
+
       // Test search by status
-      const statusSearchResult = await firstValueFrom(this.terminologyService.searchCodeSystems({ 
+      const statusSearchResult = await firstValueFrom(this.terminologyService.searchCodeSystems({
         status: 'active',
-        _count: 5 
+        _count: 5
       }));
-      
+
       // Test search by URL
-      const urlSearchResult = await firstValueFrom(this.terminologyService.searchCodeSystems({ 
+      const urlSearchResult = await firstValueFrom(this.terminologyService.searchCodeSystems({
         url: 'http',
-        _count: 5 
+        _count: 5
       }));
-      
+
       console.log(`Name search returned: ${nameSearchResult?.entry?.length || 0} results`);
       console.log(`Status search returned: ${statusSearchResult?.entry?.length || 0} results`);
       console.log(`URL search returned: ${urlSearchResult?.entry?.length || 0} results`);
-      
+
       // Test that search results are properly formatted
       const allResults = [
         ...(nameSearchResult?.entry || []),
         ...(statusSearchResult?.entry || []),
         ...(urlSearchResult?.entry || [])
       ];
-      
+
       let validResults = 0;
       for (const entry of allResults) {
         if (entry.resource && entry.resource.resourceType === 'CodeSystem') {
           validResults++;
         }
       }
-      
+
       console.log(`Search functionality: ${validResults} valid results out of ${allResults.length} total`);
-      
+
       if (validResults > 0) {
         console.log('✅ Search functionality verification passed');
       } else {
@@ -1458,11 +1546,11 @@ export class TerminologyComponent implements OnInit {
 
   private async verifyErrorHandling(): Promise<void> {
     console.log('⚠️ Testing error handling...');
-    
+
     try {
       let errorHandlingTestsPassed = 0;
       let errorHandlingTestsFailed = 0;
-      
+
       // Test 1: Invalid CodeSystem ID
       try {
         await firstValueFrom(this.terminologyService.getCodeSystem('invalid-id-that-should-not-exist'));
@@ -1472,7 +1560,7 @@ export class TerminologyComponent implements OnInit {
         console.log('✅ Correctly handled invalid CodeSystem ID');
         errorHandlingTestsPassed++;
       }
-      
+
       // Test 2: Invalid CodeSystem URL
       try {
         await firstValueFrom(this.terminologyService.getCodeSystemByUrl('http://invalid-url-that-should-not-exist.com'));
@@ -1482,7 +1570,7 @@ export class TerminologyComponent implements OnInit {
         console.log('✅ Correctly handled invalid CodeSystem URL');
         errorHandlingTestsPassed++;
       }
-      
+
       // Test 3: Invalid lookup parameters
       try {
         await firstValueFrom(this.terminologyService.lookupCode({
@@ -1495,7 +1583,7 @@ export class TerminologyComponent implements OnInit {
         console.log('✅ Correctly handled invalid lookup parameters');
         errorHandlingTestsPassed++;
       }
-      
+
       // Test 4: Invalid search parameters
       try {
         await firstValueFrom(this.terminologyService.searchCodeSystems({
@@ -1508,9 +1596,9 @@ export class TerminologyComponent implements OnInit {
         console.warn('⚠️ Search with non-matching parameters threw error:', error);
         errorHandlingTestsFailed++;
       }
-      
+
       console.log(`Error handling tests: ${errorHandlingTestsPassed} passed, ${errorHandlingTestsFailed} failed`);
-      
+
       if (errorHandlingTestsPassed >= 3) {
         console.log('✅ Error handling verification passed');
       } else {

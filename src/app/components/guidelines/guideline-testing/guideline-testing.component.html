@@ -5,8 +5,8 @@
       <div>
         <h4 class="mb-0">
           <i class="bi bi-play-circle me-2"></i>Test Guideline
-          @if (library.name) {
-            <span class="text-muted ms-2">- {{ library.name }}</span>
+          @if (library().name) {
+            <span class="text-muted ms-2">- {{ library().name }}</span>
           }
         </h4>
       </div>

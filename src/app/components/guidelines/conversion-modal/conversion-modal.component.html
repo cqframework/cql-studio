@@ -15,13 +15,13 @@
       </div>
       <div class="modal-body">
         <p>
-          The library <strong>{{ library.name || library.id }}</strong> does not appear to be in the expected guideline format.
+          The library <strong>{{ library().name || library().id }}</strong> does not appear to be in the expected guideline format.
         </p>
-        @if (issues.length > 0) {
+        @if (issues().length > 0) {
           <div class="alert alert-warning">
             <strong>Issues detected:</strong>
             <ul class="mb-0 mt-2">
-              @for (issue of issues; track issue) {
+              @for (issue of issues(); track issue) {
                 <li>{{ issue }}</li>
               }
             </ul>

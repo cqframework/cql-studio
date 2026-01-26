@@ -51,7 +51,7 @@ body:has([data-bs-theme=dark]) {
   // a,
   .lead {
     // Simplex override for the default font color that's way too dark.
-    color: colors.$color-text-muted;
+    // color: colors.$color-text-muted;
   }
 }
 
