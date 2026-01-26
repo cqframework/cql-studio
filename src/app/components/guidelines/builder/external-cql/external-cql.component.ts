@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, computed } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { GuidelinesStateService, ExternalCql } from '../../../../services/guidelines-state.service';
@@ -27,9 +27,7 @@ export class ExternalCqlComponent {
   protected editingIndex: number | null = null;
   protected editingExternalCql: Partial<ExternalCql> = {};
 
-  constructor(
-    private guidelinesStateService: GuidelinesStateService
-  ) {}
+  private guidelinesStateService = inject(GuidelinesStateService);
 
   onAddExternalCql(): void {
     if (!this.newExternalCql.name) {

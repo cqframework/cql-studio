@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, computed } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { GuidelinesStateService, ConjunctionGroup } from '../../../../services/guidelines-state.service';
 import { ConjunctionGroupComponent } from '../conjunction-group/conjunction-group.component';
@@ -18,9 +18,7 @@ export class ExclusionsComponent {
     return artifact?.expTreeExclude;
   });
 
-  constructor(
-    private guidelinesStateService: GuidelinesStateService
-  ) {}
+  private guidelinesStateService = inject(GuidelinesStateService);
 
   onUpdateTree(tree: ConjunctionGroup): void {
     this.guidelinesStateService.updateExpTreeExclude(tree);

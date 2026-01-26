@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, input, output, OnDestroy, signal, computed, OnInit } from '@angular/core';
+import { Component, input, output, OnDestroy, signal, computed, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -61,15 +61,13 @@ export class GuidelineEditorComponent implements OnInit, OnDestroy {
     return this.cqlGenerationService.generateCql(artifact);
   });
 
-  constructor(
-    private router: Router,
-    private libraryService: LibraryService,
-    public settingsService: SettingsService,
-    private guidelinesStateService: GuidelinesStateService,
-    private translationService: TranslationService,
-    private cqlGenerationService: CqlGenerationService,
-    private cqlParsingService: CqlParsingService
-  ) {}
+  private router = inject(Router);
+  private libraryService = inject(LibraryService);
+  public settingsService = inject(SettingsService);
+  private guidelinesStateService = inject(GuidelinesStateService);
+  private translationService = inject(TranslationService);
+  private cqlGenerationService = inject(CqlGenerationService);
+  private cqlParsingService = inject(CqlParsingService);
 
   ngOnInit(): void {
     // Load the library into the state service

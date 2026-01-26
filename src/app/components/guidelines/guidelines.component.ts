@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, OnInit, OnDestroy, signal, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal, viewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -34,7 +34,7 @@ import { Library } from 'fhir/r4';
   styleUrl: './guidelines.component.scss'
 })
 export class GuidelinesComponent implements OnInit, OnDestroy {
-  @ViewChild(GuidelinesBrowserComponent) browserComponent?: GuidelinesBrowserComponent;
+  browserComponent = viewChild(GuidelinesBrowserComponent);
   
   protected readonly showBrowser = signal<boolean>(true);
   protected readonly showEditor = signal<boolean>(false);
@@ -46,16 +46,14 @@ export class GuidelinesComponent implements OnInit, OnDestroy {
   
   private routeSubscription?: Subscription;
 
-  constructor(
-    private router: Router,
-    private route: ActivatedRoute,
-    public libraryService: LibraryService,
-    public settingsService: SettingsService,
-    private guidelinesStateService: GuidelinesStateService,
-    private guidelineValidationService: GuidelineValidationService,
-    private translationService: TranslationService,
-    private cqlGenerationService: CqlGenerationService
-  ) {}
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  public libraryService = inject(LibraryService);
+  public settingsService = inject(SettingsService);
+  private guidelinesStateService = inject(GuidelinesStateService);
+  private guidelineValidationService = inject(GuidelineValidationService);
+  private translationService = inject(TranslationService);
+  private cqlGenerationService = inject(CqlGenerationService);
 
   ngOnInit(): void {
     // Subscribe to route parameter changes to handle navigation between editor and testing
@@ -289,8 +287,8 @@ export class GuidelinesComponent implements OnInit, OnDestroy {
         }
         
         // Reload the browser to refresh the list
-        if (this.browserComponent) {
-          this.browserComponent.loadLibraries();
+        if (this.browserComponent()) {
+          this.browserComponent()!.loadLibraries();
         } else {
           // Fallback: navigate to trigger reload
           this.router.navigate(['/guidelines'], { replaceUrl: true });

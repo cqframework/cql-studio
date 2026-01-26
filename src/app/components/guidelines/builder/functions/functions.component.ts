@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, signal } from '@angular/core';
+import { Component, signal, inject, effect } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { GuidelinesStateService, CqlFunction } from '../../../../services/guidelines-state.service';
@@ -19,8 +19,14 @@ export class FunctionsComponent {
   protected readonly showEditor = signal<boolean>(false);
   protected readonly editingFunction = signal<CqlFunction | null>(null);
 
-  constructor(private guidelinesStateService: GuidelinesStateService) {
-    this.updateFunctions();
+  private guidelinesStateService = inject(GuidelinesStateService);
+
+  constructor() {
+    // Reactively update functions when artifact changes
+    effect(() => {
+      const artifact = this.guidelinesStateService.artifact();
+      this.functions.set(artifact?.functions || []);
+    });
   }
 
   private updateFunctions(): void {

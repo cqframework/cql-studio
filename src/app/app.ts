@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, signal, OnInit } from '@angular/core';
+import { Component, signal, inject } from '@angular/core';
 import { RouterOutlet, Router, ActivatedRoute } from '@angular/router';
 
 import { FormsModule } from '@angular/forms';
@@ -13,16 +13,14 @@ import { SettingsService } from './services/settings.service';
   templateUrl: './app.html',
   styleUrl: './app.scss'
 })
-export class App implements OnInit {
+export class App {
   protected readonly title = signal('CQL Studio');
 
-  constructor(
-    private router: Router,
-    private route: ActivatedRoute,
-    protected settingsService: SettingsService
-  ) {}
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  protected settingsService = inject(SettingsService);
 
-  ngOnInit(): void {
+  constructor() {
     // Check for URL query parameters only on initial load
     // Use snapshot to avoid subscribing to every query parameter change
     const params = this.route.snapshot.queryParams;

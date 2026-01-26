@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, computed, Input, Output, EventEmitter } from '@angular/core';
+import { Component, computed, Input, Output, EventEmitter, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Library } from 'fhir/r4';
@@ -19,9 +19,7 @@ export class SummaryComponent {
 
   protected readonly artifact = computed(() => this.guidelinesStateService.artifact());
 
-  constructor(
-    private guidelinesStateService: GuidelinesStateService
-  ) {}
+  private guidelinesStateService = inject(GuidelinesStateService);
 
   onMetadataChange(field: string, value: string): void {
     this.metadataChange.emit({ field, value });

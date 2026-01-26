@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, computed } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { GuidelinesStateService, Subpopulation } from '../../../../services/guidelines-state.service';
@@ -19,9 +19,7 @@ export class SubpopulationsComponent {
     return artifact?.subpopulations?.filter(s => !s.special) || [];
   });
 
-  constructor(
-    private guidelinesStateService: GuidelinesStateService
-  ) {}
+  private guidelinesStateService = inject(GuidelinesStateService);
 
   onAddSubpopulation(): void {
     const newSubpopulation: Subpopulation = {

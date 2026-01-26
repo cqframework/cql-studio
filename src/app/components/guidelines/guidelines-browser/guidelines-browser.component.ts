@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, OnInit, Output, EventEmitter } from '@angular/core';
+import { Component, OnInit, Output, EventEmitter, inject } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Library, Bundle } from 'fhir/r4';
@@ -30,10 +30,8 @@ export class GuidelinesBrowserComponent implements OnInit {
   protected sortBy: 'name' | 'version' | 'date' = 'name';
   protected sortOrder: 'asc' | 'desc' = 'asc';
 
-  constructor(
-    private libraryService: LibraryService,
-    public settingsService: SettingsService
-  ) {}
+  private libraryService = inject(LibraryService);
+  public settingsService = inject(SettingsService);
 
   ngOnInit(): void {
     this.loadLibraries();

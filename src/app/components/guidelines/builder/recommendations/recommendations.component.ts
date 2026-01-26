@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, computed } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { GuidelinesStateService, Recommendation } from '../../../../services/guidelines-state.service';
@@ -26,9 +26,7 @@ export class RecommendationsComponent {
   protected editingIndex: number | null = null;
   protected editingRecommendation: Partial<Recommendation> = {};
 
-  constructor(
-    private guidelinesStateService: GuidelinesStateService
-  ) {}
+  private guidelinesStateService = inject(GuidelinesStateService);
 
   onAddRecommendation(): void {
     if (!this.newRecommendation.label) {

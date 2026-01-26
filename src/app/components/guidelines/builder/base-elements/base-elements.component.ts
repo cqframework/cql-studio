@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, computed } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { GuidelinesStateService, BaseElement } from '../../../../services/guidelines-state.service';
@@ -20,9 +20,7 @@ export class BaseElementsComponent {
     return artifact?.baseElements || [];
   });
 
-  constructor(
-    private guidelinesStateService: GuidelinesStateService
-  ) {}
+  private guidelinesStateService = inject(GuidelinesStateService);
 
   onAddElement(element: BaseElement): void {
     this.guidelinesStateService.addBaseElement(element);

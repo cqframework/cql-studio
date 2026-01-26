@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, computed } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { GuidelinesStateService, Parameter } from '../../../../services/guidelines-state.service';
@@ -37,9 +37,7 @@ export class ParametersComponent {
   protected editingIndex: number | null = null;
   protected editingParameter: Partial<Parameter> = {};
 
-  constructor(
-    private guidelinesStateService: GuidelinesStateService
-  ) {}
+  private guidelinesStateService = inject(GuidelinesStateService);
 
   onAddParameter(): void {
     if (!this.newParameter.name || !this.newParameter.type) {

@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, computed } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { GuidelinesStateService, ErrorStatement } from '../../../../services/guidelines-state.service';
@@ -20,9 +20,7 @@ export class ErrorStatementComponent {
 
   protected readonly hasErrorStatement = computed(() => !!this.errorStatement());
 
-  constructor(
-    private guidelinesStateService: GuidelinesStateService
-  ) {}
+  private guidelinesStateService = inject(GuidelinesStateService);
 
   onAddErrorStatement(): void {
     const newErrorStatement: ErrorStatement = {

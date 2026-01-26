@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, signal, computed } from '@angular/core';
+import { Component, signal, computed, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -33,7 +33,7 @@ interface ValidationResult {
   templateUrl: './terminology.component.html',
   styleUrl: './terminology.component.scss'
 })
-export class TerminologyComponent {
+export class TerminologyComponent implements OnInit {
 
   // Active tab
   protected readonly activeTab = signal<string>('codes');
@@ -176,11 +176,11 @@ export class TerminologyComponent {
     };
   });
 
-  constructor(
-    protected settingsService: SettingsService,
-    private terminologyService: TerminologyService,
-    private router: Router
-  ) {
+  protected settingsService = inject(SettingsService);
+  private terminologyService = inject(TerminologyService);
+  private router = inject(Router);
+
+  ngOnInit(): void {
     // Initialize server availability check
     this.initializeServerCheck();
     // Load available CodeSystems for dropdown

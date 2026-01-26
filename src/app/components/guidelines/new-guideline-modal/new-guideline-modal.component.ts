@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, OnInit, computed, signal } from '@angular/core';
+import { Component, Input, Output, EventEmitter, computed, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Library } from 'fhir/r4';
@@ -14,7 +14,7 @@ import { LibraryService } from '../../../services/library.service';
   templateUrl: './new-guideline-modal.component.html',
   styleUrl: './new-guideline-modal.component.scss'
 })
-export class NewGuidelineModalComponent implements OnInit {
+export class NewGuidelineModalComponent {
   @Input() settingsService?: SettingsService;
   @Input() libraryService?: LibraryService;
   @Output() create = new EventEmitter<Partial<Library>>();
@@ -31,15 +31,12 @@ export class NewGuidelineModalComponent implements OnInit {
   protected isVisible = true;
   protected readonly errors = signal<{ [key: string]: string }>({});
 
-  constructor(
-    private defaultSettingsService: SettingsService,
-    private defaultLibraryService: LibraryService
-  ) {}
+  private defaultSettingsService = inject(SettingsService);
+  private defaultLibraryService = inject(LibraryService);
 
-  ngOnInit(): void {
+  constructor() {
     this.isVisible = true;
-    // Update URL when name changes
-    this.updatePreviewUrl();
+    // URL is computed, so it will update automatically when name changes
   }
 
   protected readonly previewUrl = computed(() => {

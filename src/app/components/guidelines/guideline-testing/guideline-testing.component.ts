@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, OnInit, signal, computed } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, signal, computed, inject } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -43,12 +43,10 @@ export class GuidelineTestingComponent implements OnInit {
   protected readonly currentPage = signal<number>(1);
   protected readonly pageSize = signal<number>(20);
 
-  constructor(
-    private patientService: PatientService,
-    private libraryService: LibraryService,
-    public settingsService: SettingsService,
-    private router: Router
-  ) {}
+  private patientService = inject(PatientService);
+  private libraryService = inject(LibraryService);
+  public settingsService = inject(SettingsService);
+  private router = inject(Router);
 
   ngOnInit(): void {
     this.loadPatients();
