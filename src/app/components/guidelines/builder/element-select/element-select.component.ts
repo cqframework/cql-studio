@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Output, EventEmitter } from '@angular/core';
+import { Component, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BaseElement } from '../../../../services/guidelines-state.service';
@@ -13,7 +13,7 @@ import { BaseElement } from '../../../../services/guidelines-state.service';
   styleUrl: './element-select.component.scss'
 })
 export class ElementSelectComponent {
-  @Output() addElement = new EventEmitter<BaseElement>();
+  addElement = output<BaseElement>();
 
   protected readonly elementTypes = [
     { value: 'condition', label: 'Condition' },

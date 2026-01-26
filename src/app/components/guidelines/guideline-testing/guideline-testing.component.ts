@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, OnInit, signal, computed, inject } from '@angular/core';
+import { Component, input, output, OnInit, signal, computed, inject } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -27,8 +27,8 @@ export interface TestResult {
   styleUrl: './guideline-testing.component.scss'
 })
 export class GuidelineTestingComponent implements OnInit {
-  @Input() library!: Library;
-  @Output() close = new EventEmitter<void>();
+  library = input.required<Library>();
+  close = output<void>();
 
   protected readonly selectedPatients = signal<Patient[]>([]);
   protected readonly patients = signal<Patient[]>([]);
@@ -124,7 +124,7 @@ export class GuidelineTestingComponent implements OnInit {
     this.testResults.set([]);
 
     // Execute library for each selected patient
-    const libraryId = this.library?.id;
+    const libraryId = this.library()?.id;
     if (!libraryId) {
       this.error.set('Library ID is missing');
       this.isExecuting.set(false);
@@ -223,8 +223,8 @@ export class GuidelineTestingComponent implements OnInit {
 
   onClose(): void {
     // Navigate back to editor route
-    if (this.library?.id) {
-      this.router.navigate(['/guidelines', this.library.id]);
+    if (this.library()?.id) {
+      this.router.navigate(['/guidelines', this.library().id]);
     } else {
       this.close.emit();
     }

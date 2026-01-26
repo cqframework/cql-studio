@@ -6,17 +6,17 @@
         (click)="onToggleConjunction()"
         type="button"
       >
-        {{ tree.name }}
+        {{ tree().name }}
       </button>
     </div>
     <div class="text-muted small">
-      {{ tree.childInstances.length || 0 }} element(s)
+      {{ tree().childInstances.length || 0 }} element(s)
     </div>
   </div>
   <div class="card-body">
-    @if (tree.childInstances && tree.childInstances.length > 0) {
+    @if (tree().childInstances && tree().childInstances.length > 0) {
       <div class="mb-3">
-        @for (element of tree.childInstances; track element.uniqueId; let i = $index) {
+        @for (element of tree().childInstances; track element.uniqueId; let i = $index) {
           <div class="mb-2">
             <app-artifact-element
               [element]="element"

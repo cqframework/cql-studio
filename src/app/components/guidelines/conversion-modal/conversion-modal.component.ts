@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Library } from 'fhir/r4';
 
@@ -11,15 +11,15 @@ import { Library } from 'fhir/r4';
   templateUrl: './conversion-modal.component.html',
   styleUrl: './conversion-modal.component.scss'
 })
-export class ConversionModalComponent implements OnInit {
-  @Input() library!: Library;
-  @Input() issues: string[] = [];
-  @Output() proceed = new EventEmitter<void>();
-  @Output() cancel = new EventEmitter<void>();
+export class ConversionModalComponent {
+  library = input.required<Library>();
+  issues = input<string[]>([]);
+  proceed = output<void>();
+  cancel = output<void>();
 
   protected isVisible = true;
 
-  ngOnInit(): void {
+  constructor() {
     this.isVisible = true;
   }
 

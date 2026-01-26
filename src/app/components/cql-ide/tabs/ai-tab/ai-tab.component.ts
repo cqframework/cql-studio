@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, computed, signal, viewChild, ElementRef, AfterViewChecked, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
+import { Component, input, output, computed, signal, viewChild, ElementRef, AfterViewChecked, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -28,15 +28,9 @@ import { PlanDisplayComponent } from './plan-display.component';
 export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {
   messagesContainer = viewChild<ElementRef>('messagesContainer');
   scrollSentinel = viewChild<ElementRef>('scrollSentinel');
-  private _cqlContent = signal<string>('');
-  @Input() set cqlContent(value: string) {
-    this._cqlContent.set(value);
-  }
-  get cqlContent(): string {
-    return this._cqlContent();
-  }
-  @Output() replaceCqlCode = new EventEmitter<string>();
-  @Output() insertCqlCode = new EventEmitter<string>();
+  cqlContent = input<string>('');
+  replaceCqlCode = output<string>();
+  insertCqlCode = output<string>();
 
   // Component state signals
   private _isLoading = signal(false);
@@ -387,7 +381,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
       }
 
       if (toolCall.tool === 'replace_code') {
-        const currentCode = this.cqlContent || '';
+        const currentCode = this.cqlContent() || '';
         const autoApply = this.settingsService.settings().autoApplyCodeEdits && 
                          !this.settingsService.settings().requireDiffPreview;
         
@@ -408,10 +402,10 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
                          !this.settingsService.settings().requireDiffPreview;
         
         if (autoApply) {
-          const currentCode = this.cqlContent || '';
+          const currentCode = this.cqlContent() || '';
           this.replaceCqlCode.emit(currentCode + '\n' + code);
         } else {
-          const currentCode = this.cqlContent || '';
+          const currentCode = this.cqlContent() || '';
           const diff: CodeDiff = {
             before: currentCode,
             after: currentCode + '\n' + code,
@@ -450,7 +444,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
       message,
       editorId,
       this.useMCPTools(),
-      this.cqlContent,
+      this.cqlContent(),
       undefined,
       mode
     );
@@ -499,7 +493,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   }
 
   private loadSuggestedCommands(): void {
-    if (this.hasActiveConversation() || !this.cqlContent?.trim()) {
+    if (this.hasActiveConversation() || !this.cqlContent()?.trim()) {
       this._suggestedCommands.set([]);
       return;
     }
@@ -507,7 +501,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     this._isLoadingSuggestions.set(true);
     this._suggestedCommands.set([]);
 
-    this.aiService.generateSuggestedCommands(this.cqlContent).subscribe({
+    this.aiService.generateSuggestedCommands(this.cqlContent()).subscribe({
       next: (commands) => {
         this._suggestedCommands.set(commands);
         this._isLoadingSuggestions.set(false);
@@ -945,7 +939,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
       '',
       editorId,
       this.useMCPTools(),
-      this.cqlContent,
+      this.cqlContent(),
       continuationSummary,
       mode
     ).subscribe({
@@ -994,7 +988,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
       '',
       editorId,
       this.useMCPTools(),
-      this.cqlContent,
+      this.cqlContent(),
       summary,
       mode
     ).subscribe({

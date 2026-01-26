@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, AfterViewInit, OnChanges, SimpleChanges, ElementRef, viewChild } from '@angular/core';
+import { Component, input, AfterViewInit, effect, ElementRef, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 // Import PrismJS dynamically to avoid CommonJS issues
@@ -13,24 +13,29 @@ declare const Prism: any;
   templateUrl: './syntax-highlighter.component.html',
   styleUrls: ['./syntax-highlighter.component.scss']
 })
-export class SyntaxHighlighterComponent implements AfterViewInit, OnChanges {
-  @Input() code: string = '';
-  @Input() language: string = 'json';
+export class SyntaxHighlighterComponent implements AfterViewInit {
+  code = input<string>('');
+  language = input<string>('json');
   codeElement = viewChild<ElementRef>('codeElement');
   preElement = viewChild<ElementRef>('preElement');
+
+  constructor() {
+    // Reactively highlight code when inputs change
+    effect(() => {
+      const code = this.code();
+      const language = this.language();
+      if (code || language) {
+        this.highlightCode();
+      }
+    });
+  }
 
   ngAfterViewInit(): void {
     this.highlightCode();
   }
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes['code'] || changes['language']) {
-      this.highlightCode();
-    }
-  }
-
   private highlightCode(): void {
-    if (this.preElement() && this.code) {
+    if (this.preElement() && this.code()) {
       if (typeof Prism !== 'undefined') {
         // Auto-detect language if not specified
         const detectedLanguage = this.detectLanguage();
@@ -53,12 +58,13 @@ export class SyntaxHighlighterComponent implements AfterViewInit, OnChanges {
   }
 
   private detectLanguage(): string {
-    if (this.language && this.language !== 'auto') {
-      return this.language;
+    const lang = this.language();
+    if (lang && lang !== 'auto') {
+      return lang;
     }
 
     // Auto-detect based on content
-    const trimmedCode = this.code.trim();
+    const trimmedCode = this.code().trim();
     
     // Check for JSON
     if (trimmedCode.startsWith('{') || trimmedCode.startsWith('[')) {

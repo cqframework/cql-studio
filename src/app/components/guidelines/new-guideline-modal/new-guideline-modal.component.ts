@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, computed, signal, inject } from '@angular/core';
+import { Component, input, output, computed, signal, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Library } from 'fhir/r4';
@@ -15,10 +15,10 @@ import { LibraryService } from '../../../services/library.service';
   styleUrl: './new-guideline-modal.component.scss'
 })
 export class NewGuidelineModalComponent {
-  @Input() settingsService?: SettingsService;
-  @Input() libraryService?: LibraryService;
-  @Output() create = new EventEmitter<Partial<Library>>();
-  @Output() cancel = new EventEmitter<void>();
+  settingsService = input<SettingsService>();
+  libraryService = input<LibraryService>();
+  create = output<Partial<Library>>();
+  cancel = output<void>();
 
   protected library: Partial<Library> = {
     name: '',
@@ -44,7 +44,7 @@ export class NewGuidelineModalComponent {
       return '';
     }
     const libraryId = this.library.name.replace(/[^a-zA-Z0-9-]/g, '-');
-    const service = this.libraryService || this.defaultLibraryService;
+    const service = this.libraryService() || this.defaultLibraryService;
     return service.urlFor(libraryId);
   });
 

@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, OnInit, Output, EventEmitter, inject } from '@angular/core';
+import { Component, OnInit, output, inject } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Library, Bundle } from 'fhir/r4';
@@ -15,10 +15,10 @@ import { SettingsService } from '../../../services/settings.service';
   styleUrl: './guidelines-browser.component.scss'
 })
 export class GuidelinesBrowserComponent implements OnInit {
-  @Output() openLibrary = new EventEmitter<Library>();
-  @Output() testLibrary = new EventEmitter<Library>();
-  @Output() deleteLibrary = new EventEmitter<Library>();
-  @Output() createNew = new EventEmitter<void>();
+  openLibrary = output<Library>();
+  testLibrary = output<Library>();
+  deleteLibrary = output<Library>();
+  createNew = output<void>();
 
   protected libraries: Library[] = [];
   protected isLoading = false;

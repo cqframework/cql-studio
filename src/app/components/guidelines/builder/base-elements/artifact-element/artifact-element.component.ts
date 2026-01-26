@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BaseElement } from '../../../../../services/guidelines-state.service';
@@ -13,23 +13,24 @@ import { BaseElement } from '../../../../../services/guidelines-state.service';
   styleUrl: './artifact-element.component.scss'
 })
 export class ArtifactElementComponent {
-  @Input() element!: BaseElement;
-  @Input() index!: number;
-  @Output() update = new EventEmitter<BaseElement>();
-  @Output() delete = new EventEmitter<void>();
+  element = input.required<BaseElement>();
+  index = input.required<number>();
+  update = output<BaseElement>();
+  delete = output<void>();
 
   protected get elementName(): string {
-    if (!this.element) return 'Unnamed';
-    const nameField = this.element.fields?.find((f: any) => f.id === 'element_name');
-    return nameField?.value || this.element.name || 'Unnamed Element';
+    const elem = this.element();
+    if (!elem) return 'Unnamed';
+    const nameField = elem.fields?.find((f: any) => f.id === 'element_name');
+    return nameField?.value || elem.name || 'Unnamed Element';
   }
 
   protected get elementType(): string {
-    return this.element?.type || 'unknown';
+    return this.element()?.type || 'unknown';
   }
 
   onNameChange(name: string): void {
-    const updated = { ...this.element };
+    const updated = { ...this.element() };
     if (!updated.fields) {
       updated.fields = [];
     }

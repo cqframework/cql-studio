@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, input, output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 
@@ -12,22 +12,22 @@ import { Router } from '@angular/router';
   styleUrls: ['./ide-header.component.scss']
 })
 export class IdeHeaderComponent {
-  @Input() libraryResources: any[] = [];
-  @Input() activeLibraryId: string | null = null;
-  @Input() isExecuting: boolean = false;
-  @Input() isEvaluating: boolean = false;
-  @Input() isTranslating: boolean = false;
+  libraryResources = input<any[]>([]);
+  activeLibraryId = input<string | null>(null);
+  isExecuting = input<boolean>(false);
+  isEvaluating = input<boolean>(false);
+  isTranslating = input<boolean>(false);
   
-  @Output() libraryIdChange = new EventEmitter<string>();
-  @Output() libraryVersionChange = new EventEmitter<string>();
-  @Output() libraryDescriptionChange = new EventEmitter<string>();
-  @Output() saveLibrary = new EventEmitter<void>();
-  @Output() deleteLibrary = new EventEmitter<string>();
-  @Output() translateCqlToElm = new EventEmitter<void>();
-  @Output() clearElmTranslation = new EventEmitter<void>();
-  @Output() executeAll = new EventEmitter<void>();
+  libraryIdChange = output<string>();
+  libraryVersionChange = output<string>();
+  libraryDescriptionChange = output<string>();
+  saveLibrary = output<void>();
+  deleteLibrary = output<string>();
+  translateCqlToElm = output<void>();
+  clearElmTranslation = output<void>();
+  executeAll = output<void>();
 
-  constructor(public router: Router) {}
+  router = inject(Router);
 
   onLibraryIdChange(libraryId: string): void {
     this.libraryIdChange.emit(libraryId);

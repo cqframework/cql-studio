@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter } from '@angular/core';
+import { Component, input, output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Plan, PlanStep } from '../../../../models/plan.model';
 
@@ -12,12 +12,12 @@ import { Plan, PlanStep } from '../../../../models/plan.model';
   styleUrls: ['./plan-display.component.scss']
 })
 export class PlanDisplayComponent {
-  @Input() plan!: Plan;
-  @Input() editable: boolean = true;
-  @Input() executing: boolean = false;
+  plan = input.required<Plan>();
+  editable = input<boolean>(true);
+  executing = input<boolean>(false);
   
-  @Output() execute = new EventEmitter<void>();
-  @Output() revise = new EventEmitter<void>();
+  execute = output<void>();
+  revise = output<void>();
 
   getStepStatusIcon(step: PlanStep): string {
     switch (step.status) {

@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, computed, Input, Output, EventEmitter, inject } from '@angular/core';
+import { Component, computed, input, output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Library } from 'fhir/r4';
@@ -14,8 +14,8 @@ import { GuidelinesStateService } from '../../../../services/guidelines-state.se
   styleUrl: './summary.component.scss'
 })
 export class SummaryComponent {
-  @Input() library!: Library;
-  @Output() metadataChange = new EventEmitter<{ field: string; value: string }>();
+  library = input.required<Library>();
+  metadataChange = output<{ field: string; value: string }>();
 
   protected readonly artifact = computed(() => this.guidelinesStateService.artifact());
 
