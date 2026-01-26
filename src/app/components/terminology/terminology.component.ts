@@ -1833,19 +1833,44 @@ export class TerminologyComponent implements OnInit {
   // Track ID helpers for @for loops to ensure unique keys
   getValueSetTrackId(valueset: ValueSet, index: number): string {
     // Prioritize id (should be unique in FHIR), then url, then index with prefix
-    // Use nullish coalescing to handle empty strings properly
-    return valueset.id ?? valueset.url ?? `valueset-${index}`;
+    // Always include index to ensure uniqueness even if id/url are duplicated or empty
+    const id = valueset.id?.trim();
+    const url = valueset.url?.trim();
+    if (id) {
+      return `valueset-id-${id}-${index}`;
+    } else if (url) {
+      return `valueset-url-${url}-${index}`;
+    } else {
+      return `valueset-${index}`;
+    }
   }
 
   getConceptMapTrackId(conceptmap: ConceptMap, index: number): string {
     // Prioritize id (should be unique in FHIR), then url, then index with prefix
-    // Use nullish coalescing to handle empty strings properly
-    return conceptmap.id ?? conceptmap.url ?? `conceptmap-${index}`;
+    // Always include index to ensure uniqueness even if id/url are duplicated or empty
+    const id = conceptmap.id?.trim();
+    const url = conceptmap.url?.trim();
+    if (id) {
+      return `conceptmap-id-${id}-${index}`;
+    } else if (url) {
+      return `conceptmap-url-${url}-${index}`;
+    } else {
+      return `conceptmap-${index}`;
+    }
   }
 
   getCodeSystemTrackId(codeSystem: CodeSystem, index: number): string {
     // Prioritize id (should be unique in FHIR), then url, then index with prefix
     // Use nullish coalescing to handle empty strings properly
-    return codeSystem.id ?? codeSystem.url ?? `codesystem-${index}`;
+    // Always include index to ensure uniqueness even if id/url are duplicated or empty
+    const id = codeSystem.id?.trim();
+    const url = codeSystem.url?.trim();
+    if (id) {
+      return `codesystem-id-${id}-${index}`;
+    } else if (url) {
+      return `codesystem-url-${url}-${index}`;
+    } else {
+      return `codesystem-${index}`;
+    }
   }
 }
