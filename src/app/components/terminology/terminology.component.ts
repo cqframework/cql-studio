@@ -52,14 +52,15 @@ export class TerminologyComponent implements OnInit {
 
   // Pagination for ValueSets
   protected readonly valuesetCurrentPage = signal<number>(1);
-  protected readonly valuesetPageSize = signal<number>(20);
+  protected readonly valuesetPageSize = signal<number>(10);
   protected readonly valuesetTotalCount = signal<number>(0);
   protected readonly valuesetAvailablePageSizes = [10, 20, 50, 100];
+  protected readonly valuesetBundleLinks = signal<Map<string, string>>(new Map());
 
   // Pagination for Expanded Codes
   protected readonly currentPage = signal<number>(1);
-  protected readonly pageSize = signal<number>(50);
-  protected readonly availablePageSizes = [25, 50, 100, 200];
+  protected readonly pageSize = signal<number>(10);
+  protected readonly availablePageSizes = [10, 20, 50, 100];
 
   // Expanded row state for Expanded Codes table
   protected readonly expandedRows = signal<Set<string>>(new Set());
@@ -123,9 +124,10 @@ export class TerminologyComponent implements OnInit {
 
   // Pagination for ConceptMaps
   protected readonly conceptmapCurrentPage = signal<number>(1);
-  protected readonly conceptmapPageSize = signal<number>(20);
+  protected readonly conceptmapPageSize = signal<number>(10);
   protected readonly conceptmapTotalCount = signal<number>(0);
   protected readonly conceptmapAvailablePageSizes = [10, 20, 50, 100];
+  protected readonly conceptmapBundleLinks = signal<Map<string, string>>(new Map());
 
   // Translation
   protected readonly translateCode = signal<string>('');
@@ -146,7 +148,7 @@ export class TerminologyComponent implements OnInit {
 
   // Pagination for Code Systems
   protected readonly codeSystemsCurrentPage = signal<number>(1);
-  protected readonly codeSystemsPageSize = signal<number>(20);
+  protected readonly codeSystemsPageSize = signal<number>(10);
   protected readonly codeSystemsAvailablePageSizes = [10, 20, 50, 100];
 
   // CodeSystem row expansion state
@@ -200,12 +202,12 @@ export class TerminologyComponent implements OnInit {
 
     // Auto-load ValueSets when ValueSets tab is activated
     if (tab === 'valueset' && this.serverAvailable() && !this.valuesetLoading()) {
-      this.searchValueSets(1);
+      this.searchValueSets();
     }
 
     // Auto-load ConceptMaps when ConceptMaps tab is activated
     if (tab === 'conceptmap' && this.serverAvailable() && !this.conceptmapLoading()) {
-      this.searchConceptMaps(1);
+      this.searchConceptMaps();
     }
   }
 
@@ -232,9 +234,9 @@ export class TerminologyComponent implements OnInit {
       // Auto-load default tab content if server is available
       const currentTab = this.activeTab();
       if (currentTab === 'valueset' && !this.valuesetLoading()) {
-        this.searchValueSets(1);
+        this.searchValueSets();
       } else if (currentTab === 'conceptmap' && !this.conceptmapLoading()) {
-        this.searchConceptMaps(1);
+        this.searchConceptMaps();
       }
     } catch (error) {
       this.serverAvailable.set(false);
@@ -265,7 +267,7 @@ export class TerminologyComponent implements OnInit {
   }
 
   // ValueSet operations
-  async searchValueSets(page: number = 1): Promise<void> {
+  async searchValueSets(url?: string): Promise<void> {
     if (!this.hasValidConfiguration()) {
       this.valuesetError.set('Please configure terminology service settings first.');
       return;
@@ -273,37 +275,75 @@ export class TerminologyComponent implements OnInit {
 
     this.valuesetLoading.set(true);
     this.valuesetError.set(null);
-    this.valuesetCurrentPage.set(page);
 
     try {
-      const searchTerm = this.valuesetSearchTerm().trim();
-      const pageSize = this.valuesetPageSize();
-      const offset = (page - 1) * pageSize;
-      const params: any = {
-        _count: pageSize,
-        _offset: offset
-      };
+      let result: Bundle<ValueSet>;
+      
+      if (url) {
+        // Use provided URL from Bundle link
+        result = await firstValueFrom(this.terminologyService.fetchFromUrl<Bundle<ValueSet>>(url));
+      } else {
+        // Initial search or search with new criteria
+        const searchTerm = this.valuesetSearchTerm().trim();
+        const pageSize = this.valuesetPageSize();
+        const params: any = {
+          _count: pageSize
+        };
 
-      if (searchTerm) {
-        // Try searching by name first, then title
-        params.name = searchTerm;
+        if (searchTerm) {
+          params.name = searchTerm;
+        }
+
+        result = await firstValueFrom(this.terminologyService.searchValueSets(params));
+        this.valuesetCurrentPage.set(1);
       }
 
-      const result = await firstValueFrom(this.terminologyService.searchValueSets(params));
       this.valuesetResults.set(result?.entry?.map(e => e.resource!) || []);
+
+      // Extract and store Bundle links
+      const linksMap = new Map<string, string>();
+      if (result?.link) {
+        console.log('Bundle links received:', result.link);
+        for (const link of result.link) {
+          if (link.relation && link.url) {
+            linksMap.set(link.relation, link.url);
+            console.log(`Stored Bundle link: ${link.relation} -> ${link.url}`);
+          }
+        }
+      }
+      this.valuesetBundleLinks.set(linksMap);
 
       // Update total count from bundle
       if (result?.total !== undefined) {
         this.valuesetTotalCount.set(result.total);
       } else {
-        // Estimate total if not provided
+        // Estimate total if not provided based on Bundle links
+        const hasNext = linksMap.has('next');
         const currentResults = this.valuesetResults().length;
-        if (currentResults === pageSize) {
+        const pageSize = this.valuesetPageSize();
+        const currentPage = this.valuesetCurrentPage();
+        
+        if (hasNext) {
           // Might have more results
-          this.valuesetTotalCount.set((page * pageSize) + 1);
+          this.valuesetTotalCount.set((currentPage * pageSize) + 1);
         } else {
           // This is likely the last page
-          this.valuesetTotalCount.set((page - 1) * pageSize + currentResults);
+          this.valuesetTotalCount.set((currentPage - 1) * pageSize + currentResults);
+        }
+      }
+
+      // Update current page based on Bundle links
+      // If this is a new search (no URL provided), we're on page 1
+      if (!url) {
+        this.valuesetCurrentPage.set(1);
+      } else {
+        // For pagination via links, try to infer page from self link
+        // or increment/decrement based on which link was used
+        // For now, we'll track this via the navigation methods
+        const selfLink = linksMap.get('self');
+        if (selfLink) {
+          // Try to extract page info from self link if it contains pagination info
+          // Otherwise, keep current page (will be updated by navigation methods)
         }
       }
     } catch (error) {
@@ -425,11 +465,11 @@ export class TerminologyComponent implements OnInit {
   });
 
   protected readonly valuesetHasPreviousPage = computed(() => {
-    return this.valuesetCurrentPage() > 1;
+    return this.valuesetBundleLinks().has('previous') || this.valuesetBundleLinks().has('prev');
   });
 
   protected readonly valuesetHasNextPage = computed(() => {
-    return this.valuesetCurrentPage() < this.valuesetTotalPages();
+    return this.valuesetBundleLinks().has('next');
   });
 
   protected readonly valuesetStartIndex = computed(() => {
@@ -443,32 +483,65 @@ export class TerminologyComponent implements OnInit {
   });
 
   valuesetPreviousPage(): void {
-    const currentPage = this.valuesetCurrentPage();
-    if (currentPage > 1) {
-      this.searchValueSets(currentPage - 1);
+    if (this.valuesetLoading()) {
+      return;
+    }
+    const links = this.valuesetBundleLinks();
+    const prevUrl = links.get('previous') || links.get('prev');
+    if (prevUrl) {
+      const currentPage = this.valuesetCurrentPage();
+      this.valuesetCurrentPage.set(Math.max(1, currentPage - 1));
+      this.searchValueSets(prevUrl);
     }
   }
 
   valuesetNextPage(): void {
-    const currentPage = this.valuesetCurrentPage();
-    const totalPages = this.valuesetTotalPages();
-    if (currentPage < totalPages) {
-      this.searchValueSets(currentPage + 1);
+    if (this.valuesetLoading()) {
+      return;
+    }
+    const nextUrl = this.valuesetBundleLinks().get('next');
+    if (nextUrl) {
+      const currentPage = this.valuesetCurrentPage();
+      this.valuesetCurrentPage.set(currentPage + 1);
+      this.searchValueSets(nextUrl);
     }
   }
 
   valuesetGoToFirstPage(): void {
-    this.searchValueSets(1);
+    if (this.valuesetLoading()) {
+      return;
+    }
+    const firstUrl = this.valuesetBundleLinks().get('first');
+    if (firstUrl) {
+      this.valuesetCurrentPage.set(1);
+      this.searchValueSets(firstUrl);
+    } else {
+      // If no first link, do a new search (which will be page 1)
+      this.valuesetCurrentPage.set(1);
+      this.searchValueSets();
+    }
   }
 
   valuesetGoToLastPage(): void {
-    this.searchValueSets(this.valuesetTotalPages());
+    if (this.valuesetLoading()) {
+      return;
+    }
+    const lastUrl = this.valuesetBundleLinks().get('last');
+    if (lastUrl) {
+      // We don't know the exact page number for last, but we can estimate from total
+      const total = this.valuesetTotalCount();
+      const pageSize = this.valuesetPageSize();
+      if (total > 0) {
+        this.valuesetCurrentPage.set(Math.ceil(total / pageSize));
+      }
+      this.searchValueSets(lastUrl);
+    }
   }
 
   setValueSetPageSize(size: number): void {
     this.valuesetPageSize.set(size);
-    // Reset to first page and re-search
-    this.searchValueSets(1);
+    // Reset to first page and re-search with new page size
+    this.searchValueSets();
   }
 
   // Pagination methods for ConceptMaps
@@ -479,11 +552,11 @@ export class TerminologyComponent implements OnInit {
   });
 
   protected readonly conceptmapHasPreviousPage = computed(() => {
-    return this.conceptmapCurrentPage() > 1;
+    return this.conceptmapBundleLinks().has('previous') || this.conceptmapBundleLinks().has('prev');
   });
 
   protected readonly conceptmapHasNextPage = computed(() => {
-    return this.conceptmapCurrentPage() < this.conceptmapTotalPages();
+    return this.conceptmapBundleLinks().has('next');
   });
 
   protected readonly conceptmapStartIndex = computed(() => {
@@ -497,32 +570,65 @@ export class TerminologyComponent implements OnInit {
   });
 
   conceptmapPreviousPage(): void {
-    const currentPage = this.conceptmapCurrentPage();
-    if (currentPage > 1) {
-      this.searchConceptMaps(currentPage - 1);
+    if (this.conceptmapLoading()) {
+      return;
+    }
+    const links = this.conceptmapBundleLinks();
+    const prevUrl = links.get('previous') || links.get('prev');
+    if (prevUrl) {
+      const currentPage = this.conceptmapCurrentPage();
+      this.conceptmapCurrentPage.set(Math.max(1, currentPage - 1));
+      this.searchConceptMaps(prevUrl);
     }
   }
 
   conceptmapNextPage(): void {
-    const currentPage = this.conceptmapCurrentPage();
-    const totalPages = this.conceptmapTotalPages();
-    if (currentPage < totalPages) {
-      this.searchConceptMaps(currentPage + 1);
+    if (this.conceptmapLoading()) {
+      return;
+    }
+    const nextUrl = this.conceptmapBundleLinks().get('next');
+    if (nextUrl) {
+      const currentPage = this.conceptmapCurrentPage();
+      this.conceptmapCurrentPage.set(currentPage + 1);
+      this.searchConceptMaps(nextUrl);
     }
   }
 
   conceptmapGoToFirstPage(): void {
-    this.searchConceptMaps(1);
+    if (this.conceptmapLoading()) {
+      return;
+    }
+    const firstUrl = this.conceptmapBundleLinks().get('first');
+    if (firstUrl) {
+      this.conceptmapCurrentPage.set(1);
+      this.searchConceptMaps(firstUrl);
+    } else {
+      // If no first link, do a new search (which will be page 1)
+      this.conceptmapCurrentPage.set(1);
+      this.searchConceptMaps();
+    }
   }
 
   conceptmapGoToLastPage(): void {
-    this.searchConceptMaps(this.conceptmapTotalPages());
+    if (this.conceptmapLoading()) {
+      return;
+    }
+    const lastUrl = this.conceptmapBundleLinks().get('last');
+    if (lastUrl) {
+      // We don't know the exact page number for last, but we can estimate from total
+      const total = this.conceptmapTotalCount();
+      const pageSize = this.conceptmapPageSize();
+      if (total > 0) {
+        this.conceptmapCurrentPage.set(Math.ceil(total / pageSize));
+      }
+      this.searchConceptMaps(lastUrl);
+    }
   }
 
   setConceptMapPageSize(size: number): void {
     this.conceptmapPageSize.set(size);
-    // Reset to first page and re-search
-    this.searchConceptMaps(1);
+    // Reset to first page and re-search with new page size
+    this.searchConceptMaps();
   }
 
   // Row expansion methods for Expanded Codes table
@@ -834,7 +940,7 @@ export class TerminologyComponent implements OnInit {
   }
 
   // ConceptMap operations
-  async searchConceptMaps(page: number = 1): Promise<void> {
+  async searchConceptMaps(url?: string): Promise<void> {
     if (!this.hasValidConfiguration()) {
       this.conceptmapError.set('Please configure terminology service settings first.');
       return;
@@ -842,36 +948,75 @@ export class TerminologyComponent implements OnInit {
 
     this.conceptmapLoading.set(true);
     this.conceptmapError.set(null);
-    this.conceptmapCurrentPage.set(page);
 
     try {
-      const searchTerm = this.conceptmapSearchTerm().trim();
-      const pageSize = this.conceptmapPageSize();
-      const offset = (page - 1) * pageSize;
-      const params: any = {
-        _count: pageSize,
-        _offset: offset
-      };
+      let result: Bundle<ConceptMap>;
+      
+      if (url) {
+        // Use provided URL from Bundle link
+        result = await firstValueFrom(this.terminologyService.fetchFromUrl<Bundle<ConceptMap>>(url));
+      } else {
+        // Initial search or search with new criteria
+        const searchTerm = this.conceptmapSearchTerm().trim();
+        const pageSize = this.conceptmapPageSize();
+        const params: any = {
+          _count: pageSize
+        };
 
-      if (searchTerm) {
-        params.name = searchTerm;
+        if (searchTerm) {
+          params.name = searchTerm;
+        }
+
+        result = await firstValueFrom(this.terminologyService.searchConceptMaps(params));
+        this.conceptmapCurrentPage.set(1);
       }
 
-      const result = await firstValueFrom(this.terminologyService.searchConceptMaps(params));
       this.conceptmapResults.set(result?.entry?.map(e => e.resource!) || []);
+
+      // Extract and store Bundle links
+      const linksMap = new Map<string, string>();
+      if (result?.link) {
+        console.log('Bundle links received (ConceptMap):', result.link);
+        for (const link of result.link) {
+          if (link.relation && link.url) {
+            linksMap.set(link.relation, link.url);
+            console.log(`Stored Bundle link: ${link.relation} -> ${link.url}`);
+          }
+        }
+      }
+      this.conceptmapBundleLinks.set(linksMap);
 
       // Update total count from bundle
       if (result?.total !== undefined) {
         this.conceptmapTotalCount.set(result.total);
       } else {
-        // Estimate total if not provided
+        // Estimate total if not provided based on Bundle links
+        const hasNext = linksMap.has('next');
         const currentResults = this.conceptmapResults().length;
-        if (currentResults === pageSize) {
+        const pageSize = this.conceptmapPageSize();
+        const currentPage = this.conceptmapCurrentPage();
+        
+        if (hasNext) {
           // Might have more results
-          this.conceptmapTotalCount.set((page * pageSize) + 1);
+          this.conceptmapTotalCount.set((currentPage * pageSize) + 1);
         } else {
           // This is likely the last page
-          this.conceptmapTotalCount.set((page - 1) * pageSize + currentResults);
+          this.conceptmapTotalCount.set((currentPage - 1) * pageSize + currentResults);
+        }
+      }
+
+      // Update current page based on Bundle links
+      // If this is a new search (no URL provided), we're on page 1
+      if (!url) {
+        this.conceptmapCurrentPage.set(1);
+      } else {
+        // For pagination via links, try to infer page from self link
+        // or increment/decrement based on which link was used
+        // For now, we'll track this via the navigation methods
+        const selfLink = linksMap.get('self');
+        if (selfLink) {
+          // Try to extract page info from self link if it contains pagination info
+          // Otherwise, keep current page (will be updated by navigation methods)
         }
       }
     } catch (error) {
@@ -956,8 +1101,13 @@ export class TerminologyComponent implements OnInit {
     this.codeSystemsError.set(null);
 
     try {
-      const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
-      this.codeSystemsResults.set(result?.entry?.map(e => e.resource).filter(r => r !== undefined) || []);
+      // Request a large count to get all code systems for client-side pagination
+      const result = await firstValueFrom(this.terminologyService.searchCodeSystems({ _count: 1000 }));
+      const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
+      this.codeSystemsResults.set(codeSystems);
+      
+      // Reset to first page when loading new data
+      this.codeSystemsCurrentPage.set(1);
     } catch (error) {
       this.codeSystemsError.set(this.getErrorMessage(error));
     } finally {
@@ -1608,5 +1758,24 @@ export class TerminologyComponent implements OnInit {
       console.error('❌ Error handling verification failed:', error);
       throw error;
     }
+  }
+
+  // Track ID helpers for @for loops to ensure unique keys
+  getValueSetTrackId(valueset: ValueSet, index: number): string {
+    // Prioritize id (should be unique in FHIR), then url, then index with prefix
+    // Use nullish coalescing to handle empty strings properly
+    return valueset.id ?? valueset.url ?? `valueset-${index}`;
+  }
+
+  getConceptMapTrackId(conceptmap: ConceptMap, index: number): string {
+    // Prioritize id (should be unique in FHIR), then url, then index with prefix
+    // Use nullish coalescing to handle empty strings properly
+    return conceptmap.id ?? conceptmap.url ?? `conceptmap-${index}`;
+  }
+
+  getCodeSystemTrackId(codeSystem: CodeSystem, index: number): string {
+    // Prioritize id (should be unique in FHIR), then url, then index with prefix
+    // Use nullish coalescing to handle empty strings properly
+    return codeSystem.id ?? codeSystem.url ?? `codesystem-${index}`;
   }
 }

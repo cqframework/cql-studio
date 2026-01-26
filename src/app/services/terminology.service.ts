@@ -63,7 +63,6 @@ export class TerminologyService extends BaseService {
     url?: string;
     status?: string;
     _count?: number;
-    _offset?: number;
   } = {}): Observable<Bundle<ValueSet>> {
     const queryParams = new URLSearchParams();
     
@@ -72,10 +71,32 @@ export class TerminologyService extends BaseService {
     if (params.url) queryParams.append('url', params.url);
     if (params.status) queryParams.append('status', params.status);
     if (params._count) queryParams.append('_count', params._count.toString());
-    if (params._offset) queryParams.append('_offset', params._offset.toString());
 
     const url = `${this.getTerminologyBaseUrl()}/ValueSet?${queryParams.toString()}`;
     return this.http.get<Bundle<ValueSet>>(url, { headers: this.getAuthHeaders() });
+  }
+
+  // Fetch from a URL (for pagination via Bundle links)
+  // Handles both absolute and relative URLs
+  fetchFromUrl<T>(url: string): Observable<T> {
+    // Resolve relative URLs against the base URL
+    let resolvedUrl: string;
+    
+    // Check if URL is absolute (starts with http:// or https://)
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      resolvedUrl = url;
+    } else {
+      // It's a relative URL - resolve against base URL
+      const baseUrl = this.getTerminologyBaseUrl();
+      // Remove trailing slash from base URL if present
+      const cleanBaseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+      // Ensure relative URL starts with / (FHIR servers typically return paths like /ValueSet?...)
+      const cleanRelativeUrl = url.startsWith('/') ? url : '/' + url;
+      resolvedUrl = cleanBaseUrl + cleanRelativeUrl;
+    }
+    
+    console.log('Fetching from Bundle link:', { originalUrl: url, resolvedUrl });
+    return this.http.get<T>(resolvedUrl, { headers: this.getAuthHeaders() });
   }
 
   getValueSet(id: string): Observable<ValueSet> {
@@ -396,7 +417,6 @@ export class TerminologyService extends BaseService {
     url?: string;
     status?: string;
     _count?: number;
-    _offset?: number;
   } = {}): Observable<Bundle<ConceptMap>> {
     const queryParams = new URLSearchParams();
     
@@ -405,7 +425,6 @@ export class TerminologyService extends BaseService {
     if (params.url) queryParams.append('url', params.url);
     if (params.status) queryParams.append('status', params.status);
     if (params._count) queryParams.append('_count', params._count.toString());
-    if (params._offset) queryParams.append('_offset', params._offset.toString());
 
     const url = `${this.getTerminologyBaseUrl()}/ConceptMap?${queryParams.toString()}`;
     return this.http.get<Bundle<ConceptMap>>(url, { headers: this.getAuthHeaders() });

@@ -29,19 +29,13 @@
         <li class="nav-item" role="presentation">
           <button class="nav-link" [class.active]="activeTab() === 'valueset'" (click)="setActiveTab('valueset')"
             type="button">
-            <i class="bi bi-collection me-1"></i>ValueSets
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
-          <button class="nav-link" [class.active]="activeTab() === 'validation'" (click)="setActiveTab('validation')"
-            type="button">
-            <i class="bi bi-check-circle me-1"></i>Code Validation
+            <i class="bi bi-collection me-1"></i>Value Sets
           </button>
         </li>
         <li class="nav-item" role="presentation">
           <button class="nav-link" [class.active]="activeTab() === 'conceptmap'" (click)="setActiveTab('conceptmap')"
             type="button">
-            <i class="bi bi-arrow-left-right me-1"></i>ConceptMaps
+            <i class="bi bi-arrow-left-right me-1"></i>Concept Maps
           </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -50,6 +44,11 @@
             <i class="bi bi-list-ul me-1"></i>Code Systems
           </button>
         </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" [class.active]="activeTab() === 'validation'" (click)="setActiveTab('validation')"
+            type="button">
+            <i class="bi bi-check-circle me-1"></i>Code Validation </button>
+        </li>
       </ul>
 
       <!-- ValueSet Tab -->
@@ -57,24 +56,21 @@
       <div class="row">
         <!-- Left Column: Search and Results -->
         <div class="col-md-4">
-          <!-- <h6 class="mb-3">
-            <i class="bi bi-search me-1"></i>Search ValueSets
-          </h6> -->
-          <div class="form-floating mb-3">
-            <input type="text" class="form-control" id="valuesetSearch" [(ngModel)]="valuesetSearchTerm"
-              (keydown.enter)="searchValueSets(1)" placeholder="Enter ValueSet name or title">
-            <label for="valuesetSearch">Search Term</label>
-            <!-- <div class="form-text">Search for ValueSets by name or title</div> -->
+          <div class="input-group input-group-sm mb-3">
+            <div class="form-floating">
+              <input type="text" class="form-control form-control-sm" id="valuesetSearch" [(ngModel)]="valuesetSearchTerm"
+                (keydown.enter)="searchValueSets()" placeholder="Enter ValueSet name or title">
+              <label for="valuesetSearch">Search Term</label>
+            </div>
+            <button type="button" class="btn btn-primary" (click)="searchValueSets()"
+              [disabled]="valuesetLoading() || !hasValidConfiguration()">
+              @if (valuesetLoading()) {
+              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              } @else {
+              <i class="bi bi-search"></i>
+              }
+            </button>
           </div>
-          <button type="button" class="btn btn-primary w-100 mb-3" (click)="searchValueSets(1)"
-            [disabled]="valuesetLoading() || !hasValidConfiguration()">
-            @if (valuesetLoading()) {
-            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-            Searching...
-            } @else {
-            <i class="bi bi-search me-2"></i>Search ValueSets
-            }
-          </button>
           @if (valuesetError()) {
           <div class="alert alert-danger mb-3" role="alert">
             <i class="bi bi-exclamation-circle me-2"></i>{{ valuesetError() }}
@@ -107,7 +103,7 @@
           </div>
           } @else {
           <div class="list-group mb-3">
-            @for (valueset of valuesetResults(); track valueset.id || valueset.url || $index) {
+            @for (valueset of valuesetResults(); track getValueSetTrackId(valueset, $index)) {
             <div class="list-group-item list-group-item-action" (click)="selectValueSet(valueset)"
               [class.active]="selectedValueSet()?.id === valueset.id">
               <div class="d-flex w-100 justify-content-between">
@@ -188,24 +184,24 @@
             </div>
             <div class="card-body">
               <div class="form-floating mb-3">
-                <input type="text" class="form-control" id="validationCode" [(ngModel)]="validationCode"
+                <input type="text" class="form-control form-control-sm" id="validationCode" [(ngModel)]="validationCode"
                   placeholder="e.g., 12345-6">
                 <label for="validationCode">Code</label>
                 <div class="form-text">The code to validate</div>
               </div>
               <div class="form-floating mb-3">
-                <input type="url" class="form-control" id="validationSystem" [(ngModel)]="validationSystem"
+                <input type="url" class="form-control form-control-sm" id="validationSystem" [(ngModel)]="validationSystem"
                   placeholder="e.g., http://loinc.org">
                 <label for="validationSystem">Code System</label>
                 <div class="form-text">The code system URL</div>
               </div>
               <div class="form-floating mb-3">
-                <input type="url" class="form-control" id="validationValueSet" [(ngModel)]="validationValueSet"
+                <input type="url" class="form-control form-control-sm" id="validationValueSet" [(ngModel)]="validationValueSet"
                   placeholder="e.g., http://hl7.org/fhir/ValueSet/example">
                 <label for="validationValueSet">ValueSet URL (Optional)</label>
                 <div class="form-text">Check if code is in specific ValueSet</div>
               </div>
-              <button type="button" class="btn btn-primary w-100" (click)="validateCode()"
+              <button type="button" class="btn btn-primary btn-sm w-100" (click)="validateCode()"
                 [disabled]="validationLoading() || !hasValidConfiguration()">
                 @if (validationLoading()) {
                 <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
@@ -259,24 +255,21 @@
       <div class="row">
         <!-- Left Column: Search and Results -->
         <div class="col-md-4">
-          <h6 class="mb-3">
-            <i class="bi bi-search me-1"></i>Search ConceptMaps
-          </h6>
-          <div class="form-floating mb-3">
-            <input type="text" class="form-control" id="conceptmapSearch" [(ngModel)]="conceptmapSearchTerm"
-              (keydown.enter)="searchConceptMaps(1)" placeholder="Enter ConceptMap name or title">
-            <label for="conceptmapSearch">Search Term</label>
-            <div class="form-text">Search for ConceptMaps by name or title</div>
+          <div class="input-group input-group-sm mb-3">
+            <div class="form-floating">
+              <input type="text" class="form-control form-control-sm" id="conceptmapSearch" [(ngModel)]="conceptmapSearchTerm"
+                (keydown.enter)="searchConceptMaps()" placeholder="Enter ConceptMap name or title">
+              <label for="conceptmapSearch">Search Term</label>
+            </div>
+            <button type="button" class="btn btn-primary" (click)="searchConceptMaps()"
+              [disabled]="conceptmapLoading() || !hasValidConfiguration()">
+              @if (conceptmapLoading()) {
+              <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+              } @else {
+              <i class="bi bi-search"></i>
+              }
+            </button>
           </div>
-          <button type="button" class="btn btn-primary w-100 mb-3" (click)="searchConceptMaps(1)"
-            [disabled]="conceptmapLoading() || !hasValidConfiguration()">
-            @if (conceptmapLoading()) {
-            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-            Searching...
-            } @else {
-            <i class="bi bi-search me-2"></i>Search ConceptMaps
-            }
-          </button>
           @if (conceptmapError()) {
           <div class="alert alert-danger mb-3" role="alert">
             <i class="bi bi-exclamation-circle me-2"></i>{{ conceptmapError() }}
@@ -309,7 +302,7 @@
           </div>
           } @else {
           <div class="list-group mb-3">
-            @for (conceptmap of conceptmapResults(); track conceptmap.id || conceptmap.url || $index) {
+            @for (conceptmap of conceptmapResults(); track getConceptMapTrackId(conceptmap, $index)) {
             <div class="list-group-item list-group-item-action" (click)="selectConceptMap(conceptmap)"
               [class.active]="selectedConceptMap()?.id === conceptmap.id">
               <div class="d-flex w-100 justify-content-between">
@@ -403,13 +396,13 @@
           <div class="row mb-3">
             <div class="col-md-6">
               <div class="form-floating">
-                <input type="text" class="form-control" id="codeSystemsFilter" [(ngModel)]="codeSystemsFilter"
+                <input type="text" class="form-control form-control-sm" id="codeSystemsFilter" [(ngModel)]="codeSystemsFilter"
                   (ngModelChange)="onCodeSystemsFilterChange($event)" placeholder="Filter by name, title, or URL">
                 <label for="codeSystemsFilter">Filter Code Systems</label>
               </div>
             </div>
             <div class="col-md-3">
-              <select class="form-select" [(ngModel)]="codeSystemsSortBy"
+              <select class="form-select form-select-sm" [(ngModel)]="codeSystemsSortBy"
                 (ngModelChange)="setCodeSystemsSortBy($event)">
                 <option value="name">Sort by Name</option>
                 <option value="title">Sort by Title</option>
@@ -419,7 +412,7 @@
               </select>
             </div>
             <div class="col-md-3">
-              <button type="button" class="btn btn-outline-secondary w-100" (click)="toggleCodeSystemsSortOrder()">
+              <button type="button" class="btn btn-outline-secondary btn-sm w-100" (click)="toggleCodeSystemsSortOrder()">
                 <i class="bi bi-sort-alpha-down me-1" [class.bi-sort-alpha-up]="codeSystemsSortOrder() === 'desc'"></i>
                 {{ codeSystemsSortOrder() === 'asc' ? 'Ascending' : 'Descending' }}
               </button>
@@ -456,8 +449,9 @@
             @if (paginatedCodeSystems().length > 0) {
             <div class="d-flex align-items-center gap-2">
               <label for="codeSystemsPageSizeSelect" class="small text-muted mb-0">Items per page:</label>
-              <select class="form-select form-select-sm" id="codeSystemsPageSizeSelect" [ngModel]="codeSystemsPageSize()"
-                (ngModelChange)="setCodeSystemsPageSize(+$event)" style="width: auto;">
+              <select class="form-select form-select-sm" id="codeSystemsPageSizeSelect"
+                [ngModel]="codeSystemsPageSize()" (ngModelChange)="setCodeSystemsPageSize(+$event)"
+                style="width: auto;">
                 @for (size of codeSystemsAvailablePageSizes; track size) {
                 <option [value]="size">{{ size }}</option>
                 }
@@ -465,11 +459,11 @@
             </div>
             }
           </div>
-          <div class="table-responsive">
-            <table class="table table-hover">
-              <thead class="table-light">
+          <div>
+            <table class="table table-striped">
+              <thead>
                 <tr>
-                  <th (click)="onCodeSystemColumnClick('name')" style="cursor: pointer;" class="user-select-none">
+                  <th (click)="onCodeSystemColumnClick('name')" style="cursor: pointer;" >
                     Name
                     @if (codeSystemsSortBy() === 'name') {
                     <i class="bi bi-sort-alpha-down ms-1"
@@ -478,7 +472,7 @@
                     <i class="bi bi-arrow-down-up ms-1 text-muted"></i>
                     }
                   </th>
-                  <th (click)="onCodeSystemColumnClick('title')" style="cursor: pointer;" class="user-select-none">
+                  <th (click)="onCodeSystemColumnClick('title')" style="cursor: pointer;">
                     Title
                     @if (codeSystemsSortBy() === 'title') {
                     <i class="bi bi-sort-alpha-down ms-1"
@@ -487,7 +481,7 @@
                     <i class="bi bi-arrow-down-up ms-1 text-muted"></i>
                     }
                   </th>
-                  <th (click)="onCodeSystemColumnClick('url')" style="cursor: pointer;" class="user-select-none">
+                  <th (click)="onCodeSystemColumnClick('url')" style="cursor: pointer;">
                     URL
                     @if (codeSystemsSortBy() === 'url') {
                     <i class="bi bi-sort-alpha-down ms-1"
@@ -496,7 +490,7 @@
                     <i class="bi bi-arrow-down-up ms-1 text-muted"></i>
                     }
                   </th>
-                  <th (click)="onCodeSystemColumnClick('version')" style="cursor: pointer;" class="user-select-none">
+                  <th (click)="onCodeSystemColumnClick('version')" style="cursor: pointer;">
                     Version
                     @if (codeSystemsSortBy() === 'version') {
                     <i class="bi bi-sort-alpha-down ms-1"
@@ -505,7 +499,7 @@
                     <i class="bi bi-arrow-down-up ms-1 text-muted"></i>
                     }
                   </th>
-                  <th (click)="onCodeSystemColumnClick('status')" style="cursor: pointer;" class="user-select-none">
+                  <th (click)="onCodeSystemColumnClick('status')" style="cursor: pointer;">
                     Status
                     @if (codeSystemsSortBy() === 'status') {
                     <i class="bi bi-sort-alpha-down ms-1"
@@ -517,10 +511,10 @@
                 </tr>
               </thead>
               <tbody>
-                @for (codeSystem of paginatedCodeSystems(); track codeSystem.id || codeSystem.url || $index) {
+                @for (codeSystem of paginatedCodeSystems(); track getCodeSystemTrackId(codeSystem, $index)) {
                 <tr (click)="toggleCodeSystemRowExpansion(codeSystem)" style="cursor: pointer;">
                   <td>
-                    <strong>{{ codeSystem.name || 'N/A' }}</strong>
+                    <span class="text-muted"> {{ codeSystem.name || 'N/A' }}</span>
                   </td>
                   <td>
                     <span class="text-muted">{{ codeSystem.title || 'N/A' }}</span>
@@ -540,7 +534,7 @@
                   </td>
                 </tr>
                 @if (isCodeSystemRowExpanded(codeSystem)) {
-                <tr class="table-active">
+                <tr class="">
                   <td colspan="5" class="p-0">
                     <div class="p-3">
                       <div class="row">
@@ -645,8 +639,8 @@
           <nav aria-label="Code Systems page navigation">
             <ul class="pagination justify-content-center mb-0">
               <li class="page-item" [class.disabled]="!codeSystemsHasPreviousPage()">
-                <button class="page-link" (click)="codeSystemsGoToFirstPage()" [disabled]="!codeSystemsHasPreviousPage()"
-                  type="button">
+                <button class="page-link" (click)="codeSystemsGoToFirstPage()"
+                  [disabled]="!codeSystemsHasPreviousPage()" type="button">
                   <i class="bi bi-chevron-double-left"></i>
                 </button>
               </li>
