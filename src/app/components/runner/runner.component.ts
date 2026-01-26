@@ -1,13 +1,13 @@
 // Author: Preston Lee
 
-import { Component, OnInit, signal, AfterViewInit, ElementRef, ViewChild, OnDestroy } from '@angular/core';
+import { Component, OnInit, signal, AfterViewInit, ElementRef, viewChild, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { RunnerService, CQLTestConfiguration, JobResponse, JobStatus } from '../../services/runner.service';
 import { FileLoaderService } from '../../services/file-loader.service';
 import { SettingsService } from '../../services/settings.service';
-import { interval, Subscription } from 'rxjs';
+import { interval, Subscription, firstValueFrom } from 'rxjs';
 import { switchMap, takeWhile } from 'rxjs/operators';
 import { SessionStorageKeys } from '../../constants/session-storage.constants';
 import { SyntaxHighlighterComponent } from '../shared/syntax-highlighter/syntax-highlighter.component';
@@ -67,15 +67,13 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
   private apiCheckTimerSubscription?: Subscription;
   private codeMirrorEditor?: EditorView;
 
-  @ViewChild('jsonEditorContainer', { static: false }) jsonEditorContainer?: ElementRef<HTMLDivElement>;
+  jsonEditorContainer = viewChild<ElementRef<HTMLDivElement>>('jsonEditorContainer');
 
-  constructor(
-    private runnerService: RunnerService,
-    private router: Router,
-    private route: ActivatedRoute,
-    private fileLoader: FileLoaderService,
-    private settingsService: SettingsService
-  ) {}
+  private runnerService = inject(RunnerService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private fileLoader = inject(FileLoaderService);
+  private settingsService = inject(SettingsService);
 
   ngOnInit(): void {
     // Initialize FHIR URL from settings
@@ -154,7 +152,7 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.startTimer();
     
     try {
-      const job = await this.runnerService.createJob(this.config()).toPromise();
+      const job = await firstValueFrom(this.runnerService.createJob(this.config()));
       if (job) {
         // Update with real job data
         this.currentJob.set(job);
@@ -331,7 +329,7 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
    * Initialize CodeMirror editor
    */
   private initializeCodeMirror(): void {
-    if (!this.jsonEditorContainer?.nativeElement || this.codeMirrorEditor) {
+    if (!this.jsonEditorContainer()?.nativeElement || this.codeMirrorEditor) {
       return;
     }
 
@@ -374,7 +372,7 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
 
       this.codeMirrorEditor = new EditorView({
         state: startState,
-        parent: this.jsonEditorContainer.nativeElement
+        parent: this.jsonEditorContainer()!.nativeElement
       });
     } catch (error) {
       console.error('Failed to initialize CodeMirror:', error);
@@ -505,7 +503,7 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
     this.startApiCheckTimer();
     
     try {
-      const health = await this.runnerService.checkHealth().toPromise();
+      const health = await firstValueFrom(this.runnerService.checkHealth());
       if (health) {
         this.healthStatus.set(health);
         this.apiUnavailable.set(false);

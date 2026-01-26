@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { BaseService } from './base.service';
@@ -9,10 +9,6 @@ import { BaseService } from './base.service';
   providedIn: 'root'
 })
 export class TranslationService extends BaseService {
-
-  constructor(http: HttpClient) {
-    super(http);
-  }
 
   /**
    * Translate CQL to ELM using the cql-translation-service

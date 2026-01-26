@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable } from "@angular/core";
+import { Injectable, inject } from "@angular/core";
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 
 @Injectable({
@@ -10,8 +10,7 @@ export abstract class BaseService {
 
   public static LOCAL_STORAGE_BEARER_TOKEN_KEY: string = 'jwt';
 
-  constructor(protected http: HttpClient) {
-  }
+  protected http = inject(HttpClient);
 
 	public includeBearerToken: boolean = false;
 	public headers(): HttpHeaders {

@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { BaseService } from './base.service';
 import { Observable, forkJoin, of } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -32,9 +32,7 @@ export interface CqlExecutionOptions {
 })
 export class CqlExecutionService extends BaseService {
 
-  constructor(protected override http: HttpClient, protected settingsService: SettingsService) { 
-    super(http);
-  }
+  protected settingsService = inject(SettingsService);
 
   /**
    * Execute a single library using the specified operation ($evaluate or $cql)

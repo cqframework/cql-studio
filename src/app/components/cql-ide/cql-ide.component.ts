@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, OnInit, OnDestroy, HostListener, ViewChild, effect } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, viewChild, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, ActivatedRoute } from '@angular/router';
 import { IdeStateService } from '../../services/ide-state.service';
@@ -33,7 +33,7 @@ import { EditorTabsComponent } from './editors/editor-tabs/editor-tabs.component
   styleUrls: ['./cql-ide.component.scss']
 })
 export class CqlIdeComponent implements OnInit, OnDestroy {
-  @ViewChild(CqlEditorComponent, { static: false }) cqlEditor?: CqlEditorComponent;
+  cqlEditor = viewChild(CqlEditorComponent);
   
   // Simple state properties
   leftPanelVisible = true;
@@ -44,17 +44,17 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   selectedPatients: any[] = [];
   
 
-  constructor(
-    private router: Router,
-    private route: ActivatedRoute,
-    public ideStateService: IdeStateService,
-    public ideTabRegistryService: IdeTabRegistryService,
-    private libraryService: LibraryService,
-    private patientService: PatientService,
-    private translationService: TranslationService,
-    private cqlExecutionService: CqlExecutionService,
-    public settingsService: SettingsService
-  ) {
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  public ideStateService = inject(IdeStateService);
+  public ideTabRegistryService = inject(IdeTabRegistryService);
+  private libraryService = inject(LibraryService);
+  private patientService = inject(PatientService);
+  private translationService = inject(TranslationService);
+  private cqlExecutionService = inject(CqlExecutionService);
+  public settingsService = inject(SettingsService);
+
+  constructor() {
     // Watch for editor action requests from tool orchestrator (effect must be in constructor)
     effect(() => {
       const lineNumber = this.ideStateService.navigateToLineRequest();
@@ -441,8 +441,8 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
   onNavigateToLine(lineNumber: number): void {
     // Navigate to the specified line in the active CQL editor
-    if (this.cqlEditor) {
-      this.cqlEditor.navigateToLine(lineNumber);
+    if (this.cqlEditor()) {
+      this.cqlEditor()!.navigateToLine(lineNumber);
     } else {
       console.warn('CQL editor not available for navigation');
     }
@@ -466,21 +466,21 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   }
 
   onInsertCqlCode(code: string): void {
-    if (this.cqlEditor) {
-      this.cqlEditor.insertText(code);
+    if (this.cqlEditor()) {
+      this.cqlEditor()!.insertText(code);
     } else {
       console.warn('CQL editor not available for code insertion');
     }
   }
 
   onReplaceCqlCode(code: string): void {
-    if (this.cqlEditor) {
+    if (this.cqlEditor()) {
       // If there's a selection, replace it; otherwise insert at cursor
-      const selection = this.cqlEditor.getSelection();
+      const selection = this.cqlEditor()!.getSelection();
       if (selection && selection.trim().length > 0) {
-        this.cqlEditor.replaceSelection(code);
+        this.cqlEditor()!.replaceSelection(code);
       } else {
-        this.cqlEditor.insertText(code);
+        this.cqlEditor()!.insertText(code);
       }
     } else {
       console.warn('CQL editor not available for code replacement');

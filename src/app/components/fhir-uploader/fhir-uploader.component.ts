@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, signal, ElementRef, HostBinding, AfterViewInit, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { Component, signal, ElementRef, HostBinding, AfterViewInit, viewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -71,11 +71,14 @@ export class FhirUploaderComponent implements AfterViewInit {
     return this.showExpungeModal() || this.showPurgeModal() || this.showUploadModal();
   }
 
-  @ViewChild('expungeConfirmButton') expungeConfirmButton!: ElementRef<HTMLButtonElement>;
-  @ViewChild('purgeConfirmButton') purgeConfirmButton!: ElementRef<HTMLButtonElement>;
-  @ViewChild('resultModalButton') resultModalButton!: ElementRef<HTMLButtonElement>;
+  expungeConfirmButton = viewChild<ElementRef<HTMLButtonElement>>('expungeConfirmButton');
+  purgeConfirmButton = viewChild<ElementRef<HTMLButtonElement>>('purgeConfirmButton');
+  resultModalButton = viewChild<ElementRef<HTMLButtonElement>>('resultModalButton');
 
-  constructor(protected settingsService: SettingsService, private cdr: ChangeDetectorRef, private router: Router) {
+  protected settingsService = inject(SettingsService);
+  private router = inject(Router);
+
+  constructor() {
     // Initialize with the effective FHIR base URL from settings
     this.fhirBaseUrl.set(this.settingsService.getEffectiveFhirBaseUrl());
   }
@@ -620,7 +623,7 @@ export class FhirUploaderComponent implements AfterViewInit {
     this.showUploadModal.set(true);
     // Focus the OK button after the modal is shown
     setTimeout(() => {
-      this.focusModalButton(this.resultModalButton);
+      this.focusModalButton(this.resultModalButton());
     }, 100);
   }
 
@@ -634,7 +637,7 @@ export class FhirUploaderComponent implements AfterViewInit {
     this.showExpungeModal.set(true);
     // Focus the confirm button after the modal is shown
     setTimeout(() => {
-      this.focusModalButton(this.expungeConfirmButton);
+      this.focusModalButton(this.expungeConfirmButton());
     }, 100);
   }
 
@@ -642,7 +645,7 @@ export class FhirUploaderComponent implements AfterViewInit {
     this.showPurgeModal.set(true);
     // Focus the confirm button after the modal is shown
     setTimeout(() => {
-      this.focusModalButton(this.purgeConfirmButton);
+      this.focusModalButton(this.purgeConfirmButton());
     }, 100);
   }
 

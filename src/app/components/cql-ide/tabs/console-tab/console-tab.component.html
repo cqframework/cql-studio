@@ -12,7 +12,7 @@
     </button>
     <div class="d-flex align-items-center gap-3 ms-auto">
       <div class="form-check d-flex align-items-center gap-2">
-        <input class="form-check-input" type="checkbox" id="preserveLogs" [ngModel]="preserveLogs"
+        <input class="form-check-input" type="checkbox" id="preserveLogs" [ngModel]="preserveLogs()"
           (ngModelChange)="onPreserveLogsChange($event)" title="Preserve logs between executions">
         <label class="form-check-label small text-light mb-0" for="preserveLogs">
           Preserve Logs
@@ -27,7 +27,7 @@
       </div>
     </div>
   </div>
-  <div class="flex-fill overflow-auto" [class.executing]="isEvaluating" #consoleContent (scroll)="onConsoleScroll($event)">
+  <div class="flex-fill overflow-auto" [class.executing]="isEvaluating()" #consoleContent (scroll)="onConsoleScroll($event)">
     <div class="p-2">
       @for (section of outputSections(); track section.id; let i = $index) {
         <div [ngClass]="getOutputClass(section)"
@@ -72,17 +72,17 @@
         </div>
       }
     </div>
-    @if (outputSections().length === 0 && !isEvaluating) {
+    @if (outputSections().length === 0 && !isEvaluating()) {
       <div class="no-console d-flex flex-column align-items-center justify-content-center py-4 text-muted">
         <span>No console output yet. Click "Execute All" to run open libraries.</span>
       </div>
     }
-    @if (isEvaluating) {
+    @if (isEvaluating()) {
       <div class="p-3 border-top bg-secondary">
         <div class="progress mb-2">
-          <div class="progress-bar" [style.width.%]="executionProgress"></div>
+          <div class="progress-bar" [style.width.%]="executionProgress()"></div>
         </div>
-        <span class="small text-light">{{ executionStatus }}</span>
+        <span class="small text-light">{{ executionStatus() }}</span>
       </div>
     }
   </div>

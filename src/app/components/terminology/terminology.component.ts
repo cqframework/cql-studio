@@ -4,6 +4,7 @@ import { Component, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import { SettingsService } from '../../services/settings.service';
 import { TerminologyService } from '../../services/terminology.service';
 import { ValueSet, CodeSystem, ConceptMap, Bundle, Parameters } from 'fhir/r4';
@@ -237,9 +238,9 @@ export class TerminologyComponent {
     try {
       // Get resource counts in parallel
       const [valuesetsResult, codesystemsResult, conceptmapsResult] = await Promise.all([
-        this.terminologyService.searchValueSets({ _count: 1 }).toPromise().catch(() => ({ total: 0 })),
-        this.terminologyService.searchCodeSystems({ _count: 1 }).toPromise().catch(() => ({ total: 0 })),
-        this.terminologyService.searchConceptMaps({ _count: 1 }).toPromise().catch(() => ({ total: 0 }))
+        firstValueFrom(this.terminologyService.searchValueSets({ _count: 1 })).catch(() => ({ total: 0 })),
+        firstValueFrom(this.terminologyService.searchCodeSystems({ _count: 1 })).catch(() => ({ total: 0 })),
+        firstValueFrom(this.terminologyService.searchConceptMaps({ _count: 1 })).catch(() => ({ total: 0 }))
       ]);
 
       this.resourceCounts.set({
@@ -278,7 +279,7 @@ export class TerminologyComponent {
         params.name = searchTerm;
       }
 
-      const result = await this.terminologyService.searchValueSets(params).toPromise();
+      const result = await firstValueFrom(this.terminologyService.searchValueSets(params));
       this.valuesetResults.set(result?.entry?.map(e => e.resource!) || []);
       
       // Update total count from bundle
@@ -334,7 +335,7 @@ export class TerminologyComponent {
         throw new Error('No ID or URL available for ValueSet expansion');
       }
 
-      const result = await this.terminologyService.expandValueSet(params).toPromise();
+      const result = await firstValueFrom(this.terminologyService.expandValueSet(params));
       this.expandedValueSet.set(result || null);
       this.expandedCodes.set(result?.expansion?.contains || []);
       this.currentPage.set(1); // Reset to first page when expanding new ValueSet
@@ -353,7 +354,7 @@ export class TerminologyComponent {
             activeOnly: true
           };
           
-          const result = await this.terminologyService.expandValueSet(alternativeParams).toPromise();
+          const result = await firstValueFrom(this.terminologyService.expandValueSet(alternativeParams));
           this.expandedCodes.set(result?.expansion?.contains || []);
           this.currentPage.set(1);
           return;
@@ -557,7 +558,7 @@ export class TerminologyComponent {
         system: code.system
       };
 
-      const result = await this.terminologyService.lookupCode(params).toPromise();
+      const result = await firstValueFrom(this.terminologyService.lookupCode(params));
       
       // Store the result
       const details = new Map(this.expandedCodeDetails());
@@ -634,7 +635,7 @@ export class TerminologyComponent {
       }
 
       console.log('Expanding ValueSet with params:', params);
-      const result = await this.terminologyService.expandValueSet(params).toPromise();
+      const result = await firstValueFrom(this.terminologyService.expandValueSet(params));
       let codes = result?.expansion?.contains || [];
       
       // If no search term was provided, we still need to filter the results
@@ -677,7 +678,7 @@ export class TerminologyComponent {
       console.log('Searching for codes in CodeSystem:', systemUrl, 'with term:', searchTerm);
       
       // Get the specific CodeSystem to access its concepts
-      const codeSystemResult = await this.terminologyService.getCodeSystemByUrl(systemUrl).toPromise();
+      const codeSystemResult = await firstValueFrom(this.terminologyService.getCodeSystemByUrl(systemUrl));
       
       if (!codeSystemResult) {
         this.codeError.set('CodeSystem not found. Please check the selection.');
@@ -714,7 +715,7 @@ export class TerminologyComponent {
   async testServerResources(): Promise<void> {
     try {
       console.log('Testing server resources...');
-      const result = await this.terminologyService.testServerResources().toPromise();
+      const result = await firstValueFrom(this.terminologyService.testServerResources());
       console.log('Server metadata:', result);
     } catch (error) {
       console.error('Server test error:', error);
@@ -742,7 +743,7 @@ export class TerminologyComponent {
     this.codeSystemsLoading.set(true);
     
     try {
-      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource!).filter(r => r !== undefined) || [];
       this.availableCodeSystems.set(codeSystems);
       console.log('Loaded available CodeSystems:', codeSystems.length);
@@ -761,7 +762,7 @@ export class TerminologyComponent {
         system: system
       };
 
-      const result = await this.terminologyService.lookupCode(params).toPromise();
+      const result = await firstValueFrom(this.terminologyService.lookupCode(params));
       // Handle lookup result
       console.log('Code lookup result:', result);
     } catch (error) {
@@ -798,7 +799,7 @@ export class TerminologyComponent {
         params.url = valueset;
       }
 
-      const result = await this.terminologyService.validateCode(params).toPromise();
+      const result = await firstValueFrom(this.terminologyService.validateCode(params));
       
       // Parse validation result
       const validParam = result?.parameter?.find(p => p.name === 'result');
@@ -840,7 +841,7 @@ export class TerminologyComponent {
         params.name = searchTerm;
       }
 
-      const result = await this.terminologyService.searchConceptMaps(params).toPromise();
+      const result = await firstValueFrom(this.terminologyService.searchConceptMaps(params));
       this.conceptmapResults.set(result?.entry?.map(e => e.resource!) || []);
       
       // Update total count from bundle
@@ -896,7 +897,7 @@ export class TerminologyComponent {
         params.target = [target];
       }
 
-      const result = await this.terminologyService.translateConcept(params).toPromise();
+      const result = await firstValueFrom(this.terminologyService.translateConcept(params));
       
       // Parse translation result
       const matchParams = result?.parameter?.filter(p => p.name === 'match') || [];
@@ -939,7 +940,7 @@ export class TerminologyComponent {
     this.codeSystemsError.set(null);
 
     try {
-      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       this.codeSystemsResults.set(result?.entry?.map(e => e.resource).filter(r => r !== undefined) || []);
     } catch (error) {
       this.codeSystemsError.set(this.getErrorMessage(error));
@@ -1043,7 +1044,7 @@ export class TerminologyComponent {
     this.codeSystemsDeleting.set(deleting);
 
     try {
-      await this.terminologyService.deleteCodeSystem(codeSystem.id).toPromise();
+      await firstValueFrom(this.terminologyService.deleteCodeSystem(codeSystem.id));
       
       // Remove from results
       const results = this.codeSystemsResults().filter(cs => cs.id !== codeSystem.id);
@@ -1133,7 +1134,7 @@ export class TerminologyComponent {
     try {
       // For CodeSystem resources, get the full CodeSystem details
       if (code.resourceType === 'CodeSystem') {
-        const codeSystemDetails = await this.terminologyService.getCodeSystem(code.id).toPromise();
+        const codeSystemDetails = await firstValueFrom(this.terminologyService.getCodeSystem(code.id));
         this.codeDetails.set(codeSystemDetails);
         
         // Extract concepts from the CodeSystem to show as "children"
@@ -1217,7 +1218,7 @@ export class TerminologyComponent {
     console.log('📋 Testing CodeSystem retrieval...');
     
     try {
-      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
       
       console.log(`Found ${codeSystems.length} CodeSystems on server`);
@@ -1251,7 +1252,7 @@ export class TerminologyComponent {
     console.log('🔢 Testing version integrity...');
     
     try {
-      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
       
       let versionedCount = 0;
@@ -1263,7 +1264,7 @@ export class TerminologyComponent {
           
           // Test that we can retrieve the CodeSystem by URL with version
           try {
-            const byUrlResult = await this.terminologyService.getCodeSystemByUrl(cs.url!).toPromise();
+            const byUrlResult = await firstValueFrom(this.terminologyService.getCodeSystemByUrl(cs.url!));
             if (byUrlResult && byUrlResult.version !== cs.version) {
               console.warn(`⚠️ Version mismatch for ${cs.name || cs.id}: expected ${cs.version}, got ${byUrlResult.version}`);
               versionIntegrityIssues++;
@@ -1291,7 +1292,7 @@ export class TerminologyComponent {
     console.log('🔍 Testing expansion functionality...');
     
     try {
-      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
       
       let expansionTestsPassed = 0;
@@ -1301,17 +1302,17 @@ export class TerminologyComponent {
       for (const cs of codeSystems.slice(0, 3)) {
         try {
           // Try to get the CodeSystem to see if it has concepts
-          const fullCodeSystem = await this.terminologyService.getCodeSystem(cs.id!).toPromise();
+          const fullCodeSystem = await firstValueFrom(this.terminologyService.getCodeSystem(cs.id!));
           
           if (fullCodeSystem && fullCodeSystem.concept && fullCodeSystem.concept.length > 0) {
             console.log(`Testing expansion for CodeSystem: ${cs.name || cs.id}`);
             
             // Test lookup on first concept
             const firstConcept = fullCodeSystem.concept[0];
-            const lookupResult = await this.terminologyService.lookupCode({
+            const lookupResult = await firstValueFrom(this.terminologyService.lookupCode({
               code: firstConcept.code!,
               system: cs.url!
-            }).toPromise();
+            }));
             
             if (lookupResult && lookupResult.parameter) {
               expansionTestsPassed++;
@@ -1345,7 +1346,7 @@ export class TerminologyComponent {
     console.log('🔎 Testing lookup operations...');
     
     try {
-      const result = await this.terminologyService.searchCodeSystems({}).toPromise();
+      const result = await firstValueFrom(this.terminologyService.searchCodeSystems({}));
       const codeSystems = result?.entry?.map(e => e.resource).filter(r => r !== undefined) || [];
       
       let lookupTestsPassed = 0;
@@ -1354,23 +1355,23 @@ export class TerminologyComponent {
       // Test lookup operations on first few CodeSystems
       for (const cs of codeSystems.slice(0, 2)) {
         try {
-          const fullCodeSystem = await this.terminologyService.getCodeSystem(cs.id!).toPromise();
+          const fullCodeSystem = await firstValueFrom(this.terminologyService.getCodeSystem(cs.id!));
           
           if (fullCodeSystem && fullCodeSystem.concept && fullCodeSystem.concept.length > 0) {
             const testConcept = fullCodeSystem.concept[0];
             
             console.log(`Testing lookup for code ${testConcept.code} in ${cs.name || cs.id}`);
             
-            const lookupResult = await this.terminologyService.lookupCode({
+            const lookupResult = await firstValueFrom(this.terminologyService.lookupCode({
               code: testConcept.code!,
               system: cs.url!,
               version: cs.version
-            }).toPromise();
+            }));
             
             if (lookupResult && lookupResult.parameter) {
               // Check if we got expected parameters
-              const hasDisplay = lookupResult.parameter.some(p => p.name === 'display');
-              const hasDefinition = lookupResult.parameter.some(p => p.name === 'definition');
+              const hasDisplay = lookupResult.parameter.some((p: any) => p.name === 'display');
+              const hasDefinition = lookupResult.parameter.some((p: any) => p.name === 'definition');
               
               if (hasDisplay || hasDefinition) {
                 lookupTestsPassed++;
@@ -1407,22 +1408,22 @@ export class TerminologyComponent {
     
     try {
       // Test search by name
-      const nameSearchResult = await this.terminologyService.searchCodeSystems({ 
+      const nameSearchResult = await firstValueFrom(this.terminologyService.searchCodeSystems({ 
         name: 'test',
         _count: 5 
-      }).toPromise();
+      }));
       
       // Test search by status
-      const statusSearchResult = await this.terminologyService.searchCodeSystems({ 
+      const statusSearchResult = await firstValueFrom(this.terminologyService.searchCodeSystems({ 
         status: 'active',
         _count: 5 
-      }).toPromise();
+      }));
       
       // Test search by URL
-      const urlSearchResult = await this.terminologyService.searchCodeSystems({ 
+      const urlSearchResult = await firstValueFrom(this.terminologyService.searchCodeSystems({ 
         url: 'http',
         _count: 5 
-      }).toPromise();
+      }));
       
       console.log(`Name search returned: ${nameSearchResult?.entry?.length || 0} results`);
       console.log(`Status search returned: ${statusSearchResult?.entry?.length || 0} results`);
@@ -1464,7 +1465,7 @@ export class TerminologyComponent {
       
       // Test 1: Invalid CodeSystem ID
       try {
-        await this.terminologyService.getCodeSystem('invalid-id-that-should-not-exist').toPromise();
+        await firstValueFrom(this.terminologyService.getCodeSystem('invalid-id-that-should-not-exist'));
         console.warn('⚠️ Expected error for invalid CodeSystem ID, but got success');
         errorHandlingTestsFailed++;
       } catch (error) {
@@ -1474,7 +1475,7 @@ export class TerminologyComponent {
       
       // Test 2: Invalid CodeSystem URL
       try {
-        await this.terminologyService.getCodeSystemByUrl('http://invalid-url-that-should-not-exist.com').toPromise();
+        await firstValueFrom(this.terminologyService.getCodeSystemByUrl('http://invalid-url-that-should-not-exist.com'));
         console.warn('⚠️ Expected error for invalid CodeSystem URL, but got success');
         errorHandlingTestsFailed++;
       } catch (error) {
@@ -1484,10 +1485,10 @@ export class TerminologyComponent {
       
       // Test 3: Invalid lookup parameters
       try {
-        await this.terminologyService.lookupCode({
+        await firstValueFrom(this.terminologyService.lookupCode({
           code: 'invalid-code',
           system: 'http://invalid-system.com'
-        }).toPromise();
+        }));
         console.warn('⚠️ Expected error for invalid lookup parameters, but got success');
         errorHandlingTestsFailed++;
       } catch (error) {
@@ -1497,10 +1498,10 @@ export class TerminologyComponent {
       
       // Test 4: Invalid search parameters
       try {
-        await this.terminologyService.searchCodeSystems({
+        await firstValueFrom(this.terminologyService.searchCodeSystems({
           name: 'this-should-not-match-anything-realistic-12345',
           _count: 1
-        }).toPromise();
+        }));
         console.log('✅ Search with non-matching parameters handled gracefully');
         errorHandlingTestsPassed++;
       } catch (error) {

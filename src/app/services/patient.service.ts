@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { BaseService } from './base.service';
 import { Patient, Bundle, Parameters } from 'fhir/r4';
 import { Observable } from 'rxjs';
@@ -16,9 +16,7 @@ export class PatientService extends BaseService {
 
 	public selectedPatients: Patient[] = [];
 
-	constructor(protected override http: HttpClient, protected settingsService: SettingsService) { 
-		super(http);
-	}
+	protected settingsService = inject(SettingsService);
 
 	url(): string {
 		const baseUrl = this.settingsService.getEffectiveFhirBaseUrl();

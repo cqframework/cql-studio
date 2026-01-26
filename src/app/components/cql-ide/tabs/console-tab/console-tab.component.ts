@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, OnInit, AfterViewInit, AfterViewChecked, ViewChild, ElementRef, ChangeDetectorRef } from '@angular/core';
+import { Component, input, output, OnInit, AfterViewInit, AfterViewChecked, viewChild, ElementRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { IdeStateService } from '../../../../services/ide-state.service';
@@ -16,21 +16,21 @@ import { CustomOutputCardComponent } from './custom-output-card.component';
   styleUrls: ['./console-tab.component.scss']
 })
 export class ConsoleTabComponent implements OnInit, AfterViewInit, AfterViewChecked {
-  @Input() preserveLogs: boolean = true;
-  @Input() isEvaluating: boolean = false;
-  @Input() executionProgress: number = 0;
-  @Input() executionStatus: string = '';
+  preserveLogs = input<boolean>(true);
+  isEvaluating = input<boolean>(false);
+  executionProgress = input<number>(0);
+  executionStatus = input<string>('');
   
   // Autoscroll control
   public autoscrollEnabled: boolean = true;
   
-  @Output() clearOutput = new EventEmitter<void>();
-  @Output() copyOutput = new EventEmitter<void>();
-  @Output() toggleAllSections = new EventEmitter<void>();
-  @Output() preserveLogsChange = new EventEmitter<boolean>();
-  @Output() autoscrollChange = new EventEmitter<boolean>();
+  clearOutput = output<void>();
+  copyOutput = output<void>();
+  toggleAllSections = output<void>();
+  preserveLogsChange = output<boolean>();
+  autoscrollChange = output<boolean>();
 
-  @ViewChild('consoleContent', { static: false }) consoleContent!: ElementRef;
+  consoleContent = viewChild<ElementRef>('consoleContent');
   
   get outputSections() {
     return this.ideStateService.outputSections;
@@ -39,7 +39,7 @@ export class ConsoleTabComponent implements OnInit, AfterViewInit, AfterViewChec
   private shouldAutoScroll = true;
   private previousOutputCount = 0;
 
-  constructor(public ideStateService: IdeStateService, private cdr: ChangeDetectorRef) {}
+  public ideStateService = inject(IdeStateService);
 
   ngOnInit(): void {
     // Component initialization
@@ -52,7 +52,7 @@ export class ConsoleTabComponent implements OnInit, AfterViewInit, AfterViewChec
     this.previousOutputCount = this.outputSections().length;
     
     // Set up MutationObserver to watch for DOM changes
-    if (this.consoleContent) {
+    if (this.consoleContent()) {
       const observer = new MutationObserver(() => {
         if (this.shouldAutoScroll && this.autoscrollEnabled) {
           setTimeout(() => {
@@ -61,7 +61,7 @@ export class ConsoleTabComponent implements OnInit, AfterViewInit, AfterViewChec
         }
       });
       
-      observer.observe(this.consoleContent.nativeElement, {
+      observer.observe(this.consoleContent()!.nativeElement, {
         childList: true,
         subtree: true
       });
@@ -81,8 +81,8 @@ export class ConsoleTabComponent implements OnInit, AfterViewInit, AfterViewChec
   }
 
   private scrollToBottom(): void {
-    if (this.consoleContent) {
-      const element = this.consoleContent.nativeElement;
+    if (this.consoleContent()) {
+      const element = this.consoleContent()!.nativeElement;
       
       try {
         // Use scrollIntoView on the last child for smooth scrolling

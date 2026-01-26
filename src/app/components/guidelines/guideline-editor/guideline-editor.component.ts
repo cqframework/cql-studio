@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, OnDestroy, signal, computed, OnInit } from '@angular/core';
+import { Component, input, output, OnDestroy, signal, computed, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -43,8 +43,8 @@ import { Library } from 'fhir/r4';
   styleUrl: './guideline-editor.component.scss'
 })
 export class GuidelineEditorComponent implements OnInit, OnDestroy {
-  @Input() library!: Library;
-  @Output() close = new EventEmitter<void>();
+  library = input.required<Library>();
+  close = output<void>();
 
   protected readonly activeTab = signal<string>('summary');
   protected readonly tabMetadata = computed(() => this.guidelinesStateService.getTabMetadata());
@@ -79,13 +79,13 @@ export class GuidelineEditorComponent implements OnInit, OnDestroy {
   private loadLibrary(): void {
     this.guidelinesStateService.setLoading(true);
     this.guidelinesStateService.setError(null);
-    this.guidelinesStateService.setLibrary(this.library);
-    this.guidelinesStateService.setActiveLibraryId(this.library.id || null);
+    this.guidelinesStateService.setLibrary(this.library());
+    this.guidelinesStateService.setActiveLibraryId(this.library().id || null);
 
     // Extract CQL content
     let cqlContent = '';
-    if (this.library.content) {
-      for (const content of this.library.content) {
+      if (this.library().content) {
+      for (const content of this.library().content!) {
         if (content.contentType === 'text/cql' && content.data) {
           try {
             cqlContent = atob(content.data);
@@ -104,8 +104,8 @@ export class GuidelineEditorComponent implements OnInit, OnDestroy {
     }
 
     // Check for visual builder metadata in extension
-    if (this.library.extension) {
-      const metadataExt = this.library.extension.find(
+    if (this.library().extension) {
+      const metadataExt = this.library().extension!.find(
         ext => ext.url === 'http://cqframework.org/fhir/StructureDefinition/guidelines-builder-metadata'
       );
       if (metadataExt && metadataExt.valueString) {
@@ -120,33 +120,33 @@ export class GuidelineEditorComponent implements OnInit, OnDestroy {
     if (artifact) {
       // Update metadata from library if not in parsed artifact
       // Ensure URL is set using libraryService.urlFor (same as IDE)
-      const libraryUrl = this.library.url || (this.library.id ? this.libraryService.urlFor(this.library.id) : '');
+      const libraryUrl = this.library().url || (this.library().id ? this.libraryService.urlFor(this.library().id!) : '');
       
-      if (this.library.name && !artifact.metadata?.name) {
+      if (this.library().name && !artifact.metadata?.name) {
         artifact.metadata = {
           ...artifact.metadata,
-          name: this.library.name,
-          title: this.library.title || this.library.name,
-          version: this.library.version || '1.0.0', // Ensure version is never null
-          description: this.library.description || artifact.metadata?.description,
+          name: this.library().name,
+          title: this.library().title || this.library().name,
+          version: this.library().version || '1.0.0', // Ensure version is never null
+          description: this.library().description || artifact.metadata?.description,
           url: libraryUrl || artifact.metadata?.url || ''
         };
       } else if (artifact.metadata) {
         // Ensure URL and version are set even if metadata exists
         artifact.metadata.url = artifact.metadata.url || libraryUrl || '';
-        artifact.metadata.version = artifact.metadata.version || this.library.version || '1.0.0';
+        artifact.metadata.version = artifact.metadata.version || this.library().version || '1.0.0';
       }
       this.guidelinesStateService.setArtifact(artifact);
     } else {
       // Fallback: initialize empty artifact with library metadata
       this.guidelinesStateService.initializeEmptyArtifact();
-      if (this.library.name) {
-        const libraryUrl = this.library.url || (this.library.id ? this.libraryService.urlFor(this.library.id) : '');
+      if (this.library().name) {
+        const libraryUrl = this.library().url || (this.library().id ? this.libraryService.urlFor(this.library().id!) : '');
         this.guidelinesStateService.updateMetadata({
-          name: this.library.name,
-          title: this.library.title || this.library.name,
-          version: this.library.version || '1.0.0', // Ensure version is never null
-          description: this.library.description,
+          name: this.library().name,
+          title: this.library().title || this.library().name,
+          version: this.library().version || '1.0.0', // Ensure version is never null
+          description: this.library().description,
           url: libraryUrl
         });
       }
@@ -208,7 +208,7 @@ export class GuidelineEditorComponent implements OnInit, OnDestroy {
     this.translationService.translateCqlToElm(cqlContent, baseUrl).subscribe({
       next: (elmXml: string) => {
         // Update existing library
-        this.updateLibrary(this.library, cqlContent, elmXml, artifact);
+        this.updateLibrary(this.library(), cqlContent, elmXml, artifact);
       },
       error: (error) => {
         const errorMessage = this.getErrorMessage(error);
@@ -226,7 +226,7 @@ export class GuidelineEditorComponent implements OnInit, OnDestroy {
     
     // Use metadata.url if provided (user-edited), otherwise fall back to library.url or generate
     // This allows users to edit the URL after creation while ensuring it's always set
-    const libraryUrl = metadata.url?.trim() || library.url || this.libraryService.urlFor(library.id || '');
+    const libraryUrl = metadata.url?.trim() || this.library().url || this.libraryService.urlFor(this.library().id || '');
     
     // Ensure required fields are set (same as IDE)
     const updatedLibrary: Library = {
@@ -302,8 +302,8 @@ export class GuidelineEditorComponent implements OnInit, OnDestroy {
   }
 
   onTest(): void {
-    if (this.library?.id) {
-      this.router.navigate(['/guidelines', this.library.id, 'testing']);
+    if (this.library()?.id) {
+      this.router.navigate(['/guidelines', this.library().id, 'testing']);
     }
   }
 }

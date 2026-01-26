@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, computed, signal, ViewChild, ElementRef, AfterViewChecked, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
+import { Component, Input, Output, EventEmitter, computed, signal, viewChild, ElementRef, AfterViewChecked, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -26,8 +26,8 @@ import { PlanDisplayComponent } from './plan-display.component';
   styleUrls: ['./ai-tab.component.scss']
 })
 export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {
-  @ViewChild('messagesContainer') messagesContainer!: ElementRef;
-  @ViewChild('scrollSentinel') scrollSentinel!: ElementRef;
+  messagesContainer = viewChild<ElementRef>('messagesContainer');
+  scrollSentinel = viewChild<ElementRef>('scrollSentinel');
   private _cqlContent = signal<string>('');
   @Input() set cqlContent(value: string) {
     this._cqlContent.set(value);
@@ -140,8 +140,8 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
       this._scrollRafId = null;
     }
     
-    if (this.messagesContainer) {
-      this.messagesContainer.nativeElement.removeEventListener('scroll', this.onUserScroll);
+    if (this.messagesContainer()) {
+      this.messagesContainer()!.nativeElement.removeEventListener('scroll', this.onUserScroll);
     }
   }
 
@@ -520,7 +520,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   }
 
   public ngAfterViewChecked(): void {
-    if (!this.messagesContainer) {
+    if (!this.messagesContainer()) {
       return;
     }
 
@@ -545,12 +545,12 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   
   private setupScrollSentinelObserver(): void {
     setTimeout(() => {
-      if (!this.messagesContainer || !this.scrollSentinel) {
+      if (!this.messagesContainer() || !this.scrollSentinel()) {
         return;
       }
       
-      const container = this.messagesContainer.nativeElement;
-      const sentinel = this.scrollSentinel?.nativeElement;
+      const container = this.messagesContainer()!.nativeElement;
+      const sentinel = this.scrollSentinel()?.nativeElement;
       
       if (!container || !sentinel) {
         return;
@@ -581,11 +581,11 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   }
   
   private onUserScroll = (): void => {
-    if (!this.messagesContainer) {
+    if (!this.messagesContainer()) {
       return;
     }
     
-    const container = this.messagesContainer.nativeElement;
+    const container = this.messagesContainer()!.nativeElement;
     const scrollTop = container.scrollTop;
     const scrollHeight = container.scrollHeight;
     const clientHeight = container.clientHeight;
@@ -612,13 +612,13 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   private scrollToBottom(): void {
     const isStreaming = this.conversationState.isStreaming();
     
-    if (this.scrollSentinel?.nativeElement) {
-      this.scrollSentinel.nativeElement.scrollIntoView({ 
+    if (this.scrollSentinel()?.nativeElement) {
+      this.scrollSentinel()!.nativeElement.scrollIntoView({ 
         behavior: isStreaming ? 'auto' : 'smooth',
         block: 'end'
       });
     } else if (this.messagesContainer) {
-      const element = this.messagesContainer.nativeElement;
+      const element = this.messagesContainer()!.nativeElement;
       if (isStreaming) {
         element.scrollTop = element.scrollHeight;
       } else {
@@ -1134,7 +1134,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
       
       this._userScrolledUp = false;
       
-      if (!this._intersectionObserver && this.scrollSentinel) {
+      if (!this._intersectionObserver && this.scrollSentinel()) {
         this.setupScrollSentinelObserver();
       }
     }

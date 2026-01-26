@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, AfterViewInit, OnChanges, SimpleChanges, ElementRef, ViewChild } from '@angular/core';
+import { Component, Input, AfterViewInit, OnChanges, SimpleChanges, ElementRef, viewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 // Import PrismJS dynamically to avoid CommonJS issues
@@ -16,8 +16,8 @@ declare const Prism: any;
 export class SyntaxHighlighterComponent implements AfterViewInit, OnChanges {
   @Input() code: string = '';
   @Input() language: string = 'json';
-  @ViewChild('codeElement') codeElement!: ElementRef;
-  @ViewChild('preElement') preElement!: ElementRef;
+  codeElement = viewChild<ElementRef>('codeElement');
+  preElement = viewChild<ElementRef>('preElement');
 
   ngAfterViewInit(): void {
     this.highlightCode();
@@ -30,19 +30,19 @@ export class SyntaxHighlighterComponent implements AfterViewInit, OnChanges {
   }
 
   private highlightCode(): void {
-    if (this.preElement && this.code) {
+    if (this.preElement() && this.code) {
       if (typeof Prism !== 'undefined') {
         // Auto-detect language if not specified
         const detectedLanguage = this.detectLanguage();
         const languageClass = `language-${detectedLanguage}`;
         
         // Set the language class on the code element
-        if (this.codeElement) {
-          this.codeElement.nativeElement.className = languageClass;
+        if (this.codeElement()) {
+          this.codeElement()!.nativeElement.className = languageClass;
         }
         
         // Use PrismJS to highlight and apply line numbers
-        Prism.highlightAllUnder(this.preElement.nativeElement);
+        Prism.highlightAllUnder(this.preElement()!.nativeElement);
       } else {
         // PrismJS not loaded yet, retry after a short delay
         setTimeout(() => {

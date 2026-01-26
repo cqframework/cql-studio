@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, OnInit, signal, computed } from '@angular/core';
+import { Component, OnInit, signal, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -337,7 +337,8 @@ export class DashboardComponent implements OnInit {
     }
   };
   
-  constructor(private router: Router, private route: ActivatedRoute) {}
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
   
   ngOnInit(): void {
     // Check if there's an index query parameter and no session storage data

@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, signal, computed } from '@angular/core';
+import { Component, input, output, signal, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { CqlFunction, BaseElement, ConjunctionGroup } from '../../../../services/guidelines-state.service';
@@ -24,9 +24,9 @@ const CQL_DATA_TYPES = [
   styleUrl: './function-editor.component.scss'
 })
 export class GuidelineFunctionEditorComponent {
-  @Input() function!: CqlFunction;
-  @Output() save = new EventEmitter<CqlFunction>();
-  @Output() cancel = new EventEmitter<void>();
+  function = input.required<CqlFunction>();
+  save = output<CqlFunction>();
+  cancel = output<void>();
 
   protected readonly dataTypes = CQL_DATA_TYPES;
   protected readonly func = signal<CqlFunction>({
@@ -50,7 +50,7 @@ export class GuidelineFunctionEditorComponent {
   });
 
   ngOnInit(): void {
-    this.func.set({ ...this.function });
+    this.func.set({ ...this.function() });
     // Initialize empty body if needed
     if (!this.func().body) {
       const emptyBody: ConjunctionGroup = {

@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { BaseService } from './base.service';
 import { Library, Parameters, Bundle } from 'fhir/r4';
 import { Observable } from 'rxjs';
@@ -16,9 +16,7 @@ export class LibraryService extends BaseService {
 
 	public libraryId: string = '';
 
-	constructor(protected override http: HttpClient, protected settingsService: SettingsService) { 
-	  super(http);
-	}
+	protected settingsService = inject(SettingsService);
 
 	public order: 'asc' | 'desc' = 'asc';
 	public pageSize = 10;

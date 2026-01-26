@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { BaseService } from './base.service';
 import { ValueSet, CodeSystem, ConceptMap, Bundle, Parameters, OperationOutcome } from 'fhir/r4';
 import { Observable } from 'rxjs';
@@ -14,9 +14,7 @@ import { SettingsService } from './settings.service';
 })
 export class TerminologyService extends BaseService {
 
-  constructor(protected override http: HttpClient, protected settingsService: SettingsService) {
-    super(http);
-  }
+  protected settingsService = inject(SettingsService);
 
   private getTerminologyBaseUrl(): string {
     const baseUrl = this.settingsService.getEffectiveTerminologyBaseUrl();

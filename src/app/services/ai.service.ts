@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, throwError } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
@@ -57,15 +57,10 @@ export interface MCPResponse {
   providedIn: 'root'
 })
 export class AiService extends BaseService {
-  constructor(
-    protected override http: HttpClient,
-    private settingsService: SettingsService,
-    private ideStateService: IdeStateService,
-    private conversationManager: ConversationManagerService,
-    private planningService: AiPlanningService
-  ) {
-    super(http);
-  }
+  private settingsService = inject(SettingsService);
+  private ideStateService = inject(IdeStateService);
+  private conversationManager = inject(ConversationManagerService);
+  private planningService = inject(AiPlanningService);
 
   /**
    * Check if AI assistant is available (Ollama configured and enabled)

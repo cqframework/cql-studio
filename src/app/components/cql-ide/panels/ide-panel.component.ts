@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, HostListener } from '@angular/core';
+import { Component, input, output, viewChild, ElementRef, HostListener, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { IdePanel, IdePanelTab } from './ide-panel-tab.interface';
 import { IdeStateService } from '../../../services/ide-state.service';
@@ -34,28 +34,26 @@ import { AiTabComponent } from '../tabs/ai-tab/ai-tab.component';
   styleUrls: ['./ide-panel.component.scss']
 })
 export class IdePanelComponent {
-  @Input() panel!: IdePanel;
-  @Input() position!: 'left' | 'right' | 'bottom';
+  panel = input.required<IdePanel>();
+  position = input.required<'left' | 'right' | 'bottom'>();
   
-  @Output() togglePanel = new EventEmitter<string>();
-  @Output() setActiveTab = new EventEmitter<string>();
-  @Output() startResize = new EventEmitter<{ type: string; event: MouseEvent; newSize?: number }>();
-  @Output() moveTab = new EventEmitter<{ tabId: string; fromPanelId: string; toPanelId: string }>();
-  @Output() tabDrop = new EventEmitter<{ tab: any; targetPanelId: string }>();
-  @Output() dragOver = new EventEmitter<string>();
-  @Output() dragLeave = new EventEmitter<string>();
-  @Output() executeAll = new EventEmitter<void>();
-  @Output() navigateToLine = new EventEmitter<number>();
+  togglePanel = output<string>();
+  setActiveTab = output<string>();
+  startResize = output<{ type: string; event: MouseEvent; newSize?: number }>();
+  moveTab = output<{ tabId: string; fromPanelId: string; toPanelId: string }>();
+  tabDrop = output<{ tab: any; targetPanelId: string }>();
+  dragOver = output<string>();
+  dragLeave = output<string>();
+  executeAll = output<void>();
+  navigateToLine = output<number>();
 
-  @ViewChild('panelElement', { static: false }) panelElement?: ElementRef<HTMLDivElement>;
-  @ViewChild(NavigationTabComponent, { static: false }) navigationTab?: NavigationTabComponent;
+  panelElement = viewChild<ElementRef<HTMLDivElement>>('panelElement');
+  navigationTab = viewChild(NavigationTabComponent);
 
-  constructor(
-    public ideStateService: IdeStateService,
-    private libraryService: LibraryService,
-    private translationService: TranslationService,
-    private settingsService: SettingsService
-  ) {}
+  public ideStateService = inject(IdeStateService);
+  private libraryService = inject(LibraryService);
+  private translationService = inject(TranslationService);
+  private settingsService = inject(SettingsService);
 
   private isResizing: boolean = false;
   private resizeType: string = '';
@@ -68,15 +66,15 @@ export class IdePanelComponent {
   get panelClasses(): string {
     const classes = ['ide-panel'];
     
-    if (this.position === 'left') {
+    if (this.position() === 'left') {
       classes.push('sidebar', 'bg-dark', 'border-end');
-    } else if (this.position === 'right') {
+    } else if (this.position() === 'right') {
       classes.push('right-panel', 'bg-dark', 'border-start');
-    } else if (this.position === 'bottom') {
+    } else if (this.position() === 'bottom') {
       classes.push('bottom-panel', 'bg-dark', 'border-top');
     }
     
-    if (this.panel.isVisible) {
+    if (this.panel().isVisible) {
       classes.push('visible');
     }
     
@@ -86,17 +84,17 @@ export class IdePanelComponent {
   get panelStyles(): { [key: string]: string } {
     const styles: { [key: string]: string } = {};
     
-    if (this.position === 'left' || this.position === 'right') {
-      styles['width'] = this.panel.size.toString() + 'px !important';
-    } else if (this.position === 'bottom') {
-      styles['height'] = this.panel.size.toString() + 'px !important';
+    if (this.position() === 'left' || this.position() === 'right') {
+      styles['width'] = this.panel().size.toString() + 'px !important';
+    } else if (this.position() === 'bottom') {
+      styles['height'] = this.panel().size.toString() + 'px !important';
     }
     
     return styles;
   }
 
   onTogglePanel(): void {
-    this.togglePanel.emit(this.panel.id);
+    this.togglePanel.emit(this.panel().id);
   }
 
   onSetActiveTab(tabId: string): void {
@@ -147,8 +145,8 @@ export class IdePanelComponent {
             this.ideStateService.selectLibraryResource('');
             
             // Refresh the navigation-tab's library list to reflect the deletion
-            if (this.navigationTab) {
-              this.navigationTab.loadPaginatedLibraries();
+            if (this.navigationTab()) {
+              this.navigationTab()!.loadPaginatedLibraries();
             }
           },
           error: (error) => {
@@ -164,17 +162,17 @@ export class IdePanelComponent {
     event.preventDefault();
     event.stopPropagation();
     this.isResizing = true;
-    this.resizeType = this.position;
+    this.resizeType = this.position();
     this.startX = event.clientX;
     this.startY = event.clientY;
     
-    if (this.position === 'left' || this.position === 'right') {
-      this.startWidth = this.panel.size;
+    if (this.position() === 'left' || this.position() === 'right') {
+      this.startWidth = this.panel().size;
     } else {
-      this.startHeight = this.panel.size;
+      this.startHeight = this.panel().size;
     }
     
-    this.startResize.emit({ type: this.position, event });
+    this.startResize.emit({ type: this.position(), event });
   }
 
   @HostListener('window:mousemove', ['$event'])
@@ -201,22 +199,22 @@ export class IdePanelComponent {
   private handleResize(event: MouseEvent): void {
     if (!this.isResizing) return;
 
-    let newSize = this.panel.size;
+    let newSize = this.panel().size;
 
-    if (this.position === 'left') {
+    if (this.position() === 'left') {
       const deltaX = event.clientX - this.startX;
-      newSize = Math.max(this.panel.minSize, Math.min(this.panel.maxSize, this.startWidth + deltaX));
-    } else if (this.position === 'right') {
+      newSize = Math.max(this.panel().minSize, Math.min(this.panel().maxSize, this.startWidth + deltaX));
+    } else if (this.position() === 'right') {
       const deltaX = this.startX - event.clientX;
-      newSize = Math.max(this.panel.minSize, Math.min(this.panel.maxSize, this.startWidth + deltaX));
-    } else if (this.position === 'bottom') {
+      newSize = Math.max(this.panel().minSize, Math.min(this.panel().maxSize, this.startWidth + deltaX));
+    } else if (this.position() === 'bottom') {
       const deltaY = this.startY - event.clientY;
-      newSize = Math.max(this.panel.minSize, Math.min(this.panel.maxSize, this.startHeight + deltaY));
+      newSize = Math.max(this.panel().minSize, Math.min(this.panel().maxSize, this.startHeight + deltaY));
     }
 
     // Emit resize event to parent component
     this.startResize.emit({ 
-      type: this.position, 
+      type: this.position(), 
       event: event,
       newSize: newSize
     });
@@ -232,8 +230,8 @@ export class IdePanelComponent {
   }
 
   private updateBottomPanelHeight(): void {
-    if (this.position === 'bottom' && this.panel.size) {
-      document.documentElement.style.setProperty('--bottom-panel-height', `${this.panel.size}px`);
+    if (this.position() === 'bottom' && this.panel().size) {
+      document.documentElement.style.setProperty('--bottom-panel-height', `${this.panel().size}px`);
     }
   }
 
@@ -246,7 +244,7 @@ export class IdePanelComponent {
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('text/plain', JSON.stringify({
         tabId: tab.id,
-        fromPanelId: this.panel.id,
+        fromPanelId: this.panel().id,
         tabType: tab.type
       }));
     }
@@ -264,11 +262,11 @@ export class IdePanelComponent {
     
     try {
       const data = JSON.parse(event.dataTransfer?.getData('text/plain') || '{}');
-      if (data.tabId && data.fromPanelId && data.fromPanelId !== this.panel.id) {
+      if (data.tabId && data.fromPanelId && data.fromPanelId !== this.panel().id) {
         this.moveTab.emit({
           tabId: data.tabId,
           fromPanelId: data.fromPanelId,
-          toPanelId: this.panel.id
+          toPanelId: this.panel().id
         });
       }
     } catch (error) {
@@ -277,7 +275,7 @@ export class IdePanelComponent {
   }
 
   getActiveTab(): IdePanelTab | undefined {
-    return this.panel.tabs.find(tab => tab.isActive);
+    return this.panel().tabs.find(tab => tab.isActive);
   }
 
   getActiveLibraryCqlContent(): string {
@@ -343,8 +341,8 @@ export class IdePanelComponent {
     this.ideStateService.setElmTranslationResults(null);
   }
 
-  @Output() insertCqlCode = new EventEmitter<string>();
-  @Output() replaceCqlCode = new EventEmitter<string>();
+  insertCqlCode = output<string>();
+  replaceCqlCode = output<string>();
 
   // AI Tab event handlers
   onInsertCqlCode(code: string): void {

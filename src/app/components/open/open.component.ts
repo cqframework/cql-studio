@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, signal, OnInit } from '@angular/core';
+import { Component, signal, OnInit, inject } from '@angular/core';
 
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
@@ -31,13 +31,11 @@ export class OpenComponent implements OnInit {
   indexLoading = signal(false);
   indexError = signal('');
 
-  constructor(
-    private fileLoader: FileLoaderService,
-    private schemaValidation: SchemaValidationService,
-    public settingsService: SettingsService,
-    private router: Router,
-    private route: ActivatedRoute
-  ) {}
+  private fileLoader = inject(FileLoaderService);
+  private schemaValidation = inject(SchemaValidationService);
+  public settingsService = inject(SettingsService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
 
   ngOnInit(): void {
     // Check for URL query parameter

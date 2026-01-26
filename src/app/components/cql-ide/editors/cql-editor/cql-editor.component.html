@@ -28,7 +28,7 @@
         <label class="form-label mb-0 small text-light">CQL:</label>
         <select 
           class="form-select form-select-sm" 
-          [value]="cqlVersion" 
+          [value]="cqlVersion()" 
           (change)="onCqlVersionChange($event)"
           title="CQL Version"
           style="min-width: 120px;"

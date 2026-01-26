@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, ViewChild, ElementRef, AfterViewInit, OnDestroy, OnChanges, SimpleChanges, ChangeDetectorRef, signal, computed } from '@angular/core';
+import { Component, input, output, viewChild, ElementRef, AfterViewInit, OnDestroy, signal, computed, effect, inject } from '@angular/core';
 import { EditorView, basicSetup } from 'codemirror';
 import { EditorState } from '@codemirror/state';
 import { keymap } from '@codemirror/view';
@@ -47,27 +47,27 @@ const darkHighlightStyle = {
   templateUrl: './cql-editor.component.html',
   styleUrls: ['./cql-editor.component.scss']
 })
-export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, IdeEditor {
-  @ViewChild('editorContainer', { static: false }) editorContainer?: ElementRef<HTMLDivElement>;
+export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
+  editorContainer = viewChild<ElementRef<HTMLDivElement>>('editorContainer');
   
-  @Input() libraryId: string = '';
-  @Input() editorState: any;
-  @Input() placeholder: string = 'Enter CQL code here...';
-  @Input() height: string = '500px';
-  @Input() readonly: boolean = false;
-  @Input() cqlVersion: CqlVersion = '1.5.3';
-  @Input() isNewLibrary: boolean = false;
+  libraryId = input<string>('');
+  editorState = input<any>();
+  placeholder = input<string>('Enter CQL code here...');
+  height = input<string>('500px');
+  readonly = input<boolean>(false);
+  cqlVersion = input<CqlVersion>('1.5.3');
+  isNewLibrary = input<boolean>(false);
   
-  @Output() contentChange = new EventEmitter<{ cursorPosition: { line: number; column: number }, wordCount: number, content: string }>();
-  @Output() cursorChange = new EventEmitter<{ line: number; column: number }>();
-  @Output() editorStateChange = new EventEmitter<IdeEditorState>();
-  @Output() syntaxErrors = new EventEmitter<string[]>();
-  @Output() executeLibrary = new EventEmitter<void>();
-  @Output() reloadLibrary = new EventEmitter<void>();
-  @Output() cqlVersionChange = new EventEmitter<string>();
-  @Output() formatCql = new EventEmitter<void>();
-  @Output() validateCql = new EventEmitter<void>();
-  @Output() saveLibrary = new EventEmitter<void>();
+  contentChange = output<{ cursorPosition: { line: number; column: number }, wordCount: number, content: string }>();
+  cursorChange = output<{ line: number; column: number }>();
+  editorStateChange = output<IdeEditorState>();
+  syntaxErrors = output<string[]>();
+  executeLibrary = output<void>();
+  reloadLibrary = output<void>();
+  cqlVersionChange = output<string>();
+  formatCql = output<void>();
+  validateCql = output<void>();
+  saveLibrary = output<void>();
 
   private editor?: EditorView;
   private grammarManager: CqlGrammarManager;
@@ -92,14 +92,37 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
   // Computed signal for form validity
   isFormValid = computed(() => this._isFormValidSignal());
 
-  constructor(private cdr: ChangeDetectorRef, private ideStateService: IdeStateService) {
-    this.grammarManager = new CqlGrammarManager(this.cqlVersion);
+  private ideStateService = inject(IdeStateService);
+
+  constructor() {
+    this.grammarManager = new CqlGrammarManager(this.cqlVersion());
+    
+    // Watch for cqlVersion changes
+    effect(() => {
+      const version = this.cqlVersion();
+      if (this.grammarManager) {
+        this.grammarManager.setVersion(version);
+        if (this.editor) {
+          this.reinitializeEditor();
+        }
+      }
+    });
+    
+    // Watch for libraryId changes
+    effect(() => {
+      const libraryId = this.libraryId();
+      if (libraryId && this.editor) {
+        console.log('Library ID changed, reinitializing editor for:', libraryId);
+        this.reinitializeEditor();
+        this.updateCanExecute();
+      }
+    });
   }
 
   // Get content for this specific library
   private getLibraryContent(): string {
-    if (!this.libraryId) return '';
-    const library = this.ideStateService.libraryResources().find(lib => lib.id === this.libraryId);
+    if (!this.libraryId()) return '';
+    const library = this.ideStateService.libraryResources().find(lib => lib.id === this.libraryId());
     return library?.cqlContent || '';
   }
 
@@ -116,23 +139,6 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
     }
   }
 
-  ngOnChanges(changes: SimpleChanges): void {
-    if (changes['cqlVersion'] && !changes['cqlVersion'].firstChange) {
-      this.grammarManager.setVersion(this.cqlVersion);
-      this.reinitializeEditor();
-    }
-    
-    if (changes['libraryId'] && !changes['libraryId'].firstChange) {
-      console.log('Library ID changed, reinitializing editor for:', this.libraryId);
-      // When library ID changes, reinitialize the editor with the new library's content
-      if (this.editor) {
-        this.reinitializeEditor();
-      }
-      // Update canExecute state for new library
-      this.updateCanExecute();
-    }
-  }
-  
   ngOnDestroy(): void {
     this.editor?.destroy();
     this.resizeObserver?.disconnect();
@@ -140,7 +146,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
 
   private initializeEditor(): void {
     console.log('initializeEditor called', {
-      editorContainer: !!this.editorContainer?.nativeElement,
+      editorContainer: !!this.editorContainer()?.nativeElement,
       currentValue: this._value.substring(0, 100) + '...',
       editorExists: !!this.editor,
       isInitializing: this.isInitializing
@@ -151,7 +157,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
       return;
     }
     
-    if (!this.editorContainer?.nativeElement) {
+    if (!this.editorContainer()?.nativeElement) {
       console.log('Editor container not ready, returning');
       return;
     }
@@ -163,7 +169,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
     
     this.isInitializing = true;
     
-    const container = this.editorContainer.nativeElement;
+    const container = this.editorContainer()!.nativeElement;
     if (container.offsetWidth === 0 || container.offsetHeight === 0) {
       this.initializationRetries++;
       console.log(`Container has no dimensions, retry ${this.initializationRetries}/${this.maxRetries}`);
@@ -230,13 +236,13 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
           ]),
           EditorView.theme({
             '&': {
-              height: this.height,
+              height: this.height(),
               fontSize: '14px',
               fontFamily: "'Courier New', Courier, monospace"
             },
             '.cm-content': {
               padding: '12px',
-              minHeight: this.height,
+              minHeight: this.height(),
               color: '#ffffff'
             },
             '.cm-focused': {
@@ -307,7 +313,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
       
       this.editor = new EditorView({
         state: startState,
-        parent: this.editorContainer.nativeElement
+        parent: this.editorContainer()!.nativeElement
       });
       
       this.isInitializing = false;
@@ -661,7 +667,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
   }
 
   private setupResizeObserver(): void {
-    if (!this.editorContainer?.nativeElement || this.editor) {
+    if (!this.editorContainer()?.nativeElement || this.editor) {
       return;
     }
 
@@ -676,7 +682,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
       }
     });
 
-    this.resizeObserver.observe(this.editorContainer.nativeElement);
+    this.resizeObserver.observe(this.editorContainer()!.nativeElement);
   }
 
   private getCursorPosition(): { line: number; column: number } | undefined {
@@ -718,7 +724,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, OnChanges, 
     }
     
     // Get the library resource for this editor
-    const library = this.ideStateService.libraryResources().find(lib => lib.id === this.libraryId);
+    const library = this.ideStateService.libraryResources().find(lib => lib.id === this.libraryId());
     if (!library) {
       this._canExecuteSignal.set(false);
       return;

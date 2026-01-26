@@ -7,7 +7,7 @@
 >
   <!-- Panel Header with Tabs -->
   <div class="bg-dark border-dark border-bottom d-flex">
-    @for (tab of panel.tabs; track tab.id) {
+    @for (tab of panel().tabs; track tab.id) {
       <button 
         class="btn rounded-0 flex-fill" 
         [class.active]="tab.isActive"
