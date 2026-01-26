@@ -145,6 +145,7 @@ export class TerminologyComponent implements OnInit {
   protected readonly codeSystemsSortBy = signal<'name' | 'url' | 'title' | 'version' | 'status'>('name');
   protected readonly codeSystemsSortOrder = signal<'asc' | 'desc'>('asc');
   protected readonly codeSystemsDeleting = signal<Set<string>>(new Set());
+  protected readonly codeSystemsVerifying = signal<Set<string>>(new Set());
 
   // Pagination for Code Systems
   protected readonly codeSystemsCurrentPage = signal<number>(1);
@@ -1419,6 +1420,75 @@ export class TerminologyComponent implements OnInit {
   }
 
   // CodeSystem Verification Methods
+  async verifyCodeSystem(codeSystem: CodeSystem): Promise<void> {
+    if (!this.hasValidConfiguration()) {
+      console.error('Cannot verify CodeSystem: No valid configuration');
+      return;
+    }
+
+    const codeSystemId = codeSystem.id || codeSystem.url || 'unknown';
+    
+    // Prevent duplicate verification
+    if (this.codeSystemsVerifying().has(codeSystemId)) {
+      return;
+    }
+
+    // Add to verifying set
+    const verifying = new Set(this.codeSystemsVerifying());
+    verifying.add(codeSystemId);
+    this.codeSystemsVerifying.set(verifying);
+
+    console.log(`🔍 Verifying CodeSystem: ${codeSystem.name || codeSystem.title || codeSystemId}...`);
+
+    try {
+      // Verify the CodeSystem can be retrieved
+      if (codeSystem.url) {
+        try {
+          const retrieved = await firstValueFrom(this.terminologyService.getCodeSystemByUrl(codeSystem.url));
+          if (retrieved) {
+            console.log(`✅ CodeSystem verified: ${codeSystem.name || codeSystem.title || codeSystemId}`);
+            
+            // Check for required fields
+            const issues: string[] = [];
+            if (!retrieved.id) {
+              issues.push('missing ID');
+            }
+            if (!retrieved.url) {
+              issues.push('missing URL');
+            }
+            if (!retrieved.status) {
+              issues.push('missing status');
+            }
+            
+            if (issues.length > 0) {
+              console.warn(`⚠️ CodeSystem has issues: ${issues.join(', ')}`);
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Failed to retrieve CodeSystem ${codeSystemId}:`, error);
+        }
+      } else if (codeSystem.id) {
+        try {
+          const retrieved = await firstValueFrom(this.terminologyService.getCodeSystem(codeSystem.id));
+          if (retrieved) {
+            console.log(`✅ CodeSystem verified: ${codeSystem.name || codeSystem.title || codeSystemId}`);
+          }
+        } catch (error) {
+          console.error(`❌ Failed to retrieve CodeSystem ${codeSystemId}:`, error);
+        }
+      } else {
+        console.warn(`⚠️ Cannot verify CodeSystem: missing both ID and URL`);
+      }
+    } catch (error) {
+      console.error(`❌ CodeSystem verification failed for ${codeSystemId}:`, error);
+    } finally {
+      // Remove from verifying set
+      const verifying = new Set(this.codeSystemsVerifying());
+      verifying.delete(codeSystemId);
+      this.codeSystemsVerifying.set(verifying);
+    }
+  }
+
   async verifyCodeSystems(): Promise<void> {
     if (!this.hasValidConfiguration()) {
       console.error('Cannot verify CodeSystems: No valid configuration');

@@ -278,7 +278,7 @@
 
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0">
-              <i class="bi bi-list me-2"></i>Search Results
+              <i class="bi bi-list me-2"></i>Results
               @if (conceptmapTotalCount() > 0) {
               <span class="badge bg-primary ms-2">{{ conceptmapTotalCount() }}</span>
               }
@@ -372,9 +372,9 @@
       <div class="row">
         <div class="col-12">
           <div class="d-flex justify-content-between align-items-center mb-3">
-            <h6 class="mb-0">
+            <!-- <h6 class="mb-0">
               <i class="bi bi-list-ul me-1"></i>Available Code Systems
-            </h6>
+            </h6> -->
             <div class="btn-group" role="group">
               <button type="button" class="btn btn-sm btn-primary" (click)="loadCodeSystems()"
                 [disabled]="codeSystemsLoading()">
@@ -384,11 +384,6 @@
                 <i class="bi bi-arrow-clockwise me-1"></i>
                 }
                 Reload Code Systems
-              </button>
-              <button type="button" class="btn btn-sm btn-outline-success" (click)="verifyCodeSystems()"
-                [disabled]="!hasValidConfiguration()">
-                <i class="bi bi-check-circle me-1"></i>
-                Verify CodeSystems
               </button>
             </div>
           </div>
@@ -441,7 +436,7 @@
           @if (!codeSystemsLoading() && codeSystemsTotalCount() > 0) {
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0">
-              <i class="bi bi-list me-2"></i>Search Results
+              <i class="bi bi-list me-2"></i>Results
               @if (codeSystemsTotalCount() > 0) {
               <span class="badge bg-primary ms-2">{{ codeSystemsTotalCount() }}</span>
               }
@@ -508,6 +503,7 @@
                     <i class="bi bi-arrow-down-up ms-1 text-muted"></i>
                     }
                   </th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -532,10 +528,26 @@
                       {{ codeSystem.status || 'Unknown' }}
                     </span>
                   </td>
+                  <td (click)="$event.stopPropagation()">
+                    @if (codeSystem.id || codeSystem.url) {
+                    <button type="button" class="btn btn-sm btn-outline-success" 
+                      (click)="verifyCodeSystem(codeSystem)"
+                      [disabled]="codeSystemsVerifying().has(codeSystem.id || codeSystem.url || 'unknown') || !hasValidConfiguration()">
+                      @if (codeSystemsVerifying().has(codeSystem.id || codeSystem.url || 'unknown')) {
+                      <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                      } @else {
+                      <i class="bi bi-check-circle me-1"></i>
+                      }
+                      Verify
+                    </button>
+                    } @else {
+                    <span class="text-muted small">N/A</span>
+                    }
+                  </td>
                 </tr>
                 @if (isCodeSystemRowExpanded(codeSystem)) {
                 <tr class="">
-                  <td colspan="5" class="p-0">
+                  <td colspan="6" class="p-0">
                     <div class="p-3">
                       <div class="row">
                         <div class="col-md-6">
