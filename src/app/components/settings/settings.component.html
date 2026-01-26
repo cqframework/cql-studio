@@ -1,7 +1,14 @@
 <div id="settings" class="container mt-5">
 
     <div class="row">
-
+        <div class="col-sm-12 p-4">
+            <button id="save-settings-btn" class="btn btn-primary" (click)="save()"><span
+                    class="bi bi-file-check"></span> Save to
+                Browser</button> &nbsp;
+            <button id="reset-settings-btn" class="btn float-end" (click)="restore()"><span
+                    class="bi bi-arrow-counterclockwise"></span>
+                Reset to Defaults</button>
+        </div>
         <div class="col-sm-6 p-4">
             <h4><span class="bi bi-code-slash"></span> Advanced</h4>
             <div class="form-check form-switch mt-3 ms-1 ">
@@ -289,7 +296,6 @@
             </div>
         </div>
         <div class="col-sm-12 p-4">
-            <br>
             <button id="save-settings-btn" class="btn btn-primary" (click)="save()"><span
                     class="bi bi-file-check"></span> Save to
                 Browser</button> &nbsp;
