@@ -77,14 +77,9 @@
     "@angular/cli": "^21.1.1",
     "@angular/compiler-cli": "^21.1.1",
     "@playwright/test": "^1.58.0",
-    "@types/jasmine": "~5",
-    "baseline-browser-mapping": "^2.9.17",
-    "jasmine-core": "~5",
-    "karma": "~6.4.4",
-    "karma-chrome-launcher": "~3.2.0",
-    "karma-coverage": "~2.2.1",
-    "karma-jasmine": "~5.1.0",
-    "karma-jasmine-html-reporter": "~2.1.0",
-    "typescript": "~5.9.3"
+    "baseline-browser-mapping": "^2.9.18",
+    "jsdom": "^27.4.0",
+    "typescript": "~5.9.3",
+    "vitest": "^4.0.18"
   }
 }
