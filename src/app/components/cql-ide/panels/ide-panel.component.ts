@@ -279,16 +279,21 @@ export class IdePanelComponent {
   }
 
   getActiveLibraryCqlContent(): string {
+    // Always get the current content from the active library resource
+    // This is updated in real-time by the editor via contentChange events
     const activeLibrary = this.ideStateService.getActiveLibraryResource();
     return activeLibrary?.cqlContent || '';
   }
 
   onTranslateCqlToElm(): void {
+    // Always get the latest content from the active library resource
+    // This ensures we translate whatever is currently in the editor, even if dirty
     const cqlContent = this.getActiveLibraryCqlContent();
     if (cqlContent) {
       this.ideStateService.setTranslating(true);
       
-      // Call the translation service synchronously
+      // Call the translation service synchronously with the current editor content
+      // This always translates the latest content, regardless of dirty state
       const translationResult = this.translationService.translateCqlToElm(cqlContent);
       
       // Update translation state with errors/warnings

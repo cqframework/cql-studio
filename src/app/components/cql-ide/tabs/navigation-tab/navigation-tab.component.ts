@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Library, Patient, Bundle } from 'fhir/r4';
@@ -17,8 +17,6 @@ import { SettingsService } from '../../../../services/settings.service';
   styleUrls: ['./navigation-tab.component.scss']
 })
 export class NavigationTabComponent implements OnInit {
-  @Output() executeAllEvent = new EventEmitter<void>();
-  
   // Library search
   public librarySearchTerm: string = '';
   public librarySearchResults: Library[] = [];
@@ -553,16 +551,5 @@ export class NavigationTabComponent implements OnInit {
 
   trackByPatientId(index: number, patient: Patient): string {
     return patient.id || index.toString();
-  }
-
-  // Missing methods referenced in template
-  executeAll(): void {
-    // Emit event to parent component to handle execution
-    this.executeAllEvent.emit();
-  }
-
-  canExecuteAll(): boolean {
-    // Check if all libraries can be executed
-    return this.ideStateService.libraryResources().length > 0;
   }
 }

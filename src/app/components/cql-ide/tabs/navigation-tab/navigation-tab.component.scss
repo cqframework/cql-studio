@@ -135,3 +135,21 @@
   border: none;
   color: #cccccc;
 }
+
+.library-item {
+  cursor: pointer;
+  transition: all 0.2s;
+  
+  &:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+  }
+  
+  .library-hover-icon {
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  
+  &:hover .library-hover-icon {
+    opacity: 1;
+  }
+}

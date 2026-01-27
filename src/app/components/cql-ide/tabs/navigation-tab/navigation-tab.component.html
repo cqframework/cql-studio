@@ -77,7 +77,7 @@
       @if (!isLoadingLibraries) {
       <div class="border rounded mx-3">
         @for (library of paginatedLibraries; track library.id) {
-        <div class="d-flex align-items-center justify-content-between p-2 border-bottom"
+        <div class="d-flex align-items-center justify-content-between p-2 border-bottom library-item"
           (click)="addLibraryFromPaginatedList(library)">
           <div class="flex-fill">
             <div class="fw-medium text-truncate text-white">{{ getLibraryDisplayName(library) }}</div>
@@ -85,9 +85,7 @@
               <span class="fw-medium text-info">v{{ getLibraryVersion(library) }}</span>
             </div>
           </div>
-          <button class="btn btn-outline-secondary btn-sm" title="Edit CQL">
-            <i class="bi bi-pencil"></i>
-          </button>
+          <i class="bi bi-folder-open library-hover-icon"></i>
         </div>
         }
 
@@ -178,23 +176,4 @@
     </div>
     }
   </div>
-
-  <!-- Evaluation Actions -->
-  @if (ideStateService.libraryResources().length > 0) {
-  <div class="mb-3">
-    <div class="px-3 py-2 fw-semibold text-uppercase small text-muted">Evaluation</div>
-    <div class="px-3">
-      <button class="btn btn-success w-100" (click)="executeAll()"
-        [disabled]="!canExecuteAll() || ideStateService.isEvaluating()" title="Execute All">
-        @if (!ideStateService.isEvaluating()) {
-        <i class="bi bi-play me-1"></i>
-        }
-        @if (ideStateService.isEvaluating()) {
-        <i class="bi bi-arrow-clockwise me-1"></i>
-        }
-        {{ ideStateService.isEvaluating() ? 'Executing...' : 'Execute All Open Libraries' }}
-      </button>
-    </div>
-  </div>
-  }
 </div>

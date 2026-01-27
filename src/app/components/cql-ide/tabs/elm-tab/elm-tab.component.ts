@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Component, Input, Output, EventEmitter, effect } from '@angular/core';
+import { Component, input, output, effect, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { SettingsService } from '../../../../services/settings.service';
@@ -16,14 +16,28 @@ import { SyntaxHighlighterComponent } from '../../../shared/syntax-highlighter/s
   styleUrls: ['./elm-tab.component.scss']
 })
 export class ElmTabComponent {
-  @Input() cqlContent: string = '';
-  @Input() isTranslating: boolean = false;
-  @Input() elmTranslationResults: string | null = null;
+  // Use signal-based inputs (preferred in Angular 21)
+  cqlContent = input<string>('');
+  isTranslating = input<boolean>(false);
+  elmTranslationResults = input<string | null>(null);
   
-  @Output() translateCqlToElm = new EventEmitter<void>();
-  @Output() clearElmTranslation = new EventEmitter<void>();
+  // Use signal-based outputs (preferred in Angular 21)
+  translateCqlToElm = output<void>();
+  clearElmTranslation = output<void>();
 
   private previousLibraryId: string | null = null;
+
+  // Computed property that formats the ELM XML results
+  // This ensures the syntax highlighter always gets the latest formatted XML
+  // Since elmTranslationResults is now a signal input, it's automatically reactive
+  formattedElmXml = computed(() => {
+    const xml = this.elmTranslationResults() || '';
+    if (!xml) {
+      return '';
+    }
+    // Format XML using browser-native APIs before passing to Prism
+    return this.formatXml(xml);
+  });
 
   constructor(
     public settingsService: SettingsService,
@@ -74,13 +88,13 @@ export class ElmTabComponent {
   }
 
   onDownloadElmXml(): void {
-    const xml = this.elmTranslationResults;
+    const xml = this.elmTranslationResults();
     if (!xml) {
       return;
     }
     
     // Get the formatted XML
-    const formattedXml = this.elmTranslationResultsAsString();
+    const formattedXml = this.formattedElmXml();
     
     // Generate filename from library name if available, otherwise use timestamp
     const activeLibrary = this.ideStateService.getActiveLibraryResource();
@@ -99,14 +113,6 @@ export class ElmTabComponent {
     window.URL.revokeObjectURL(url);
   }
 
-  elmTranslationResultsAsString(): string {
-    const xml = this.elmTranslationResults || '';
-    if (!xml) {
-      return '';
-    }
-    // Format XML using browser-native APIs before passing to Prism
-    return this.formatXml(xml);
-  }
 
   /**
    * Pretty format XML using browser-native APIs (no dependencies required)

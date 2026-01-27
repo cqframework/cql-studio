@@ -36,19 +36,29 @@ export class SyntaxHighlighterComponent implements AfterViewInit {
   }
 
   private highlightCode(): void {
-    if (this.preElement() && this.code()) {
-      if (typeof Prism !== 'undefined') {
+    if (this.preElement() && this.codeElement()) {
+      const codeElement = this.codeElement()!.nativeElement;
+      const code = this.code() || '';
+      
+      // Always update the text content first to ensure Prism has fresh content to highlight
+      // This is critical when the code changes - Prism modifies the DOM, so we need to reset it
+      codeElement.textContent = code;
+      
+      if (code && typeof Prism !== 'undefined') {
         // Auto-detect language if not specified
         const detectedLanguage = this.detectLanguage();
         const languageClass = `language-${detectedLanguage}`;
         
         // Set the language class on the code element
-        if (this.codeElement()) {
-          this.codeElement()!.nativeElement.className = languageClass;
-        }
+        codeElement.className = languageClass;
         
         // Use PrismJS to highlight and apply line numbers
-        Prism.highlightAllUnder(this.preElement()!.nativeElement);
+        // highlightElement is more reliable than highlightAllUnder for single elements
+        Prism.highlightElement(codeElement);
+      } else if (!code) {
+        // Clear the element if there's no code
+        codeElement.textContent = '';
+        codeElement.className = '';
       } else {
         // PrismJS not loaded yet, retry after a short delay
         setTimeout(() => {

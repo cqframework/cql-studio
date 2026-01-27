@@ -323,7 +323,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.setExecutionStatus('Translating CQL to ELM...');
     this.ideStateService.setTranslating(true);
 
-    // Translate CQL to ELM using the translation service
+    // Translate CQL to ELM using the translation service (as if triggered from ELM tab)
     const translationResult = this.translationService.translateCqlToElm(currentContent);
     
     // Update translation state with errors/warnings
@@ -333,16 +333,22 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     
     this.ideStateService.setTranslating(false);
 
-    if (translationResult.hasErrors) {
-      console.error('Translation failed with errors:', translationResult.errors);
-      this.ideStateService.setExecutionStatus('Translation failed - see errors in ELM tab');
+    // Set ELM results in state (for display in ELM tab)
+    this.ideStateService.setElmTranslationResults(translationResult.elmXml);
+
+    // Check if we have ELM XML to save (even if there are errors, we may have partial results)
+    if (!translationResult.elmXml) {
+      console.error('Translation failed - no ELM XML generated');
+      this.ideStateService.setExecutionStatus('Translation failed - no ELM output generated');
       
       // Add error message to Console pane
       const libraryName = activeLibrary.name || activeLibrary.id || 'Library';
-      const errorMessages = translationResult.errors.join('\n');
+      const errorMessages = translationResult.errors.length > 0 
+        ? translationResult.errors.join('\n')
+        : 'Translation failed to generate ELM XML';
       this.ideStateService.addTextOutput(
         `Save Failed: ${libraryName}`,
-        `Failed to save library "${libraryName}" due to translation errors.\n\nErrors:\n${errorMessages}`,
+        `Failed to save library "${libraryName}" - no ELM XML was generated.\n\nErrors:\n${errorMessages}`,
         'error'
       );
       
@@ -351,9 +357,6 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
         isDirty: true
       });
       
-      // Set ELM results even if there are errors (may have partial results)
-      this.ideStateService.setElmTranslationResults(translationResult.elmXml);
-      
       // Clear error status after a short delay
       setTimeout(() => {
         this.ideStateService.setExecutionStatus('');
@@ -361,8 +364,23 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       return;
     }
 
-    console.log('Translation successful');
-    this.ideStateService.setExecutionStatus('Saving library...');
+    // If we have ELM XML, proceed with saving (even if there are errors)
+    if (translationResult.hasErrors) {
+      console.warn('Translation completed with errors, but ELM XML is available. Proceeding with save.');
+      this.ideStateService.setExecutionStatus('Saving library (with translation warnings)...');
+      
+      // Add warning message to Console pane (using 'error' status since there are translation errors)
+      const libraryName = activeLibrary.name || activeLibrary.id || 'Library';
+      const errorMessages = translationResult.errors.join('\n');
+      this.ideStateService.addTextOutput(
+        `Save Warning: ${libraryName}`,
+        `Library "${libraryName}" saved with translation errors.\n\nErrors:\n${errorMessages}\n\nELM XML was generated and saved.`,
+        'error'
+      );
+    } else {
+      console.log('Translation successful');
+      this.ideStateService.setExecutionStatus('Saving library...');
+    }
 
     // Update the library resource with current content
     this.ideStateService.updateLibraryResource(activeLibrary.id, {
@@ -370,20 +388,19 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       isDirty: false
     });
 
-    // Set ELM results
-    this.ideStateService.setElmTranslationResults(translationResult.elmXml);
-
     // Check if this is a new library (no FHIR library object) or existing library
     // Also check if the ID has changed (which requires creating a new library)
     const hasExistingLibrary = activeLibrary.library && activeLibrary.library.id;
     const idHasChanged = hasExistingLibrary && activeLibrary.library && activeLibrary.library.id !== activeLibrary.id;
     
+    // Always include ELM XML in the Library content per FHIR Library resource specifications
+    // The ELM XML is base64 encoded and included with contentType 'application/elm+xml'
     if (hasExistingLibrary && !idHasChanged) {
       // Update existing library (ID hasn't changed)
-      this.updateExistingLibrary(activeLibrary.library, currentContent, translationResult.elmXml || '');
+      this.updateExistingLibrary(activeLibrary.library, currentContent, translationResult.elmXml);
     } else {
       // Create new library (either no existing library or ID has changed)
-      this.createNewLibrary(activeLibrary, currentContent, translationResult.elmXml || '');
+      this.createNewLibrary(activeLibrary, currentContent, translationResult.elmXml);
     }
   }
 
@@ -534,18 +551,50 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     }
     
     this.ideStateService.setExecuting(true);
+    this.ideStateService.setExecutionStatus('Translating CQL to ELM...');
     
     // Get selected patient IDs
     const patientIds = this.patientService.selectedPatients.map(p => p.id).filter(id => id) as string[];
     
+    // Get current CQL content from memory (even if not saved)
+    const currentCqlContent = activeLibrary.cqlContent || '';
+    
+    // Translate CQL to ELM using the translation service (similar to Save)
+    const translationResult = this.translationService.translateCqlToElm(currentCqlContent);
+    
+    // Update translation state with errors/warnings
+    this.ideStateService.setTranslationErrors(translationResult.errors);
+    this.ideStateService.setTranslationWarnings(translationResult.warnings);
+    this.ideStateService.setTranslationMessages(translationResult.messages);
+    
+    // Set ELM results in state (for display in ELM tab)
+    this.ideStateService.setElmTranslationResults(translationResult.elmXml);
+    
+    // Check if we have ELM XML (even if there are errors, we may have partial results)
+    if (!translationResult.elmXml) {
+      console.warn('Translation failed - no ELM XML generated, executing without ELM');
+      this.ideStateService.setExecutionStatus('Executing (translation failed, no ELM)...');
+    } else {
+      this.ideStateService.setExecutionStatus('Executing library...');
+    }
+    
     // Execute single library using CQL execution service
+    // Pass current CQL content, ELM XML, and library metadata for encoding
     this.cqlExecutionService.executeLibrary(
       activeLibrary.id, 
-      patientIds
+      patientIds,
+      {
+        cqlContent: currentCqlContent,
+        elmXml: translationResult.elmXml || undefined,
+        libraryName: activeLibrary.name,
+        libraryVersion: activeLibrary.version,
+        libraryUrl: activeLibrary.url
+      }
     ).subscribe({
       next: (result) => {
         console.log('Library execution completed:', result);
         this.ideStateService.setExecuting(false);
+        this.ideStateService.setExecutionStatus('');
         
         // Format and add results to output sections
         this.formatAndAddExecutionResults(result, `Library: ${activeLibrary.name || activeLibrary.id}`);
@@ -553,6 +602,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       error: (error) => {
         console.error('Library execution failed:', error);
         this.ideStateService.setExecuting(false);
+        this.ideStateService.setExecutionStatus('');
         
         // Add error to output sections
         this.addErrorToOutput(`Library: ${activeLibrary.name || activeLibrary.id}`, error);

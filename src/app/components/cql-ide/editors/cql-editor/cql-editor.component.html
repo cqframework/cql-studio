@@ -5,7 +5,7 @@
       <button 
         class="btn btn-success btn-sm" 
         (click)="onExecuteLibrary()" 
-        [disabled]="!canExecute() || isExecuting" 
+        [disabled]="isExecuting" 
         title="Execute Library"
       >
         @if (!isExecuting) {
