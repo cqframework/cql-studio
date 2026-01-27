@@ -39,13 +39,11 @@
               [placeholder]="'Start writing CQL...'"
               [height]="'100%'"
               [readonly]="false"
-              [cqlVersion]="'1.5.3'"
               [isNewLibrary]="!library.library"
               (contentChange)="onEditorContentChange($event, library.id)"
               (syntaxErrors)="onEditorSyntaxErrors($event)"
               (executeLibrary)="onExecuteLibrary()"
               (reloadLibrary)="onReloadLibrary()"
-              (cqlVersionChange)="onCqlVersionChange($event)"
               (formatCql)="onFormatCql()"
               (validateCql)="onValidateCql()"
               (saveLibrary)="onSaveLibrary()">

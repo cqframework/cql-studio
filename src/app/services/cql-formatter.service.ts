@@ -1,63 +1,32 @@
 // Author: Preston Lee
 
-import { Injectable, inject } from '@angular/core';
-import { TranslationService } from './translation.service';
-import { CqlGrammarManager } from './cql-grammar-manager.service';
+import { Injectable } from '@angular/core';
 
 export interface FormatOptions {
-  validateBeforeFormat?: boolean;
   indentSize?: number;
-  preserveComments?: boolean;
 }
 
 export interface FormatResult {
   formatted: string;
   success: boolean;
   errors?: string[];
-  warnings?: string[];
-}
-
-interface CqlSection {
-  type: 'library' | 'using' | 'context' | 'parameter' | 'function' | 'define' | 'comment' | 'empty' | 'other';
-  content: string;
-  originalLines: number[];
-  indentLevel: number;
 }
 
 @Injectable({
   providedIn: 'root'
 })
 export class CqlFormatterService {
-  private translationService = inject(TranslationService);
   private indentSize = 2;
 
   /**
-   * Format CQL code according to official CQL formatting conventions
+   * Format CQL code - simple, reliable formatting similar to reference project approach
    */
   format(cql: string, options: FormatOptions = {}): FormatResult {
-    const opts: Required<FormatOptions> = {
-      validateBeforeFormat: options.validateBeforeFormat ?? true,
-      indentSize: options.indentSize ?? 2,
-      preserveComments: options.preserveComments ?? true
-    };
-
-    this.indentSize = opts.indentSize;
-
-    // Validate before formatting if requested
-    if (opts.validateBeforeFormat) {
-      const validation = this.validate(cql);
-      if (validation.hasErrors) {
-        return {
-          formatted: cql,
-          success: false,
-          errors: validation.errors,
-          warnings: validation.warnings
-        };
-      }
-    }
+    const indentSize = options.indentSize ?? 2;
+    this.indentSize = indentSize;
 
     try {
-      const formatted = this.formatCode(cql, opts);
+      const formatted = this.formatCode(cql);
       return {
         formatted,
         success: true
@@ -73,74 +42,23 @@ export class CqlFormatterService {
   }
 
   /**
-   * Validate CQL code using the translation service
+   * Simple, reliable formatting logic
+   * Based on CodeMirror's indent/dedent pattern: { regex: /[\{\[\(]/, indent: true }, { regex: /[\}\]\)]/, dedent: true }
    */
-  private validate(cql: string): { hasErrors: boolean; errors: string[]; warnings: string[] } {
-    const result = this.translationService.translateCqlToElm(cql);
-    return {
-      hasErrors: result.hasErrors,
-      errors: result.errors,
-      warnings: result.warnings
-    };
-  }
-
-  /**
-   * Main formatting logic
-   */
-  private formatCode(cql: string, options: Required<FormatOptions>): string {
+  private formatCode(cql: string): string {
     if (!cql || !cql.trim()) {
       return cql;
     }
 
-    const sections = this.parseSections(cql);
-    const formattedSections: string[] = [];
-    let previousSectionType: string = '';
-
-    for (let i = 0; i < sections.length; i++) {
-      const section = sections[i];
-      
-      // Add blank line between major sections
-      if (section.type !== 'empty' && section.type !== 'comment' && 
-          previousSectionType && previousSectionType !== section.type &&
-          (previousSectionType === 'library' || previousSectionType === 'using' || 
-           previousSectionType === 'context' || previousSectionType === 'parameter' ||
-           previousSectionType === 'function' || previousSectionType === 'define')) {
-        if (formattedSections.length > 0 && formattedSections[formattedSections.length - 1].trim()) {
-          formattedSections.push('');
-        }
-      }
-
-      const formatted = this.formatSection(section, options);
-      if (formatted) {
-        formattedSections.push(formatted);
-      }
-
-      if (section.type !== 'empty') {
-        previousSectionType = section.type;
-      }
-    }
-
-    // Remove trailing empty lines
-    while (formattedSections.length > 0 && !formattedSections[formattedSections.length - 1].trim()) {
-      formattedSections.pop();
-    }
-
-    const result = formattedSections.join('\n');
-    return result + (cql.endsWith('\n') ? '\n' : '');
-  }
-
-  /**
-   * Parse CQL into logical sections
-   */
-  private parseSections(cql: string): CqlSection[] {
     const lines = cql.split('\n');
-    const sections: CqlSection[] = [];
-    let currentSection: CqlSection | null = null;
+    const formatted: string[] = [];
     let indentLevel = 0;
     let inMultiLineComment = false;
+    let previousWasEmpty = false;
+    let previousSection: string | null = null;
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+      let line = lines[i];
       const trimmed = line.trim();
 
       // Track multi-line comments
@@ -151,201 +69,205 @@ export class CqlFormatterService {
         inMultiLineComment = false;
       }
 
-      // Empty lines
+      // Handle empty lines - preserve one between sections
       if (!trimmed) {
-        if (currentSection && currentSection.type !== 'empty') {
-          sections.push(currentSection);
-          currentSection = null;
+        if (!previousWasEmpty && formatted.length > 0) {
+          formatted.push('');
+          previousWasEmpty = true;
         }
-        sections.push({
-          type: 'empty',
-          content: '',
-          originalLines: [i],
-          indentLevel: 0
-        });
         continue;
       }
+      previousWasEmpty = false;
 
-      // Comments
+      // Preserve comments as-is (with their original indentation preserved)
       if (trimmed.startsWith('//') || inMultiLineComment || trimmed.includes('/*') || trimmed.includes('*/')) {
-        if (currentSection && currentSection.type !== 'comment') {
-          sections.push(currentSection);
-          currentSection = null;
-        }
-        if (!currentSection) {
-          currentSection = {
-            type: 'comment',
-            content: line,
-            originalLines: [i],
-            indentLevel: 0
-          };
-        } else {
-          currentSection.content += '\n' + line;
-          currentSection.originalLines.push(i);
-        }
+        // Preserve comment indentation relative to current indent level
+        const commentIndent = ' '.repeat(indentLevel * this.indentSize);
+        formatted.push(commentIndent + trimmed);
         continue;
       }
 
-      // Detect section type
-      let sectionType: CqlSection['type'] = 'other';
+      // Detect section starts (reset indent for top-level declarations)
+      let sectionType: string | null = null;
+      let isTopLevelDeclaration = false;
       if (trimmed.match(/^library\s+/i)) {
         sectionType = 'library';
+        isTopLevelDeclaration = true;
         indentLevel = 0;
       } else if (trimmed.match(/^using\s+/i)) {
         sectionType = 'using';
+        isTopLevelDeclaration = true;
         indentLevel = 0;
       } else if (trimmed.match(/^context\s+/i)) {
         sectionType = 'context';
+        isTopLevelDeclaration = true;
         indentLevel = 0;
       } else if (trimmed.match(/^parameter\s+/i)) {
         sectionType = 'parameter';
+        isTopLevelDeclaration = true;
         indentLevel = 0;
       } else if (trimmed.match(/^function\s+/i)) {
         sectionType = 'function';
+        isTopLevelDeclaration = true;
         indentLevel = 0;
       } else if (trimmed.match(/^define\s+/i)) {
         sectionType = 'define';
+        isTopLevelDeclaration = true;
         indentLevel = 0;
       }
 
-      // Calculate indent level for non-section-start lines
-      if (sectionType === 'other' && currentSection) {
-        // Check if this line should be indented (part of a block)
-        if (trimmed.match(/^[}\]\)]/)) {
-          indentLevel = Math.max(0, indentLevel - 1);
+      // Add blank line between major sections
+      if (sectionType && previousSection && previousSection !== sectionType) {
+        if (formatted.length > 0 && formatted[formatted.length - 1].trim()) {
+          formatted.push('');
         }
       }
-
-      // Start new section or continue current
-      if (sectionType !== 'other') {
-        if (currentSection && currentSection.type !== sectionType) {
-          sections.push(currentSection);
-        }
-        currentSection = {
-          type: sectionType,
-          content: line,
-          originalLines: [i],
-          indentLevel: 0
-        };
-      } else {
-        if (!currentSection) {
-          currentSection = {
-            type: 'other',
-            content: line,
-            originalLines: [i],
-            indentLevel: indentLevel
-          };
-        } else {
-          currentSection.content += '\n' + line;
-          currentSection.originalLines.push(i);
-          currentSection.indentLevel = indentLevel;
-        }
+      if (sectionType) {
+        previousSection = sectionType;
       }
 
-      // Update indent level for next iteration
-      if (trimmed.match(/[{\[\(]/) && !trimmed.match(/[}\]\)]/)) {
-        indentLevel++;
-      } else if (sectionType === 'define' || sectionType === 'function' || sectionType === 'parameter') {
-        // Check if line ends with colon (CQL pattern for block start)
-        if (trimmed.endsWith(':') || trimmed.match(/:\s*$/)) {
-          indentLevel++;
-        }
-      }
-    }
-
-    if (currentSection) {
-      sections.push(currentSection);
-    }
-
-    return sections;
-  }
-
-  /**
-   * Format a single section
-   */
-  private formatSection(section: CqlSection, options: Required<FormatOptions>): string {
-    if (section.type === 'empty') {
-      return '';
-    }
-
-    if (section.type === 'comment') {
-      return options.preserveComments ? section.content : section.content.trim();
-    }
-
-    const lines = section.content.split('\n');
-    const formattedLines: string[] = [];
-    let currentIndent = section.indentLevel;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-
-      if (!trimmed) {
-        formattedLines.push('');
-        continue;
-      }
-
-      // Calculate indentation
+      // Calculate indentation for THIS line
+      // First, check if line starts with closing brace/bracket (dedent before the line)
+      let currentIndent = indentLevel;
       if (trimmed.match(/^[}\]\)]/)) {
-        currentIndent = Math.max(0, currentIndent - 1);
+        currentIndent = Math.max(0, indentLevel - 1);
       }
 
+      // Format the line with current indent
       const indent = ' '.repeat(currentIndent * this.indentSize);
-      const formattedLine = this.formatLine(trimmed, section.type);
+      const formattedLine = this.formatLine(trimmed);
+      formatted.push(indent + formattedLine);
 
-      formattedLines.push(indent + formattedLine);
+      // Update indent level for NEXT line based on THIS line's content
+      // Count opening and closing braces/brackets/parentheses
+      const openBraces = (trimmed.match(/[{\[\(]/g) || []).length;
+      const closeBraces = (trimmed.match(/[}\]\)]/g) || []).length;
+      const netBraces = openBraces - closeBraces;
+      
+      // Adjust indent level: opening braces increase, closing braces decrease
+      indentLevel += netBraces;
+      indentLevel = Math.max(0, indentLevel);
 
-      // Update indent for next line
-      if (trimmed.match(/[{\[\(]/) && !trimmed.match(/[}\]\)]/)) {
-        currentIndent++;
-      } else if (trimmed.endsWith(':') || trimmed.match(/:\s*$/)) {
-        if (section.type === 'define' || section.type === 'function' || section.type === 'parameter') {
-          currentIndent++;
-        }
-      } else if (trimmed.match(/^\s*(if|then|where|let|with|return)\s+/i) && 
-                 !trimmed.match(/^(define|function|parameter|library|using|context)\s+/i)) {
-        // Check if this is a multi-line construct
-        if (i < lines.length - 1) {
-          const nextLine = lines[i + 1]?.trim() || '';
-          if (nextLine && !nextLine.match(/^(define|function|parameter|library|using|context|if|then|else|end)\s+/i)) {
-            if (!trimmed.match(/;\s*$/)) {
-              currentIndent++;
-            }
-          }
-        }
+      // Special case: colon at end of define/function/parameter declaration increases indent
+      // This handles CQL's pattern: "define X:" followed by indented body
+      if (trimmed.match(/:\s*$/) && (sectionType === 'define' || sectionType === 'function' || sectionType === 'parameter')) {
+        indentLevel++;
       }
     }
 
-    return formattedLines.join('\n');
+    // Remove trailing empty lines
+    while (formatted.length > 0 && !formatted[formatted.length - 1].trim()) {
+      formatted.pop();
+    }
+
+    const result = formatted.join('\n');
+    return result + (cql.endsWith('\n') ? '\n' : '');
   }
 
   /**
-   * Format a single line according to CQL conventions
+   * Format a single line - minimal formatting like reference project
+   * Uses word boundaries for text operators to avoid matching inside function names (e.g., "Floor" contains "or")
+   * Preserves operator integrity (e.g., "<=" stays as "<=", never becomes "< =")
    */
-  private formatLine(line: string, sectionType: CqlSection['type']): string {
-    // Preserve strings and comments
+  private formatLine(line: string): string {
+    // Preserve strings by replacing with placeholders
     const stringPlaceholders: string[] = [];
     let placeholderIndex = 0;
-    const placeholderPrefix = `__CQL_STRING_${Date.now()}_`;
+    const placeholderPrefix = `__STR_${Date.now()}_`;
 
-    // Replace strings with placeholders
+    // Replace strings (both single and double quotes)
     let processed = line.replace(/"([^"\\]*(\\.[^"\\]*)*)"|'([^'\\]*(\\.[^'\\]*)*)'/g, (match) => {
       const placeholder = `${placeholderPrefix}${placeholderIndex++}__`;
       stringPlaceholders.push(match);
       return placeholder;
     });
 
-    // Normalize whitespace (but preserve structure)
+    // First, fix compound operators that might have spaces incorrectly inserted
+    // This ensures "< = " becomes "<=" (no space inside operator)
+    processed = processed
+      .replace(/\s*<\s*=\s*/g, '<=')  // Fix "< = " to "<="
+      .replace(/\s*>\s*=\s*/g, '>=')  // Fix "> = " to ">="
+      .replace(/\s*<\s*>\s*/g, '<>')  // Fix "< > " to "<>"
+      .replace(/\s*!\s*=\s*/g, '!=')  // Fix "! = " to "!="
+      .replace(/\s*=\s*=\s*/g, '=='); // Fix "= = " to "==" (if used)
+
+    // Normalize whitespace (multiple spaces to single space)
     processed = processed.replace(/\s+/g, ' ').trim();
 
-    // Format operators with proper spacing
-    processed = this.formatOperators(processed);
+    // Separate operators into text operators (need word boundaries) and symbol operators
+    const textOperators = ['and', 'or', 'not', 'xor', 'implies'];
+    const symbolOperators = ['<=', '>=', '<>', '!=', '+', '-', '*', '/', '=', '<', '>'];
+    
+    // Process text operators with word boundaries (like reference project: \b...\b)
+    // This ensures "or" doesn't match inside "Floor" or "Before"
+    // Sort by length to match longer operators first
+    const sortedTextOps = textOperators.sort((a, b) => b.length - a.length);
+    for (const op of sortedTextOps) {
+      const escapedOp = op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Use word boundaries - only match when operator is a standalone word
+      processed = processed.replace(
+        new RegExp(`\\b${escapedOp}\\b`, 'gi'),
+        (match, offset, string) => {
+          // Check if spaces are needed around the operator
+          const beforeChar = offset > 0 ? string[offset - 1] : '';
+          const afterChar = offset + match.length < string.length ? string[offset + match.length] : '';
+          const needsSpaceBefore = beforeChar && !/\s/.test(beforeChar);
+          const needsSpaceAfter = afterChar && !/\s/.test(afterChar);
+          return (needsSpaceBefore ? ' ' : '') + op.toLowerCase() + (needsSpaceAfter ? ' ' : '');
+        }
+      );
+    }
 
-    // Format keywords (ensure lowercase and proper spacing)
-    processed = this.formatKeywords(processed);
+    // Process symbol operators - must process longer operators first to avoid splitting compound operators
+    // Sort by length descending so "<=" is processed before "<"
+    const sortedSymbolOps = symbolOperators.sort((a, b) => b.length - a.length);
+    for (const op of sortedSymbolOps) {
+      const escapedOp = op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      
+      // For compound operators (2+ chars), ensure they have spaces around them (but not inside)
+      if (op.length >= 2) {
+        // Match the operator and ensure it has spaces before and after (but keep operator intact)
+        processed = processed.replace(
+          new RegExp(`([^\\s])${escapedOp}([^\\s])`, 'g'),
+          `$1 ${op} $2`
+        );
+        // Also handle cases where operator is at start/end
+        processed = processed.replace(
+          new RegExp(`^${escapedOp}([^\\s])`, 'g'),
+          `${op} $1`
+        );
+        processed = processed.replace(
+          new RegExp(`([^\\s])${escapedOp}$`, 'g'),
+          `$1 ${op}`
+        );
+      } else {
+        // For single-char operators, add space around if not already present
+        // But be careful not to break compound operators - check that adjacent chars aren't part of compound ops
+        processed = processed.replace(
+          new RegExp(`([^\\s<=>!])${escapedOp}([^\\s<=>!=])`, 'g'),
+          `$1 ${op} $2`
+        );
+        // Handle at start/end
+        processed = processed.replace(
+          new RegExp(`^${escapedOp}([^\\s<=>!=])`, 'g'),
+          `${op} $1`
+        );
+        processed = processed.replace(
+          new RegExp(`([^\\s<=>!])${escapedOp}$`, 'g'),
+          `$1 ${op}`
+        );
+      }
+    }
 
-    // Format punctuation
-    processed = this.formatPunctuation(processed);
+    // Normalize punctuation spacing
+    processed = processed
+      .replace(/\s*,\s*/g, ', ')  // Comma: space after
+      .replace(/\s*;\s*/g, '; ')   // Semicolon: space after
+      .replace(/\s*:\s*/g, ' : ') // Colon: space around
+      .replace(/\s*\(\s*/g, '(')   // Opening paren: no space inside
+      .replace(/\s*\)\s*/g, ')')  // Closing paren: no space inside
+      .replace(/\s+/g, ' ')         // Clean up multiple spaces
+      .trim();
 
     // Restore strings
     stringPlaceholders.forEach((originalString, index) => {
@@ -353,97 +275,6 @@ export class CqlFormatterService {
       processed = processed.replace(placeholder, originalString);
     });
 
-    // Final cleanup
-    processed = processed.replace(/\s+/g, ' ').trim();
-
     return processed;
-  }
-
-  /**
-   * Format operators with proper spacing
-   */
-  private formatOperators(line: string): string {
-    // Operators that need spaces around them
-    const operators = ['+', '-', '*', '/', '=', '<>', '!=', '<', '>', '<=', '>=', 'and', 'or', 'not', 'xor', 'implies'];
-    
-    // Sort by length to match longer operators first
-    const sortedOps = operators.sort((a, b) => b.length - a.length);
-
-    for (const op of sortedOps) {
-      if (op.length > 0) {
-        const escapedOp = op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        
-        // Add space around operator (avoid double spaces)
-        line = line.replace(
-          new RegExp(`([^\\s])${escapedOp}([^\\s])`, 'g'),
-          `$1 ${op} $2`
-        );
-        
-        // Handle operators at start of line
-        line = line.replace(
-          new RegExp(`^${escapedOp}([^\\s])`, 'g'),
-          `${op} $1`
-        );
-        
-        // Handle operators at end of line
-        line = line.replace(
-          new RegExp(`([^\\s])${escapedOp}$`, 'g'),
-          `$1 ${op}`
-        );
-      }
-    }
-
-    return line;
-  }
-
-  /**
-   * Format keywords (ensure lowercase and proper spacing)
-   */
-  private formatKeywords(line: string): string {
-    const keywords = [
-      'library', 'using', 'context', 'parameter', 'function', 'define',
-      'return', 'if', 'then', 'else', 'where', 'let', 'with', 'as',
-      'from', 'and', 'or', 'not', 'null', 'true', 'false'
-    ];
-
-    // Sort by length (longest first) to avoid partial matches
-    const sortedKeywords = keywords.sort((a, b) => b.length - a.length);
-
-    for (const keyword of sortedKeywords) {
-      // First, normalize case
-      const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
-      line = line.replace(regex, keyword.toLowerCase());
-      
-      // Then ensure space after keyword (but not if followed by parenthesis, colon, or already has space)
-      line = line.replace(
-        new RegExp(`\\b${keyword.toLowerCase()}(?!\\s*[(:\\s])(?=\\S)`, 'g'),
-        keyword.toLowerCase() + ' '
-      );
-    }
-
-    return line;
-  }
-
-  /**
-   * Format punctuation with proper spacing
-   */
-  private formatPunctuation(line: string): string {
-    // Colons: space around (for type annotations)
-    line = line.replace(/\s*:\s*/g, ' : ');
-    
-    // Commas: space after
-    line = line.replace(/\s*,\s*/g, ', ');
-    
-    // Semicolons: space after
-    line = line.replace(/\s*;\s*/g, '; ');
-    
-    // Parentheses: no space inside
-    line = line.replace(/\s*\(\s*/g, '(');
-    line = line.replace(/\s*\)\s*/g, ')');
-    
-    // Clean up multiple spaces
-    line = line.replace(/\s+/g, ' ').trim();
-
-    return line;
   }
 }

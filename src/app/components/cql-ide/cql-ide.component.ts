@@ -627,14 +627,9 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     });
   }
 
-  onCqlVersionChange(version: string): void {
-    console.log('CQL version changed:', version);
-    // TODO: Update CQL version
-  }
-
   onFormatCql(): void {
-    console.log('Format CQL');
-    // TODO: Implement CQL formatting
+    // Formatting is handled by the CqlEditorComponent
+    // This method is called when the format button is clicked in the IDE toolbar
   }
 
   onValidateCql(): void {

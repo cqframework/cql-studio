@@ -8,8 +8,8 @@ import { Extension } from '@codemirror/state';
 import { StreamLanguage } from '@codemirror/language';
 import { indentOnInput } from '@codemirror/language';
 
-// Supported CQL versions
-export type CqlVersion = '1.5.3' | '2.0.0-ballot';
+// Fixed CQL version
+export type CqlVersion = '1.5.3';
 
 // Grammar definition interface
 export interface CqlGrammarDefinition {
@@ -26,154 +26,79 @@ export interface CqlGrammarDefinition {
   };
 }
 
-// Grammar registry - centralized place to manage all versions
-const GRAMMAR_REGISTRY: Record<CqlVersion, CqlGrammarDefinition> = {
-  '1.5.3': {
-    version: '1.5.3',
-    keywords: [
-      // CQL 1.5.3 keywords from official specification
-      'library', 'using', 'include', 'define', 'function', 'parameter', 'context',
-      'public', 'private', 'valueset', 'codesystem', 'code', 'concept', 'where',
-      'return', 'if', 'then', 'else', 'end', 'and', 'or', 'not', 'xor', 'implies',
-      'true', 'false', 'null', 'exists', 'in', 'contains', 'properly', 'starts',
-      'ends', 'matches', 'like', 'from', 'as', 'let', 'with', 'such', 'that',
-      'all', 'any', 'some', 'every', 'distinct', 'sort', 'by', 'asc', 'desc',
-      'union', 'intersect', 'except', 'times', 'divide', 'mod', 'div', 'is',
-      'cast', 'convert', 'to', 'of', 'between', 'during', 'meets', 'overlaps',
-      'includes', 'included', 'within', 'same', 'after', 'before', 'on', 'more',
-      'less', 'equal', 'greater', 'than', 'called', 'version', 'default', 'display',
-      'collapse', 'expand', 'flatten', 'fluent', 'per', 'point', 'predecessor',
-      'successor', 'singleton', 'start', 'starting', 'timezoneoffset', 'when',
-      'width', 'without', 'year', 'years', 'month', 'months', 'week', 'weeks',
-      'day', 'days', 'hour', 'hours', 'minute', 'minutes', 'second', 'seconds',
-      'millisecond', 'milliseconds', 'maximum', 'minimum', 'difference', 'duration',
-      'occurs', 'or after', 'or before', 'or less', 'or more'
-    ],
-    functions: [
-      // CQL 1.5.3 functions from official specification
-      'Abs', 'Add', 'After', 'AllTrue', 'AnyTrue', 'As', 'Avg', 'Before', 'CanConvert',
-      'Ceiling', 'Coalesce', 'Code', 'CodeSystem', 'Concept', 'ConvertsToBoolean',
-      'ConvertsToDate', 'ConvertsToDateTime', 'ConvertsToDecimal', 'ConvertsToInteger',
-      'ConvertsToLong', 'ConvertsToQuantity', 'ConvertsToString', 'ConvertsToTime',
-      'Count', 'Date', 'DateTime', 'Day', 'DaysBetween', 'Distinct', 'DurationBetween',
-      'Ends', 'Exists', 'Exp', 'Expand', 'First', 'Floor', 'Flatten', 'GeometricMean',
-      'HighBoundary', 'Hour', 'HoursBetween', 'Identifier', 'If', 'IndexOf', 'Instance',
-      'Interval', 'Is', 'IsNull', 'IsTrue', 'Last', 'Length', 'List', 'Ln', 'Log',
-      'LowBoundary', 'Lower', 'Matches', 'Max', 'Maximum', 'Mean', 'Median', 'Min',
-      'Minimum', 'Minute', 'MinutesBetween', 'Mode', 'Modulo', 'Month', 'MonthsBetween',
-      'Multiply', 'Negate', 'Not', 'Now', 'Null', 'PointFrom', 'PopulationStdDev',
-      'PopulationVariance', 'Power', 'Predecessor', 'Product', 'Properly', 'Quantity',
-      'Round', 'Second', 'SecondsBetween', 'Singletons', 'Size', 'Split', 'Sqrt',
-      'Starts', 'StdDev', 'String', 'Substring', 'Subtract', 'Sum', 'Time',
-      'TimeOfDay', 'Today', 'ToBoolean', 'ToConcept', 'ToDate', 'ToDateTime',
-      'ToDecimal', 'ToInteger', 'ToLong', 'ToQuantity', 'ToString', 'ToTime',
-      'Truncate', 'Union', 'Upper', 'Variance', 'Width', 'Year', 'YearsBetween'
-    ],
-    dataTypes: [
-      'Boolean', 'Integer', 'Long', 'Decimal', 'String', 'DateTime', 'Date', 'Time',
-      'Quantity', 'Ratio', 'Code', 'Concept', 'CodeableConcept', 'Coding', 'Identifier',
-      'Reference', 'Period', 'Range', 'Interval', 'List', 'Tuple', 'Choice'
-    ],
-    operators: ['+', '-', '*', '/', '=', '<>', '!=', '<', '>', '<=', '>=', 'and', 'or', 'not', 'xor', 'implies'],
-    patterns: {
-      string: /"[^"\\]*(\\.[^"\\]*)*"/,
-      number: /\d+\.?\d*L?/,
-      datetime: /@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?/,
-      identifier: /[a-zA-Z_][a-zA-Z0-9_]*/
-    }
-  },
-  '2.0.0-ballot': {
-    version: '2.0.0-ballot',
-    keywords: [
-      // CQL 2.0.0-ballot keywords from official grammar (https://cql.hl7.org/2025Sep/grammar.html)
-      'all', 'and', 'any', 'as', 'asc', 'before', 'by', 'called', 'case', 'cast',
-      'code', 'codesystem', 'codesystems', 'collapse', 'concept', 'contains',
-      'context', 'convert', 'date', 'day', 'days', 'default', 'define', 'desc',
-      'difference', 'display', 'distinct', 'divide', 'during', 'else', 'end',
-      'ends', 'every', 'except', 'exists', 'expand', 'false', 'first', 'flatten',
-      'fluent', 'from', 'function', 'greater', 'hour', 'hours', 'if', 'implicit',
-      'in', 'include', 'includes', 'included', 'instance', 'intersect', 'interval',
-      'is', 'key', 'label', 'last', 'let', 'library', 'like', 'list', 'maximum',
-      'meets', 'millisecond', 'milliseconds', 'minimum', 'minute', 'minutes',
-      'mod', 'month', 'months', 'more', 'not', 'null', 'occurs', 'of', 'or',
-      'or after', 'or before', 'or less', 'or more', 'overlaps', 'parameter',
-      'path', 'per', 'point', 'predecessor', 'primary', 'private', 'properly',
-      'public', 'related', 'retrievable', 'return', 'same', 'second', 'seconds',
-      'singleton', 'some', 'sort', 'starts', 'starting', 'successor', 'such that',
-      'then', 'time', 'timezoneoffset', 'to', 'true', 'tuple', 'type', 'union',
-      'using', 'valueset', 'version', 'week', 'weeks', 'when', 'where', 'width',
-      'with', 'within', 'without', 'xor', 'year', 'years'
-    ],
-    functions: [
-      // CQL 2.0.0-ballot functions (inherited from 1.5.3 plus new ones)
-      'Abs', 'Add', 'After', 'AllTrue', 'AnyTrue', 'As', 'Avg', 'Before', 'CanConvert',
-      'Ceiling', 'Coalesce', 'Code', 'CodeSystem', 'Concept', 'ConvertsToBoolean',
-      'ConvertsToDate', 'ConvertsToDateTime', 'ConvertsToDecimal', 'ConvertsToInteger',
-      'ConvertsToLong', 'ConvertsToQuantity', 'ConvertsToString', 'ConvertsToTime',
-      'Count', 'Date', 'DateTime', 'Day', 'DaysBetween', 'Distinct', 'DurationBetween',
-      'Ends', 'Exists', 'Exp', 'Expand', 'First', 'Floor', 'Flatten', 'GeometricMean',
-      'HighBoundary', 'Hour', 'HoursBetween', 'Identifier', 'If', 'IndexOf', 'Instance',
-      'Interval', 'Is', 'IsNull', 'IsTrue', 'Last', 'Length', 'List', 'Ln', 'Log',
-      'LowBoundary', 'Lower', 'Matches', 'Max', 'Maximum', 'Mean', 'Median', 'Min',
-      'Minimum', 'Minute', 'MinutesBetween', 'Mode', 'Modulo', 'Month', 'MonthsBetween',
-      'Multiply', 'Negate', 'Not', 'Now', 'Null', 'PointFrom', 'PopulationStdDev',
-      'PopulationVariance', 'Power', 'Predecessor', 'Product', 'Properly', 'Quantity',
-      'Round', 'Second', 'SecondsBetween', 'Singletons', 'Size', 'Split', 'Sqrt',
-      'Starts', 'StdDev', 'String', 'Substring', 'Subtract', 'Sum', 'Time',
-      'TimeOfDay', 'Today', 'ToBoolean', 'ToConcept', 'ToDate', 'ToDateTime',
-      'ToDecimal', 'ToInteger', 'ToLong', 'ToQuantity', 'ToString', 'ToTime',
-      'Truncate', 'Union', 'Upper', 'Variance', 'Width', 'Year', 'YearsBetween'
-    ],
-    dataTypes: [
-      'Boolean', 'Integer', 'Long', 'Decimal', 'String', 'DateTime', 'Date', 'Time',
-      'Quantity', 'Ratio', 'Code', 'Concept', 'CodeableConcept', 'Coding', 'Identifier',
-      'Reference', 'Period', 'Range', 'Interval', 'List', 'Tuple', 'Choice'
-    ],
-    operators: ['+', '-', '*', '/', '=', '<>', '!=', '<', '>', '<=', '>=', 'and', 'or', 'not', 'xor', 'implies'],
-    patterns: {
-      string: /"[^"\\]*(\\.[^"\\]*)*"/,
-      number: /\d+\.?\d*L?/,
-      datetime: /@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?/,
-      identifier: /[a-zA-Z_][a-zA-Z0-9_]*/
-    }
-  },
+// CQL grammar definition (fixed to version 1.5.3)
+const CQL_GRAMMAR: CqlGrammarDefinition = {
+  version: '1.5.3',
+  keywords: [
+    // CQL 1.5.3 keywords from official specification
+    'library', 'using', 'include', 'define', 'function', 'parameter', 'context',
+    'public', 'private', 'valueset', 'codesystem', 'code', 'concept', 'where',
+    'return', 'if', 'then', 'else', 'end', 'and', 'or', 'not', 'xor', 'implies',
+    'true', 'false', 'null', 'exists', 'in', 'contains', 'properly', 'starts',
+    'ends', 'matches', 'like', 'from', 'as', 'let', 'with', 'such', 'that',
+    'all', 'any', 'some', 'every', 'distinct', 'sort', 'by', 'asc', 'desc',
+    'union', 'intersect', 'except', 'times', 'divide', 'mod', 'div', 'is',
+    'cast', 'convert', 'to', 'of', 'between', 'during', 'meets', 'overlaps',
+    'includes', 'included', 'within', 'same', 'after', 'before', 'on', 'more',
+    'less', 'equal', 'greater', 'than', 'called', 'version', 'default', 'display',
+    'collapse', 'expand', 'flatten', 'fluent', 'per', 'point', 'predecessor',
+    'successor', 'singleton', 'start', 'starting', 'timezoneoffset', 'when',
+    'width', 'without', 'year', 'years', 'month', 'months', 'week', 'weeks',
+    'day', 'days', 'hour', 'hours', 'minute', 'minutes', 'second', 'seconds',
+    'millisecond', 'milliseconds', 'maximum', 'minimum', 'difference', 'duration',
+    'occurs', 'or after', 'or before', 'or less', 'or more'
+  ],
+  functions: [
+    // CQL 1.5.3 functions from official specification
+    'Abs', 'Add', 'After', 'AllTrue', 'AnyTrue', 'As', 'Avg', 'Before', 'CanConvert',
+    'Ceiling', 'Coalesce', 'Code', 'CodeSystem', 'Concept', 'ConvertsToBoolean',
+    'ConvertsToDate', 'ConvertsToDateTime', 'ConvertsToDecimal', 'ConvertsToInteger',
+    'ConvertsToLong', 'ConvertsToQuantity', 'ConvertsToString', 'ConvertsToTime',
+    'Count', 'Date', 'DateTime', 'Day', 'DaysBetween', 'Distinct', 'DurationBetween',
+    'Ends', 'Exists', 'Exp', 'Expand', 'First', 'Floor', 'Flatten', 'GeometricMean',
+    'HighBoundary', 'Hour', 'HoursBetween', 'Identifier', 'If', 'IndexOf', 'Instance',
+    'Interval', 'Is', 'IsNull', 'IsTrue', 'Last', 'Length', 'List', 'Ln', 'Log',
+    'LowBoundary', 'Lower', 'Matches', 'Max', 'Maximum', 'Mean', 'Median', 'Min',
+    'Minimum', 'Minute', 'MinutesBetween', 'Mode', 'Modulo', 'Month', 'MonthsBetween',
+    'Multiply', 'Negate', 'Not', 'Now', 'Null', 'PointFrom', 'PopulationStdDev',
+    'PopulationVariance', 'Power', 'Predecessor', 'Product', 'Properly', 'Quantity',
+    'Round', 'Second', 'SecondsBetween', 'Singletons', 'Size', 'Split', 'Sqrt',
+    'Starts', 'StdDev', 'String', 'Substring', 'Subtract', 'Sum', 'Time',
+    'TimeOfDay', 'Today', 'ToBoolean', 'ToConcept', 'ToDate', 'ToDateTime',
+    'ToDecimal', 'ToInteger', 'ToLong', 'ToQuantity', 'ToString', 'ToTime',
+    'Truncate', 'Union', 'Upper', 'Variance', 'Width', 'Year', 'YearsBetween'
+  ],
+  dataTypes: [
+    'Boolean', 'Integer', 'Long', 'Decimal', 'String', 'DateTime', 'Date', 'Time',
+    'Quantity', 'Ratio', 'Code', 'Concept', 'CodeableConcept', 'Coding', 'Identifier',
+    'Reference', 'Period', 'Range', 'Interval', 'List', 'Tuple', 'Choice'
+  ],
+  operators: ['+', '-', '*', '/', '=', '<>', '!=', '<', '>', '<=', '>=', 'and', 'or', 'not', 'xor', 'implies'],
+  patterns: {
+    string: /"[^"\\]*(\\.[^"\\]*)*"/,
+    number: /\d+\.?\d*L?/,
+    datetime: /@\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})?/,
+    identifier: /[a-zA-Z_][a-zA-Z0-9_]*/
+  }
 };
 
 
 // Grammar Manager Service
 export class CqlGrammarManager {
-  private currentVersion: CqlVersion = '1.5.3';
-  private currentGrammar: CqlGrammarDefinition;
+  private readonly currentGrammar: CqlGrammarDefinition;
 
-  constructor(version: CqlVersion = '1.5.3') {
-    this.currentVersion = version;
-    this.currentGrammar = this.getGrammar(version);
+  constructor() {
+    this.currentGrammar = CQL_GRAMMAR;
   }
 
-  // Get grammar for a specific version
-  getGrammar(version: CqlVersion): CqlGrammarDefinition {
-    return GRAMMAR_REGISTRY[version];
-  }
-
-  // Set current version and update grammar
-  setVersion(version: CqlVersion): void {
-    this.currentVersion = version;
-    this.currentGrammar = this.getGrammar(version);
-  }
-
-  // Get current version
+  // Get current version (always 1.5.3)
   getCurrentVersion(): CqlVersion {
-    return this.currentVersion;
+    return '1.5.3';
   }
 
   // Get current grammar
   getCurrentGrammar(): CqlGrammarDefinition {
     return this.currentGrammar;
-  }
-
-  // Get all supported versions
-  getSupportedVersions(): CqlVersion[] {
-    return Object.keys(GRAMMAR_REGISTRY) as CqlVersion[];
   }
 
   // Create language support for current version
@@ -387,17 +312,17 @@ export class CqlGrammarManager {
 }
 
 // Export convenience functions
-export function createCqlLanguageSupport(version: CqlVersion = '1.5.3'): LanguageSupport {
-  const manager = new CqlGrammarManager(version);
+export function createCqlLanguageSupport(): LanguageSupport {
+  const manager = new CqlGrammarManager();
   return manager.createLanguageSupport();
 }
 
-export function createCqlExtensions(version: CqlVersion = '1.5.3'): Extension[] {
-  const manager = new CqlGrammarManager(version);
+export function createCqlExtensions(): Extension[] {
+  const manager = new CqlGrammarManager();
   return manager.createExtensions();
 }
 
-export function validateCqlSyntax(code: string, version: CqlVersion = '1.5.3'): { isValid: boolean; errors: string[] } {
-  const manager = new CqlGrammarManager(version);
+export function validateCqlSyntax(code: string): { isValid: boolean; errors: string[] } {
+  const manager = new CqlGrammarManager();
   return manager.validateSyntax(code);
 }

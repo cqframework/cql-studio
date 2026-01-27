@@ -34,6 +34,7 @@ export class NavigationTabComponent implements OnInit {
   public librarySortBy: 'name' | 'version' | 'date' = 'name';
   public librarySortOrder: 'asc' | 'desc' = 'asc';
   public isLoadingLibraries: boolean = false;
+  public libraryListSearchTerm: string = '';
 
   // Patient search
   public patientSearchTerm: string = '';
@@ -213,10 +214,18 @@ export class NavigationTabComponent implements OnInit {
     });
   }
 
+  private loadLibraries(): void {
+    if (this.libraryListSearchTerm.trim()) {
+      this.loadSearchedLibraries();
+    } else {
+      this.loadPaginatedLibraries();
+    }
+  }
+
   goToPage(page: number): void {
     if (page >= 1 && page <= this.totalPages && page !== this.currentPage) {
       this.currentPage = page;
-      this.loadPaginatedLibraries();
+      this.loadLibraries();
     }
   }
 
@@ -235,7 +244,7 @@ export class NavigationTabComponent implements OnInit {
   changePageSize(newPageSize: number): void {
     this.pageSize = newPageSize;
     this.currentPage = 1;
-    this.loadPaginatedLibraries();
+    this.loadLibraries();
   }
 
   changeSorting(sortBy: 'name' | 'version' | 'date'): void {
@@ -246,7 +255,7 @@ export class NavigationTabComponent implements OnInit {
       this.librarySortOrder = 'asc';
     }
     this.currentPage = 1;
-    this.loadPaginatedLibraries();
+    this.loadLibraries();
   }
 
   addLibraryFromPaginatedList(library: Library): void {
@@ -340,6 +349,60 @@ export class NavigationTabComponent implements OnInit {
       this.ideStateService.addLibraryResource(libraryResource);
       this.ideStateService.selectLibraryResource(library.id);
     }
+  }
+
+  onLibraryListSearch(): void {
+    if (this.libraryListSearchTerm.trim()) {
+      // Perform server-side search
+      this.currentPage = 1;
+      this.loadSearchedLibraries();
+    } else {
+      // Clear search and load paginated list
+      this.loadPaginatedLibraries();
+    }
+  }
+
+  loadSearchedLibraries(): void {
+    this.isLoadingLibraries = true;
+    this.libraryService.searchPaginated(
+      this.libraryListSearchTerm,
+      this.currentPage,
+      this.pageSize,
+      this.librarySortBy,
+      this.librarySortOrder
+    ).subscribe({
+      next: (bundle: Bundle<Library>) => {
+        this.isLoadingLibraries = false;
+        this.paginatedLibraries = bundle.entry ? bundle.entry.map(entry => entry.resource!) : [];
+        
+        // Check for next page using FHIR bundle links
+        const hasNextPage = bundle.link?.some(link => link.relation === 'next');
+        const hasPreviousPage = bundle.link?.some(link => link.relation === 'previous');
+        
+        if (bundle.total && bundle.total > 0) {
+          this.totalLibraries = bundle.total;
+          this.totalPages = Math.ceil(bundle.total / this.pageSize);
+        } else {
+          // Use FHIR links to determine pagination
+          if (hasNextPage) {
+            // There are more pages, estimate total
+            this.totalLibraries = (this.currentPage * this.pageSize) + 1;
+            this.totalPages = this.currentPage + 1;
+          } else {
+            // No next page, this is the last page
+            this.totalLibraries = (this.currentPage - 1) * this.pageSize + this.paginatedLibraries.length;
+            this.totalPages = this.currentPage;
+          }
+        }
+      },
+      error: (error: any) => {
+        this.isLoadingLibraries = false;
+        console.error('Error searching libraries:', error);
+        this.paginatedLibraries = [];
+        this.totalPages = 0;
+        this.totalLibraries = 0;
+      }
+    });
   }
 
   getLibraryDisplayName(library: Library): string {

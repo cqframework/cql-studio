@@ -35,8 +35,25 @@
 
     <!-- Paginated Library List -->
     <div class="border-top pt-3">
-      <div class="d-flex justify-content-between align-items-center mb-3 px-3">
-        <div class="mb-0 fw-semibold small text-white">Server Libraries</div>
+      <div class="mb-2 px-3">
+        <div class="mb-2 fw-semibold small text-white">Server Libraries</div>
+        <div class="input-group input-group-sm mb-2">
+          <input 
+            type="text" 
+            class="form-control form-control-sm" 
+            placeholder="Search libraries..." 
+            [(ngModel)]="libraryListSearchTerm"
+            (keydown.enter)="onLibraryListSearch()"
+          >
+          <button 
+            class="btn btn-outline-secondary" 
+            type="button"
+            (click)="onLibraryListSearch()"
+            title="Search"
+          >
+            <i class="bi bi-search"></i>
+          </button>
+        </div>
         <div class="library-controls d-flex align-items-center gap-2">
           <!-- Sort Controls -->
           <div class="sort-controls d-flex align-items-center gap-1">
@@ -67,7 +84,6 @@
             [(ngModel)]="pageSize" 
             (change)="changePageSize(pageSize)"
             title="Items per page"
-            style="min-width: 60px;"
           >
             <option value="1">1</option>
             <option value="5">5</option>
@@ -81,7 +97,7 @@
       <!-- Loading State -->
       @if (isLoadingLibraries) {
         <div class="loading-state d-flex align-items-center justify-content-center py-4 text-muted">
-          <i class="bi bi-arrow-clockwise me-2"></i>
+          <i class="bi bi-arrow-clockwise bi-spin me-2"></i>
           <span>Loading libraries...</span>
         </div>
       }

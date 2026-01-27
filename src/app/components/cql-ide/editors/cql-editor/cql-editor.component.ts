@@ -56,7 +56,6 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   placeholder = input<string>('Enter CQL code here...');
   height = input<string>('500px');
   readonly = input<boolean>(false);
-  cqlVersion = input<CqlVersion>('1.5.3');
   isNewLibrary = input<boolean>(false);
   
   contentChange = output<{ cursorPosition: { line: number; column: number }, wordCount: number, content: string }>();
@@ -65,7 +64,6 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   syntaxErrors = output<string[]>();
   executeLibrary = output<void>();
   reloadLibrary = output<void>();
-  cqlVersionChange = output<string>();
   formatCql = output<void>();
   validateCql = output<void>();
   saveLibrary = output<void>();
@@ -97,18 +95,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   private cqlFormatterService = inject(CqlFormatterService);
 
   constructor() {
-    this.grammarManager = new CqlGrammarManager(this.cqlVersion());
-    
-    // Watch for cqlVersion changes
-    effect(() => {
-      const version = this.cqlVersion();
-      if (this.grammarManager) {
-        this.grammarManager.setVersion(version);
-        if (this.editor) {
-          this.reinitializeEditor();
-        }
-      }
-    });
+    this.grammarManager = new CqlGrammarManager();
     
     // Watch for libraryId changes
     effect(() => {
@@ -432,11 +419,9 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
     const cursorLine = cursorPosition?.line || 1;
     const cursorColumn = cursorPosition?.column || 1;
 
-    // Format using the service
+    // Format using the service (simple, reliable formatting)
     const result = this.cqlFormatterService.format(code, {
-      validateBeforeFormat: true,
-      indentSize: 2,
-      preserveComments: true
+      indentSize: 2
     });
 
     if (!result.success) {
@@ -445,29 +430,21 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
       
       // Prepare user-friendly error messages
       const errorMessages = result.errors || [];
-      const warningMessages = result.warnings || [];
       
-      // Combine errors and warnings for display
-      const allMessages = [
-        ...errorMessages.map(e => `Error: ${e}`),
-        ...warningMessages.map(w => `Warning: ${w}`)
-      ];
-      
-      if (allMessages.length > 0) {
+      if (errorMessages.length > 0) {
         // Emit syntax errors for display in problems panel
-        this.syntaxErrors.emit(allMessages);
+        this.syntaxErrors.emit(errorMessages.map(e => `Error: ${e}`));
         
         // Also update editor state
         this.editorStateChange.emit({
           cursorPosition: cursorPosition || { line: 1, column: 1 },
           wordCount: this.getWordCount() || 0,
-          syntaxErrors: allMessages,
+          syntaxErrors: errorMessages.map(e => `Error: ${e}`),
           isValidSyntax: false
         });
       }
       
-      // Don't format if there are validation errors
-      // User should fix errors first
+      // Don't format if formatting itself failed
       return;
     }
 
@@ -734,13 +711,6 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
 
   onReloadLibrary(): void {
     this.reloadLibrary.emit();
-  }
-
-  onCqlVersionChange(event: Event): void {
-    const target = event.target as HTMLSelectElement;
-    if (target && target.value) {
-      this.cqlVersionChange.emit(target.value);
-    }
   }
 
   onFormatCql(): void {
