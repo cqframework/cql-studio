@@ -337,6 +337,15 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       console.error('Translation failed with errors:', translationResult.errors);
       this.ideStateService.setExecutionStatus('Translation failed - see errors in ELM tab');
       
+      // Add error message to Console pane
+      const libraryName = activeLibrary.name || activeLibrary.id || 'Library';
+      const errorMessages = translationResult.errors.join('\n');
+      this.ideStateService.addTextOutput(
+        `Save Failed: ${libraryName}`,
+        `Failed to save library "${libraryName}" due to translation errors.\n\nErrors:\n${errorMessages}`,
+        'error'
+      );
+      
       // Mark as dirty again since save failed
       this.ideStateService.updateLibraryResource(activeLibrary.id, {
         isDirty: true
@@ -599,11 +608,21 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
             library: library
           });
           
+          // Trigger reload signal to notify editor
+          this.ideStateService.triggerReload(activeLibraryId);
           
           console.log('After update - library content updated:', {
             contentLength: cqlContent.length,
             content: cqlContent.substring(0, 100) + '...'
           });
+          
+          // Add message to Console pane
+          const libraryName = libraryResource.name || libraryResource.id || 'Library';
+          this.ideStateService.addTextOutput(
+            `Library Reloaded: ${libraryName}`,
+            `Successfully reloaded library "${libraryName}" from server.\n\nContent length: ${cqlContent.length} characters`,
+            'success'
+          );
         } else {
           console.error('No active library resource found for reload');
         }
@@ -618,6 +637,17 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       error: (error) => {
         console.error('Failed to reload library:', error);
         this.ideStateService.setExecutionStatus('Failed to reload library');
+        
+        // Add error message to Console pane
+        const libraryName = this.ideStateService.getActiveLibraryResource()?.name || 
+                           this.ideStateService.getActiveLibraryResource()?.id || 
+                           'Library';
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.ideStateService.addTextOutput(
+          `Library Reload Failed: ${libraryName}`,
+          `Failed to reload library "${libraryName}" from server.\n\nError: ${errorMessage}`,
+          'error'
+        );
         
         // Clear error status after a short delay
         setTimeout(() => {
@@ -681,6 +711,14 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
           isDirty: false
         });
         
+        // Add success message to Console pane
+        const libraryName = activeLibrary?.name || activeLibrary?.id || 'Library';
+        this.ideStateService.addTextOutput(
+          `Library Saved: ${libraryName}`,
+          `Successfully saved library "${libraryName}" to server.\n\nLibrary ID: ${currentId}\nContent length: ${cqlContent.length} characters`,
+          'success'
+        );
+        
         // Force content refresh to update the cache
         
         // Clear status after a short delay
@@ -691,6 +729,15 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       error: (error) => {
         console.error('Failed to update library:', error);
         this.ideStateService.setExecutionStatus('Failed to save library');
+        
+        // Add error message to Console pane
+        const libraryName = activeLibrary?.name || activeLibrary?.id || 'Library';
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        this.ideStateService.addTextOutput(
+          `Save Failed: ${libraryName}`,
+          `Failed to save library "${libraryName}" to server.\n\nError: ${errorMessage}`,
+          'error'
+        );
         
         // Mark as dirty again since save failed
         this.ideStateService.updateLibraryResource(this.ideStateService.activeLibraryId()!, {
@@ -768,6 +815,14 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
               // Update the active library ID to point to the server-assigned ID
               this.ideStateService.selectLibraryResource(serverAssignedId);
               
+              // Add success message to Console pane
+              const libraryName = libraryResource.name || libraryResource.id || 'Library';
+              this.ideStateService.addTextOutput(
+                `Library Created: ${libraryName}`,
+                `Successfully created and saved library "${libraryName}" to server.\n\nLibrary ID: ${serverAssignedId}\nContent length: ${cqlContent.length} characters`,
+                'success'
+              );
+              
               // Force content refresh to update the cache
               
               // Clear status after a short delay
@@ -789,6 +844,15 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
               });
               
               this.ideStateService.selectLibraryResource(serverAssignedId);
+              
+              // Add warning message to Console pane (library created but URL update failed)
+              const libraryName = libraryResource.name || libraryResource.id || 'Library';
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              this.ideStateService.addTextOutput(
+                `Library Created (URL Update Failed): ${libraryName}`,
+                `Library "${libraryName}" was created with ID ${serverAssignedId}, but failed to update URL.\n\nError: ${errorMessage}`,
+                'error'
+              );
               
               setTimeout(() => {
                 this.ideStateService.setExecutionStatus('');

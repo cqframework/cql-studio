@@ -4,8 +4,10 @@
       <div class="d-flex align-items-start p-2 border-bottom">
         <i class="bi bi-exclamation-triangle text-danger me-2 mt-1"></i>
         <div class="flex-fill">
-          <div class="fw-medium text-light">{{ error }}</div>
-          <div class="small text-muted">Line {{ i + 1 }}</div>
+          <div class="fw-medium text-light">{{ getErrorMessage(error) }}</div>
+          @if (getErrorLine(error)) {
+            <div class="small text-muted">Line {{ getErrorLine(error) }}</div>
+          }
         </div>
       </div>
     }

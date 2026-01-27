@@ -24,4 +24,26 @@ export class ProblemsTabComponent implements OnInit {
   ngOnInit(): void {
     // Component initialization
   }
+
+  /**
+   * Extract the error message without line/column info (for cleaner display)
+   */
+  getErrorMessage(error: string): string {
+    // Error format: "Error: message (line X, column Y)" or "Warning: message (line X, column Y)"
+    // Remove the "(line X, column Y)" part for the main message display
+    return error.replace(/\s*\(line\s+\d+(?:,\s*column\s+\d+)?\)\s*$/i, '').trim();
+  }
+
+  /**
+   * Extract line number from error message
+   */
+  getErrorLine(error: string): number | null {
+    // Error format: "Error: message (line X, column Y)" or "Warning: message (line X, column Y)"
+    const match = error.match(/\(line\s+(\d+)/i);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+    return null;
+  }
+
 }

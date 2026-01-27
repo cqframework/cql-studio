@@ -9,37 +9,12 @@ import { searchKeymap } from '@codemirror/search';
 import { highlightSpecialChars } from '@codemirror/view';
 import { bracketMatching } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
-import { CqlGrammarManager, CqlVersion } from '../../../../services/cql-grammar-manager.service';
+import { linter, lintGutter, Diagnostic } from '@codemirror/lint';
+import { CqlGrammarManager } from '../../../../services/cql-grammar-manager.service';
 import { IdeEditor, EditorState as IdeEditorState } from '../base-editor.interface';
 import { IdeStateService } from '../../../../services/ide-state.service';
 import { CqlFormatterService } from '../../../../services/cql-formatter.service';
-
-// Custom highlight style for dark theme
-const darkHighlightStyle = {
-  define: [
-    { tag: tags.keyword, color: '#569cd6' },
-    { tag: tags.string, color: '#ce9178' },
-    { tag: tags.comment, color: '#6a9955' },
-    { tag: tags.number, color: '#b5cea8' },
-    { tag: tags.variableName, color: '#9cdcfe' },
-    { tag: tags.typeName, color: '#4ec9b0' },
-    { tag: tags.operator, color: '#ffffff' },
-    { tag: tags.punctuation, color: '#ffffff' },
-    { tag: tags.propertyName, color: '#9cdcfe' },
-    { tag: tags.attributeName, color: '#92c5f8' },
-    { tag: tags.tagName, color: '#569cd6' },
-    { tag: tags.name, color: '#dcdcaa' },
-    { tag: tags.literal, color: '#4fc1ff' },
-    { tag: tags.meta, color: '#569cd6' },
-    { tag: tags.heading, color: '#569cd6' },
-    { tag: tags.quote, color: '#6a9955' },
-    { tag: tags.link, color: '#569cd6' },
-    { tag: tags.url, color: '#ce9178' },
-    { tag: tags.strong, color: '#ffffff', fontWeight: 'bold' },
-    { tag: tags.emphasis, color: '#ffffff', fontStyle: 'italic' },
-    { tag: tags.strikethrough, color: '#ffffff', textDecoration: 'line-through' }
-  ]
-};
+import { CqlValidationService } from '../../../../services/cql-validation.service';
 
 @Component({
   selector: 'app-cql-editor',
@@ -93,6 +68,16 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
 
   private ideStateService = inject(IdeStateService);
   private cqlFormatterService = inject(CqlFormatterService);
+  private cqlValidationService = inject(CqlValidationService);
+
+  // Debouncing for validation
+  private validationTimeout?: ReturnType<typeof setTimeout>;
+  private readonly VALIDATION_DEBOUNCE_MS = 250;
+  private currentValidationErrors: string[] = [];
+  private pendingLintResolvers: Array<(diagnostics: Diagnostic[]) => void> = [];
+  
+  // Flag to prevent contentChange events during programmatic updates
+  private isUpdatingFromReload: boolean = false;
 
   constructor() {
     this.grammarManager = new CqlGrammarManager();
@@ -104,6 +89,45 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
         console.log('Library ID changed, reinitializing editor for:', libraryId);
         this.reinitializeEditor();
         this.updateCanExecute();
+      }
+    });
+    
+    // Watch for reload trigger signal
+    effect(() => {
+      const reloadTrigger = this.ideStateService.reloadTrigger();
+      const libraryId = this.libraryId();
+      
+      if (!reloadTrigger || !libraryId || !this.editor) {
+        return;
+      }
+      
+      // Only act if this reload is for the current library
+      if (reloadTrigger.libraryId !== libraryId) {
+        return;
+      }
+      
+      // Get the library resource
+      const library = this.ideStateService.libraryResources().find(lib => lib.id === libraryId);
+      if (!library) {
+        return;
+      }
+      
+      console.log('Reload trigger detected, updating editor', {
+        libraryId,
+        libraryContentLength: library.cqlContent.length,
+        editorContentLength: this.getValue().length
+      });
+      
+      // Set flag to prevent contentChange event from triggering parent updates
+      this.isUpdatingFromReload = true;
+      try {
+        this.setValue(library.cqlContent);
+        this.updateCanExecute();
+      } finally {
+        // Reset flag after a microtask to allow the editor update to complete
+        setTimeout(() => {
+          this.isUpdatingFromReload = false;
+        }, 0);
       }
     });
   }
@@ -129,6 +153,9 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   }
 
   ngOnDestroy(): void {
+    if (this.validationTimeout) {
+      clearTimeout(this.validationTimeout);
+    }
     this.editor?.destroy();
     this.resizeObserver?.disconnect();
   }
@@ -188,6 +215,8 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
           ...this.grammarManager.createExtensions(),
           highlightSpecialChars(),
           bracketMatching(),
+          lintGutter(),
+          linter(this.createLintSource()),
           keymap.of([
             ...defaultKeymap,
             ...historyKeymap,
@@ -259,16 +288,19 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
               // Update form validity signal
               this._isFormValidSignal.set(newValue.trim().length > 0);
               
-              const cursor = this.getCursorPosition();
-              const wordCount = this.getWordCount();
-              this.contentChange.emit({ 
-                cursorPosition: cursor || { line: 1, column: 1 }, 
-                wordCount: wordCount || 0,
-                content: newValue
-              });
-              
-              // Update canExecute state after content change
-              this.updateCanExecute();
+              // Only emit contentChange if this is not a programmatic update from reload
+              if (!this.isUpdatingFromReload) {
+                const cursor = this.getCursorPosition();
+                const wordCount = this.getWordCount();
+                this.contentChange.emit({ 
+                  cursorPosition: cursor || { line: 1, column: 1 }, 
+                  wordCount: wordCount || 0,
+                  content: newValue
+                });
+                
+                // Update canExecute state after content change
+                this.updateCanExecute();
+              }
               
               // Library resource update will be handled by parent component
               // to avoid change detection issues
@@ -281,10 +313,12 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
               this.cursorChange.emit({ line, column });
             }
             
-            // Update word count and validate syntax
+            // Update word count
             const text = update.state.doc.toString();
             const wordCount = text.trim().split(/\s+/).filter(word => word.length > 0).length;
-            this.validateSyntax(text);
+            
+            // Note: Validation is handled automatically by CodeMirror's lint extension
+            // The lint source function will be called automatically when the document changes
             
             // Emit editor state change
             this.editorStateChange.emit({
@@ -507,13 +541,145 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   }
 
   validateSyntax(code: string): void {
-    // This would be implemented with the grammar manager
-    // For now, just emit the validation result
+    // Validation is now handled by the lint extension and debounced validation
+    // This method is kept for backward compatibility but triggers immediate validation
+    this.performValidation(code);
+  }
+
+  /**
+   * Create lint source function for CodeMirror
+   * Uses debouncing to avoid validating on every keystroke
+   */
+  private createLintSource() {
+    return (view: EditorView): Promise<Diagnostic[]> => {
+      const code = view.state.doc.toString();
+      if (!code || !code.trim()) {
+        this.currentValidationErrors = [];
+        this.syntaxErrors.emit([]);
+        return Promise.resolve([]);
+      }
+
+      return new Promise((resolve) => {
+        // Add this resolver to pending list
+        this.pendingLintResolvers.push(resolve);
+
+        // Clear any existing timeout
+        if (this.validationTimeout) {
+          clearTimeout(this.validationTimeout);
+        }
+
+        // Debounce validation - only the last call will execute
+        // Use the current editor state when timeout executes to get latest code
+        this.validationTimeout = setTimeout(() => {
+          try {
+            // Get the latest code from the editor state (in case it changed during debounce)
+            const latestCode = this.editor?.state.doc.toString() || code;
+            const latestDoc = this.editor?.state.doc;
+            
+            if (!latestDoc) {
+              // Editor was destroyed, resolve with empty diagnostics
+              const resolvers = this.pendingLintResolvers;
+              this.pendingLintResolvers = [];
+              resolvers.forEach(r => r([]));
+              return;
+            }
+
+            // Use validation service to get errors with positions
+            const validationResult = this.cqlValidationService.validate(latestCode, latestDoc);
+            
+            // Convert ValidationError[] to Diagnostic[]
+            const diagnostics: Diagnostic[] = [
+              ...validationResult.errors.map(err => ({
+                from: err.from,
+                to: err.to,
+                severity: 'error' as const,
+                message: err.message
+              })),
+              ...validationResult.warnings.map(warn => ({
+                from: warn.from,
+                to: warn.to,
+                severity: 'warning' as const,
+                message: warn.message
+              }))
+            ];
+
+            // Update current validation errors for Problems panel
+            // Use structured errors for better line/column information
+            const structuredErrors = this.cqlValidationService.getStructuredErrors(latestCode);
+            const structuredWarnings = this.cqlValidationService.getStructuredWarnings(latestCode);
+            
+            // Format for Problems panel (backward compatible with string format)
+            this.currentValidationErrors = [
+              ...structuredErrors.map(e => `Error: ${e.formattedMessage}`),
+              ...structuredWarnings.map(w => `Warning: ${w.formattedMessage}`)
+            ];
+
+            // Emit syntax errors for Problems panel
+            this.syntaxErrors.emit(this.currentValidationErrors);
+
+            // Update editor state
+            if (this.editor) {
+              this.editorStateChange.emit({
+                cursorPosition: this.getCursorPosition(),
+                wordCount: this.getWordCount(),
+                syntaxErrors: this.currentValidationErrors,
+                isValidSyntax: validationResult.errors.length === 0
+              });
+            }
+
+            // Resolve all pending lint requests with the same result
+            const resolvers = this.pendingLintResolvers;
+            this.pendingLintResolvers = [];
+            resolvers.forEach(r => r(diagnostics));
+          } catch (error) {
+            console.error('Validation error:', error);
+            const resolvers = this.pendingLintResolvers;
+            this.pendingLintResolvers = [];
+            resolvers.forEach(r => r([]));
+          }
+        }, this.VALIDATION_DEBOUNCE_MS);
+      });
+    };
+  }
+
+
+  /**
+   * Perform immediate validation (for manual validation button)
+   */
+  private performValidation(code: string): void {
+    if (!this.editor) {
+      return;
+    }
+
+    // Clear debounce and validate immediately
+    if (this.validationTimeout) {
+      clearTimeout(this.validationTimeout);
+    }
+
+    // Get structured errors for Problems panel
+    const structuredErrors = this.cqlValidationService.getStructuredErrors(code);
+    const structuredWarnings = this.cqlValidationService.getStructuredWarnings(code);
+    
+    // Format for Problems panel (backward compatible with string format)
+    this.currentValidationErrors = [
+      ...structuredErrors.map(e => `Error: ${e.formattedMessage}`),
+      ...structuredWarnings.map(w => `Warning: ${w.formattedMessage}`)
+    ];
+
+    // Emit syntax errors
+    this.syntaxErrors.emit(this.currentValidationErrors);
+
+    // Update editor state
     this.editorStateChange.emit({
       cursorPosition: this.getCursorPosition(),
       wordCount: this.getWordCount(),
-      syntaxErrors: this.getSyntaxErrors(),
-      isValidSyntax: this.getIsValidSyntax()
+      syntaxErrors: this.currentValidationErrors,
+      isValidSyntax: structuredErrors.length === 0
+    });
+
+    // Force lint update by dispatching a transaction
+    this.editor.dispatch({
+      effects: []
     });
   }
 
@@ -655,13 +821,12 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   }
 
   private getSyntaxErrors(): string[] {
-    // This would be implemented with the grammar manager
-    return [];
+    return this.currentValidationErrors;
   }
 
   private getIsValidSyntax(): boolean {
-    // This would be implemented with the grammar manager
-    return true;
+    // Check if there are any errors (warnings don't count as invalid)
+    return !this.currentValidationErrors.some(err => err.startsWith('Error:'));
   }
 
   // Toolbar methods
@@ -718,6 +883,11 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   }
 
   onValidateCql(): void {
+    // Trigger immediate validation
+    const code = this.getValue();
+    if (code) {
+      this.performValidation(code);
+    }
     this.validateCql.emit();
   }
 

@@ -6,6 +6,15 @@
   min-height: 200px; /* Ensure minimum height for editor */
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+.editor-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background-color: var(--bs-body-bg, #fff);
+  flex-shrink: 0;
 }
 
 .cql-editor {

@@ -64,6 +64,8 @@ export class IdeStateService {
   // Library resources
   private _libraryResources = signal<LibraryResource[]>([]);
   private _activeLibraryId = signal<string | null>(null);
+  // Signal to trigger editor reloads
+  private _reloadTrigger = signal<{ libraryId: string; timestamp: number } | null>(null);
 
   // Editor files
   private _editorFiles = signal<EditorFile[]>([]);
@@ -101,6 +103,7 @@ export class IdeStateService {
   public editorState = computed(() => this._editorState());
   public libraryResources = computed(() => this._libraryResources());
   public activeLibraryId = computed(() => this._activeLibraryId());
+  public reloadTrigger = computed(() => this._reloadTrigger());
   public editorFiles = computed(() => this._editorFiles());
   public activeFileId = computed(() => this._activeFileId());
   public isExecuting = computed(() => this._isExecuting());
@@ -499,6 +502,12 @@ export class IdeStateService {
     this._libraryResources.update(resources => 
       resources.map(r => r.id === libraryId ? { ...r, ...updates } : r)
     );
+  }
+
+  triggerReload(libraryId: string): void {
+    this._reloadTrigger.set({ libraryId, timestamp: Date.now() });
+    // Clear the trigger after a brief moment to allow it to be triggered again
+    setTimeout(() => this._reloadTrigger.set(null), 100);
   }
 
   reorderLibraryResources(fromIndex: number, toIndex: number): void {

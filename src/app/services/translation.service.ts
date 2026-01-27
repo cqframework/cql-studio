@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 // @ts-expect-error No type definitions available for @lhncbc/ucum-lhc
 import * as ucum from '@lhncbc/ucum-lhc';
 import { 
@@ -13,6 +13,7 @@ import {
   createUcumService,
   stringAsSource
 } from '@cqframework/cql/cql-to-elm';
+import { CqlLocatorUtilsService } from './cql-locator-utils.service';
 
 export interface TranslationResult {
   elmXml: string | null;
@@ -22,12 +23,21 @@ export interface TranslationResult {
   hasErrors: boolean;
 }
 
+export interface RawTranslationResult {
+  elmXml: string | null;
+  errors: CqlCompilerException[];
+  warnings: CqlCompilerException[];
+  messages: CqlCompilerException[];
+  hasErrors: boolean;
+}
+
 @Injectable({
   providedIn: 'root'
 })
 export class TranslationService {
   private modelManager: ModelManager;
   private libraryManager: LibraryManager;
+  private locatorUtils = inject(CqlLocatorUtilsService);
   
   // Hardcoded FHIR version - not configurable
   private readonly FHIR_VERSION = '4.0.1';
@@ -192,18 +202,64 @@ export class TranslationService {
   }
 
   /**
-   * Format a CqlCompilerException into a readable error message
+   * Translate CQL to ELM and return raw exceptions (for validation use)
+   * @param cql The CQL code to translate
+   * @returns RawTranslationResult containing raw CqlCompilerException objects
    */
-  private formatException(exception: CqlCompilerException): string {
-    const message = exception.message || 'Unknown error';
-    const locator = exception.locator;
-    
-    if (locator) {
-      const line = locator.startLine != null ? locator.startLine : '?';
-      const char = locator.startChar != null ? locator.startChar : '?';
-      return `${message} (line ${line}, column ${char})`;
+  translateCqlToElmRaw(cql: string): RawTranslationResult {
+    try {
+      const translator = CqlTranslator.fromText(cql, this.libraryManager);
+      
+      // Extract raw errors, warnings, and messages
+      const errors = translator.errors?.asJsReadonlyArrayView() || [];
+      const warnings = translator.warnings?.asJsReadonlyArrayView() || [];
+      const messages = translator.messages?.asJsReadonlyArrayView() || [];
+      
+      // Filter out null/undefined
+      const rawErrors = errors.filter((e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null);
+      const rawWarnings = warnings.filter((e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null);
+      const rawMessages = messages.filter((e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null);
+      
+      // Get ELM XML (even if there are errors, we may still have partial results)
+      let elmXml: string | null = null;
+      try {
+        elmXml = translator.toXml();
+      } catch (e) {
+        console.warn('Failed to generate ELM XML:', e);
+      }
+      
+      return {
+        elmXml,
+        errors: rawErrors,
+        warnings: rawWarnings,
+        messages: rawMessages,
+        hasErrors: rawErrors.length > 0
+      };
+    } catch (error) {
+      // Handle unexpected errors during translation
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorException: CqlCompilerException = {
+        message: `Translation failed: ${errorMessage}`
+      };
+      return {
+        elmXml: null,
+        errors: [errorException],
+        warnings: [],
+        messages: [],
+        hasErrors: true
+      };
     }
+  }
+
+  /**
+   * Format a CqlCompilerException into a readable error message
+   * Uses shared locator utility to extract line/column information
+   */
+  formatException(exception: CqlCompilerException): string {
+    const message = exception.message || 'Unknown error';
+    const locatorInfo = this.locatorUtils.extractLocatorInfo(exception);
+    const locatorStr = this.locatorUtils.formatLocator(locatorInfo);
     
-    return message;
+    return locatorStr ? `${message} ${locatorStr}` : message;
   }
 }
