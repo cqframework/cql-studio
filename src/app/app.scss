@@ -9,3 +9,7 @@
   padding: 1rem 0;
   padding: 0;
 }
+
+#toast-container {
+  z-index: 1055; // Bootstrap modal z-index is 1055, toasts should be above most content
+}

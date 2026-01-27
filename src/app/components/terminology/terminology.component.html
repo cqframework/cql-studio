@@ -71,11 +71,6 @@
               }
             </button>
           </div>
-          @if (valuesetError()) {
-          <div class="alert alert-danger mb-3" role="alert">
-            <i class="bi bi-exclamation-circle me-2"></i>{{ valuesetError() }}
-          </div>
-          }
 
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0">
@@ -210,11 +205,6 @@
                 <i class="bi bi-check-circle me-2"></i>Validate Code
                 }
               </button>
-              @if (validationError()) {
-              <div class="alert alert-danger mt-3 mb-0" role="alert">
-                <i class="bi bi-exclamation-circle me-2"></i>{{ validationError() }}
-              </div>
-              }
             </div>
           </div>
         </div>
@@ -270,11 +260,6 @@
               }
             </button>
           </div>
-          @if (conceptmapError()) {
-          <div class="alert alert-danger mb-3" role="alert">
-            <i class="bi bi-exclamation-circle me-2"></i>{{ conceptmapError() }}
-          </div>
-          }
 
           <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0">
@@ -413,14 +398,6 @@
               </button>
             </div>
           </div>
-
-          <!-- Error Display -->
-          @if (codeSystemsError()) {
-          <div class="alert alert-danger" role="alert">
-            <i class="bi bi-exclamation-triangle me-2"></i>
-            {{ codeSystemsError() }}
-          </div>
-          }
 
           <!-- Loading State -->
           @if (codeSystemsLoading()) {

@@ -1,7 +1,8 @@
 // Author: Preston Lee
 
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { CqlTestResults } from '../models/cql-test-results.model';
+import { SettingsService } from './settings.service';
 import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 
@@ -9,7 +10,7 @@ import addFormats from 'ajv-formats';
   providedIn: 'root'
 })
 export class SchemaValidationService {
-  private readonly schemaUrl = '/cql-test-results.schema.json';
+  private readonly settingsService = inject(SettingsService);
   private ajv: Ajv;
   private schema: any = null;
 
@@ -19,6 +20,11 @@ export class SchemaValidationService {
       removeAdditional: false      // Don't remove unknown properties
     });
     addFormats(this.ajv);  // Add format validation support
+  }
+
+  private get schemaUrl(): string {
+    const baseUrl = this.settingsService.getEffectiveRunnerApiBaseUrl();
+    return `${baseUrl}/schema/results`;
   }
 
   async validateResults(data: any): Promise<{ isValid: boolean; errors: string[] }> {
@@ -60,14 +66,14 @@ export class SchemaValidationService {
     try {
       const response = await fetch(this.schemaUrl);
       if (!response.ok) {
-        throw new Error(`Failed to load schema: ${response.statusText}`);
+        throw new Error(`Failed to load schema from server: ${response.statusText}`);
       }
       
       this.schema = await response.json();
-      console.log('Schema loaded successfully');
+      console.log('Schema loaded successfully from server');
       return this.schema;
     } catch (error) {
-      console.error('Error loading schema:', error);
+      console.error('Error loading schema from server:', error);
       throw error;
     }
   }

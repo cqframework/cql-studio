@@ -7,6 +7,7 @@ import { Router, ActivatedRoute } from '@angular/router';
 import { RunnerService, CQLTestConfiguration, JobResponse, JobStatus } from '../../services/runner.service';
 import { FileLoaderService } from '../../services/file-loader.service';
 import { SettingsService } from '../../services/settings.service';
+import { ToastService } from '../../services/toast.service';
 import { interval, Subscription, firstValueFrom } from 'rxjs';
 import { switchMap, takeWhile } from 'rxjs/operators';
 import { SessionStorageKeys } from '../../constants/session-storage.constants';
@@ -74,6 +75,7 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
   private route = inject(ActivatedRoute);
   private fileLoader = inject(FileLoaderService);
   private settingsService = inject(SettingsService);
+  private toastService = inject(ToastService);
 
   ngOnInit(): void {
     // Initialize FHIR URL from settings
@@ -98,6 +100,9 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
     if (this.lastApiCheck()) {
       this.startApiCheckTimer();
     }
+    
+    // Automatically run health check on component load
+    this.checkApiHealth();
   }
 
   ngAfterViewInit(): void {
@@ -162,6 +167,12 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
           message: 'Test run queued for execution and will run as quickly as possible...',
           createdAt: job.createdAt
         });
+        
+        // Show toast notification that tests are queued
+        this.toastService.showWarning(
+          'Your tests are queued for execution and will run as quickly as possible. Please do not leave this page.',
+          'CQL Tests Queued for Execution'
+        );
         
         this.startPolling(job.jobId);
         this.apiUnavailable.set(false); // API is working
@@ -323,6 +334,211 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
         this.error.set('Invalid JSON format');
       }
     }
+  }
+
+  protected async validateCurrentConfig(): Promise<void> {
+    if (!this.codeMirrorEditor) {
+      this.toastService.showError(
+        'No configuration to validate. Please ensure the JSON editor is open.',
+        'Validation Error'
+      );
+      return;
+    }
+
+    try {
+      // Get content from CodeMirror editor
+      const content = this.codeMirrorEditor.state.doc.toString();
+      
+      // Parse JSON
+      let configData: CQLTestConfiguration;
+      try {
+        configData = JSON.parse(content);
+      } catch (parseError) {
+        this.toastService.showError(
+          'Invalid JSON format. Please ensure the configuration contains valid JSON.',
+          'Validation Error'
+        );
+        return;
+      }
+
+      // Validate configuration using server
+      try {
+        const validation = await firstValueFrom(this.runnerService.validateConfiguration(configData));
+        
+        if (validation.valid) {
+          this.toastService.showSuccess(
+            validation.message || 'Configuration is valid',
+            'Validation Successful'
+          );
+        } else {
+          // Validation failed
+          let errorDetails: string;
+          if (Array.isArray(validation.details)) {
+            errorDetails = validation.details.join('; ');
+          } else if (validation.details) {
+            errorDetails = String(validation.details);
+          } else if (validation.message) {
+            errorDetails = validation.message;
+          } else {
+            errorDetails = 'Validation failed';
+          }
+          this.toastService.showError(
+            `Configuration validation failed: ${errorDetails}`,
+            'Validation Error'
+          );
+        }
+      } catch (validationError: any) {
+        // Handle validation error response
+        if (validationError.valid === false) {
+          let errorDetails: string;
+          if (Array.isArray(validationError.details)) {
+            errorDetails = validationError.details.join('; ');
+          } else if (validationError.details) {
+            errorDetails = String(validationError.details);
+          } else if (validationError.message) {
+            errorDetails = validationError.message;
+          } else {
+            errorDetails = 'Validation failed';
+          }
+          this.toastService.showError(
+            `Configuration validation failed: ${errorDetails}`,
+            'Validation Error'
+          );
+        } else {
+          // Network or other error
+          const errorMessage = validationError.message || 'Failed to validate configuration';
+          this.toastService.showError(
+            errorMessage,
+            'Validation Error'
+          );
+        }
+      }
+    } catch (error: any) {
+      this.toastService.showError(
+        error.message || 'Failed to validate configuration',
+        'Validation Error'
+      );
+    }
+  }
+
+  protected triggerFileSelection(): void {
+    const fileInput = document.getElementById('config-file-input') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.click();
+    }
+  }
+
+  protected async onConfigFileSelected(event: Event): Promise<void> {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    
+    if (!file) {
+      return;
+    }
+
+    try {
+      // Read file content
+      const fileContent = await this.readFileAsText(file);
+      
+      // Parse JSON
+      let configData: CQLTestConfiguration;
+      try {
+        configData = JSON.parse(fileContent);
+      } catch (parseError) {
+        this.toastService.showError(
+          'Invalid JSON format. Please ensure the file contains valid JSON.',
+          'File Load Error'
+        );
+        return;
+      }
+
+      // Validate configuration using server
+      try {
+        const validation = await firstValueFrom(this.runnerService.validateConfiguration(configData));
+        
+        if (validation.valid) {
+          // Load configuration into editor and update config signal
+          this.config.set(configData);
+          this.jsonConfig.set(fileContent);
+          this.error.set(null);
+          
+          // Update CodeMirror editor if it exists
+          if (this.codeMirrorEditor) {
+            this.updateCodeMirrorContent();
+          }
+          
+          this.toastService.showSuccess(
+            'Configuration loaded and validated successfully',
+            'File Loaded'
+          );
+        } else {
+          // Validation failed
+          let errorDetails: string;
+          if (Array.isArray(validation.details)) {
+            errorDetails = validation.details.join('; ');
+          } else if (validation.details) {
+            errorDetails = String(validation.details);
+          } else if (validation.message) {
+            errorDetails = validation.message;
+          } else {
+            errorDetails = 'Validation failed';
+          }
+          this.toastService.showError(
+            `Configuration validation failed: ${errorDetails}`,
+            'Validation Error'
+          );
+        }
+      } catch (validationError: any) {
+        // Handle validation error response
+        if (validationError.valid === false) {
+          let errorDetails: string;
+          if (Array.isArray(validationError.details)) {
+            errorDetails = validationError.details.join('; ');
+          } else if (validationError.details) {
+            errorDetails = String(validationError.details);
+          } else if (validationError.message) {
+            errorDetails = validationError.message;
+          } else {
+            errorDetails = 'Validation failed';
+          }
+          this.toastService.showError(
+            `Configuration validation failed: ${errorDetails}`,
+            'Validation Error'
+          );
+        } else {
+          // Network or other error
+          const errorMessage = validationError.message || 'Failed to validate configuration';
+          this.toastService.showError(
+            errorMessage,
+            'Validation Error'
+          );
+        }
+      }
+    } catch (error: any) {
+      this.toastService.showError(
+        error.message || 'Failed to read file',
+        'File Load Error'
+      );
+    } finally {
+      // Reset file input so the same file can be selected again
+      if (input) {
+        input.value = '';
+      }
+    }
+  }
+
+  private readFileAsText(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        resolve(content);
+      };
+      reader.onerror = () => {
+        reject(new Error('Error reading file'));
+      };
+      reader.readAsText(file);
+    });
   }
 
   /**
@@ -508,12 +724,18 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
         this.healthStatus.set(health);
         this.apiUnavailable.set(false);
         this.connectionError.set(null);
+        this.toastService.showSuccess(
+          `API is healthy! Status: ${health.status}`,
+          'Health Check Successful'
+        );
       } else {
-        this.error.set('No response received from health check');
+        const errorMessage = 'No response received from health check';
+        this.error.set(errorMessage);
         this.apiUnavailable.set(true);
+        this.toastService.showError(errorMessage, 'Health Check Failed');
       }
     } catch (error: any) {
-      this.handleApiError(error, 'Health check failed');
+      this.handleApiError(error, 'Health check failed', true);
     } finally {
       this.isCheckingHealth.set(false);
     }
@@ -627,15 +849,24 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  private handleApiError(error: any, context: string): void {
+  private handleApiError(error: any, context: string, alwaysShowToast: boolean = false): void {
     console.error(`${context}:`, error);
     
     // Check if it's a connection error
     if (this.isConnectionError(error)) {
+      const wasUnavailable = this.apiUnavailable();
       this.apiUnavailable.set(true);
       const connectionMessage = this.getConnectionErrorMessage(error);
       this.connectionError.set(connectionMessage);
       this.error.set(connectionMessage);
+      
+      // Show toast if alwaysShowToast is true, or if API wasn't already unavailable
+      if (alwaysShowToast || !wasUnavailable) {
+        this.toastService.showError(
+          connectionMessage,
+          'API Unavailable'
+        );
+      }
     } else {
       this.apiUnavailable.set(false);
       this.connectionError.set(null);
@@ -668,7 +899,7 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private getConnectionErrorMessage(error: any): string {
     if (error.status === 0) {
-      return 'Unable to connect to the CQL Test Runner API. Please check if the service is running and accessible.';
+      return 'Unable to connect to the CQL Tests Runner API. Please check if the service is running and accessible.';
     }
     if (error.status === 404) {
       return 'CQL Test Runner API endpoint not found. Please verify the API URL configuration.';

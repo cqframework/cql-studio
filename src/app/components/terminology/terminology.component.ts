@@ -7,6 +7,7 @@ import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { SettingsService } from '../../services/settings.service';
 import { TerminologyService } from '../../services/terminology.service';
+import { ToastService } from '../../services/toast.service';
 import { ValueSet, CodeSystem, ConceptMap, Bundle, Parameters } from 'fhir/r4';
 import { ValueSetDetailsPaneComponent } from './valueset-details-pane/valueset-details-pane.component';
 import { ConceptMapDetailsPaneComponent } from './conceptmap-details-pane/conceptmap-details-pane.component';
@@ -188,6 +189,7 @@ export class TerminologyComponent implements OnInit {
 
   protected settingsService = inject(SettingsService);
   private terminologyService = inject(TerminologyService);
+  private toastService = inject(ToastService);
   private router = inject(Router);
 
   ngOnInit(): void {
@@ -240,8 +242,10 @@ export class TerminologyComponent implements OnInit {
         this.searchConceptMaps();
       }
     } catch (error) {
+      const errorMessage = this.getErrorMessage(error);
       this.serverAvailable.set(false);
-      this.serverError.set(this.getErrorMessage(error));
+      this.serverError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'Server Connection Failed');
     } finally {
       this.serverLoading.set(false);
     }
@@ -270,7 +274,9 @@ export class TerminologyComponent implements OnInit {
   // ValueSet operations
   async searchValueSets(url?: string): Promise<void> {
     if (!this.hasValidConfiguration()) {
-      this.valuesetError.set('Please configure terminology service settings first.');
+      const errorMessage = 'Please configure terminology service settings first.';
+      this.valuesetError.set(errorMessage);
+      this.toastService.showWarning(errorMessage, 'Configuration Required');
       return;
     }
 
@@ -348,7 +354,9 @@ export class TerminologyComponent implements OnInit {
         }
       }
     } catch (error) {
-      this.valuesetError.set(this.getErrorMessage(error));
+      const errorMessage = this.getErrorMessage(error);
+      this.valuesetError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'ValueSet Search Failed');
     } finally {
       this.valuesetLoading.set(false);
     }
@@ -414,7 +422,9 @@ export class TerminologyComponent implements OnInit {
         }
       }
 
-      this.valuesetError.set(this.getErrorMessage(error));
+      const errorMessage = this.getErrorMessage(error);
+      this.valuesetError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'ValueSet Expansion Failed');
     } finally {
       this.expandLoading.set(false);
     }
@@ -724,7 +734,9 @@ export class TerminologyComponent implements OnInit {
   // Browser search operations
   async searchBrowserCodes(): Promise<void> {
     if (!this.hasValidConfiguration()) {
-      this.codeError.set('Please configure terminology service settings first.');
+      const errorMessage = 'Please configure terminology service settings first.';
+      this.codeError.set(errorMessage);
+      this.toastService.showWarning(errorMessage, 'Configuration Required');
       return;
     }
 
@@ -773,7 +785,9 @@ export class TerminologyComponent implements OnInit {
       this.autoSelectFirstResult();
     } catch (error) {
       console.error('Browser search error:', error);
-      this.codeError.set(this.getErrorMessage(error));
+      const errorMessage = this.getErrorMessage(error);
+      this.codeError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'Code Search Failed');
     } finally {
       this.codeLoading.set(false);
     }
@@ -782,7 +796,9 @@ export class TerminologyComponent implements OnInit {
   // Code browsing operations (legacy - for CodeSystem browsing)
   async browseCodes(): Promise<void> {
     if (!this.hasValidConfiguration()) {
-      this.codeError.set('Please configure terminology service settings first.');
+      const errorMessage = 'Please configure terminology service settings first.';
+      this.codeError.set(errorMessage);
+      this.toastService.showWarning(errorMessage, 'Configuration Required');
       return;
     }
 
@@ -828,7 +844,9 @@ export class TerminologyComponent implements OnInit {
       this.autoSelectFirstResult();
     } catch (error) {
       console.error('Browse error:', error);
-      this.codeError.set(this.getErrorMessage(error));
+      const errorMessage = this.getErrorMessage(error);
+      this.codeError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'Code Browse Failed');
     } finally {
       this.codeLoading.set(false);
     }
@@ -896,7 +914,9 @@ export class TerminologyComponent implements OnInit {
   // Code validation operations
   async validateCode(): Promise<void> {
     if (!this.hasValidConfiguration()) {
-      this.validationError.set('Please configure terminology service settings first.');
+      const errorMessage = 'Please configure terminology service settings first.';
+      this.validationError.set(errorMessage);
+      this.toastService.showWarning(errorMessage, 'Configuration Required');
       return;
     }
 
@@ -905,7 +925,9 @@ export class TerminologyComponent implements OnInit {
     const valueset = this.validationValueSet().trim();
 
     if (!code || !system) {
-      this.validationError.set('Please enter both code and system.');
+      const errorMessage = 'Please enter both code and system.';
+      this.validationError.set(errorMessage);
+      this.toastService.showWarning(errorMessage, 'Validation Input Required');
       return;
     }
 
@@ -934,7 +956,9 @@ export class TerminologyComponent implements OnInit {
         display: displayParam?.valueString
       });
     } catch (error) {
-      this.validationError.set(this.getErrorMessage(error));
+      const errorMessage = this.getErrorMessage(error);
+      this.validationError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'Code Validation Failed');
     } finally {
       this.validationLoading.set(false);
     }
@@ -943,7 +967,9 @@ export class TerminologyComponent implements OnInit {
   // ConceptMap operations
   async searchConceptMaps(url?: string): Promise<void> {
     if (!this.hasValidConfiguration()) {
-      this.conceptmapError.set('Please configure terminology service settings first.');
+      const errorMessage = 'Please configure terminology service settings first.';
+      this.conceptmapError.set(errorMessage);
+      this.toastService.showWarning(errorMessage, 'Configuration Required');
       return;
     }
 
@@ -1021,7 +1047,9 @@ export class TerminologyComponent implements OnInit {
         }
       }
     } catch (error) {
-      this.conceptmapError.set(this.getErrorMessage(error));
+      const errorMessage = this.getErrorMessage(error);
+      this.conceptmapError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'ConceptMap Search Failed');
     } finally {
       this.conceptmapLoading.set(false);
     }
@@ -1033,7 +1061,9 @@ export class TerminologyComponent implements OnInit {
 
   async translateConcept(): Promise<void> {
     if (!this.hasValidConfiguration()) {
-      this.translationError.set('Please configure terminology service settings first.');
+      const errorMessage = 'Please configure terminology service settings first.';
+      this.translationError.set(errorMessage);
+      this.toastService.showWarning(errorMessage, 'Configuration Required');
       return;
     }
 
@@ -1042,7 +1072,9 @@ export class TerminologyComponent implements OnInit {
     const target = this.translateTarget().trim();
 
     if (!code || !system) {
-      this.translationError.set('Please enter both code and system.');
+      const errorMessage = 'Please enter both code and system.';
+      this.translationError.set(errorMessage);
+      this.toastService.showWarning(errorMessage, 'Translation Input Required');
       return;
     }
 
@@ -1065,7 +1097,9 @@ export class TerminologyComponent implements OnInit {
       const matchParams = result?.parameter?.filter(p => p.name === 'match') || [];
       this.translationResult.set(matchParams.map(p => p.valueCoding));
     } catch (error) {
-      this.translationError.set(this.getErrorMessage(error));
+      const errorMessage = this.getErrorMessage(error);
+      this.translationError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'Concept Translation Failed');
     } finally {
       this.translationLoading.set(false);
     }
@@ -1077,7 +1111,7 @@ export class TerminologyComponent implements OnInit {
       return 'Authentication failed. The terminology server may require authentication. Please check your authorization bearer token in Settings.';
     }
     if (error?.status === 404) {
-      return 'Resource not found. Please check your search terms.';
+      return 'Server responded with 404 error: not found.';
     }
     if (error?.status >= 500) {
       return 'Server error. Please try again later.';
@@ -1094,7 +1128,9 @@ export class TerminologyComponent implements OnInit {
   // Code Systems operations
   async loadCodeSystems(): Promise<void> {
     if (!this.hasValidConfiguration()) {
-      this.codeSystemsError.set('Please configure terminology service settings first.');
+      const errorMessage = 'Please configure terminology service settings first.';
+      this.codeSystemsError.set(errorMessage);
+      this.toastService.showWarning(errorMessage, 'Configuration Required');
       return;
     }
 
@@ -1110,7 +1146,9 @@ export class TerminologyComponent implements OnInit {
       // Reset to first page when loading new data
       this.codeSystemsCurrentPage.set(1);
     } catch (error) {
-      this.codeSystemsError.set(this.getErrorMessage(error));
+      const errorMessage = this.getErrorMessage(error);
+      this.codeSystemsError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'Code Systems Load Failed');
     } finally {
       this.codeSystemsLoading.set(false);
     }
@@ -1290,9 +1328,12 @@ export class TerminologyComponent implements OnInit {
       this.codeSystemsResults.set(results);
 
       console.log(`CodeSystem "${codeSystem.name || codeSystem.id}" deleted successfully`);
+      this.toastService.showSuccess(`CodeSystem "${codeSystem.name || codeSystem.title || codeSystem.id}" deleted successfully`, 'CodeSystem Deleted');
     } catch (error) {
       console.error('Failed to delete CodeSystem:', error);
-      this.codeSystemsError.set(`Failed to delete CodeSystem: ${this.getErrorMessage(error)}`);
+      const errorMessage = `Failed to delete CodeSystem: ${this.getErrorMessage(error)}`;
+      this.codeSystemsError.set(errorMessage);
+      this.toastService.showError(errorMessage, 'CodeSystem Deletion Failed');
     } finally {
       // Remove from deleting set
       const deleting = new Set(this.codeSystemsDeleting());

@@ -1,226 +1,121 @@
 <div class="container-fluid py-4">
   <div class="row">
     <div class="col-12">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h3 mb-0">
+      <div class="mb-4">
+        <!-- <h1 class="h3 mb-0">
           <i class="bi bi-play-circle me-2"></i>CQL Test Runner
-        </h1>
-        <div class="btn-group">
-          <button 
-            id="check-api-health-btn"
-            type="button" 
-            class="btn btn-outline-info" 
-            (click)="checkApiHealth()"
-            [disabled]="isCheckingHealth()">
-            @if (isCheckingHealth()) {
-              <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-              Checking...
-            } @else {
-              <i class="bi bi-heart-pulse me-1"></i>
-              Check Runner API Health
-            }
-          </button>
-          <button id="toggle-json-editor-btn" type="button" class="btn btn-outline-secondary" (click)="toggleJsonEditor()">
-            <i class="bi bi-code-slash me-1"></i>
-            {{ showJsonEditor() ? 'Form Editor' : 'JSON Editor' }}
-          </button>
-          <button id="reset-config-btn" type="button" class="btn btn-outline-danger" (click)="reset()">
-            <i class="bi bi-arrow-clockwise me-1"></i>Reset
-          </button>
-        </div>
+        </h1> -->
+
+
+        <button id="toggle-json-editor-btn" type="button" class="btn btn-outline-secondary mx-2"
+          (click)="toggleJsonEditor()">
+          <i class="bi bi-code-slash me-1"></i>
+          {{ showJsonEditor() ? 'Form Editor' : 'JSON Editor' }}
+        </button>
+        <button id="reset-config-btn" type="button" class="btn btn-outline-secondary mx-2" (click)="reset()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Reset
+        </button>
+        <button id="check-api-health-btn" type="button" class="btn btn-outline-info mx-2" (click)="checkApiHealth()"
+          [disabled]="isCheckingHealth()">
+          @if (isCheckingHealth()) {
+          <i class="spinner-border spinner-border-sm me-2" role="status"></i>
+          Checking...
+          } @else {
+          <i class="bi bi-heart-pulse me-1"></i>
+          Recheck Tests Runner Health
+          }
+        </button>
       </div>
+
 
 
       <!-- General Error Alert -->
       @if (error() && !apiUnavailable()) {
-        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-          <i class="bi bi-exclamation-triangle me-2"></i>
-          {{ error() }}
-          <button id="close-error-btn" type="button" class="btn-close" (click)="error.set(null)"></button>
-        </div>
+      <div class="alert alert-danger alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        {{ error() }}
+        <button id="close-error-btn" type="button" class="btn-close" (click)="error.set(null)"></button>
+      </div>
       }
 
-      <!-- Progress Warning Banner -->
-      @if (isJobInProgress()) {
-        <div class="alert alert-warning shadow-lg mb-4" role="alert">
-          <div class="d-flex align-items-center">
-            <div class="spinner-border spinner-border-sm text-warning me-3" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <div class="flex-grow-1">
-              <h5 class="alert-heading mb-1">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                CQL Tests Queued for Execution
-              </h5>
-              <p class="mb-0">
-                <strong>Please do not leave this page</strong> - Your tests are queued for execution and will run as quickly as possible.
-                This page will automatically update when the tests complete.
-                @if (getElapsedTime()) {
-                  <br><small class="text-muted">Queued for: <strong>{{ getElapsedTime() }}</strong></small>
-                }
-              </p>
-            </div>
-            <div class="spinner-border text-warning" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-          </div>
-        </div>
-      }
-
-      <!-- API Status Information -->
-      @if (apiUnavailable()) {
-        <div class="card mb-4">
-          <div class="card-header bg-danger text-white">
-            <h5 class="card-title mb-0">
-              <i class="bi bi-wifi-off me-2"></i>API Connection Status
-            </h5>
-          </div>
-          <div class="card-body">
-            <div class="alert alert-danger">
-              <div class="d-flex align-items-start">
-                <i class="bi bi-exclamation-triangle-fill me-3 fs-4"></i>
-                <div class="flex-grow-1">
-                  <h6 class="alert-heading">CQL Test Runner API is not accessible</h6>
-                  <p class="mb-3">The application cannot connect to the CQL Test Runner API. This prevents running tests and checking job status.</p>
-                  
-                  <div class="row">
-                    <div class="col-md-6">
-                      <h6 class="fw-bold">Troubleshooting Steps:</h6>
-                      <ul class="list-unstyled">
-                        <li><i class="bi bi-check-circle text-success me-2"></i>Verify the API service is running</li>
-                        <li><i class="bi bi-check-circle text-success me-2"></i>Check the API URL configuration</li>
-                        <li><i class="bi bi-check-circle text-success me-2"></i>Ensure network connectivity</li>
-                        <li><i class="bi bi-check-circle text-success me-2"></i>Check for CORS configuration issues</li>
-                      </ul>
-                    </div>
-                    <div class="col-md-6">
-                      <h6 class="fw-bold">Current Configuration:</h6>
-                      <div class="bg-light p-3 rounded">
-                        <small>
-                          <strong>API Base URL:</strong><br>
-                          <code>{{ getApiBaseUrl() }}</code>
-                        </small>
-                      </div>
-                    </div>
-                  </div>
-                  
-                  <div class="mt-3">
-                    <button id="test-connection-again-btn" type="button" class="btn btn-outline-danger" (click)="checkApiHealth()">
-                      <i class="bi bi-arrow-clockwise me-1"></i>Test Connection Again
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      } @else if (healthStatus()) {
-        <div class="alert alert-success mb-4">
-          <div class="d-flex align-items-center">
-            <i class="bi bi-check-circle-fill me-2"></i>
-            <div>
-              <strong>API is healthy!</strong>
-              <br>
-              <small class="text-muted">
-                Status: {{ healthStatus()!.status }} | 
-                Checked at: {{ healthStatus()!.timestamp | date:'medium' }}
-              </small>
-            </div>
-          </div>
-        </div>
-      }
 
       <!-- JSON Editor -->
       @if (showJsonEditor()) {
-        <div class="card mb-4">
-          <div class="card-header">
-            <h5 class="card-title mb-0">
-              <i class="bi bi-code-slash me-2"></i>Configuration JSON
-            </h5>
+      <div class="card mb-4">
+        <div class="card-header">
+          <h5 class="card-title mb-0">
+            <i class="bi bi-code-slash me-2"></i>Configuration JSON
+          </h5>
+        </div>
+        <div class="card-body">
+          <div class="json-editor-container">
+            <label class="form-label">JSON Editor with Syntax Highlighting</label>
+            <div #jsonEditorContainer class="json-editor-wrapper">
+            </div>
           </div>
-          <div class="card-body">
-            <div class="json-editor-container">
-              <label class="form-label">JSON Editor with Syntax Highlighting</label>
-              <div 
-                #jsonEditorContainer 
-                class="json-editor-wrapper">
-              </div>
-            </div>
-            <div class="d-flex gap-2 flex-wrap mt-3">
-              <button id="load-from-json-btn" type="button" class="btn btn-primary" (click)="loadFromJson()">
-                <i class="bi bi-upload me-1"></i>Load from JSON
-              </button>
-              <button id="update-json-config-btn" type="button" class="btn btn-outline-secondary" (click)="updateJsonConfig()">
-                <i class="bi bi-arrow-clockwise me-1"></i>Update from Form
-              </button>
-            </div>
+          <input type="file" id="config-file-input" class="d-none" accept=".json" (change)="onConfigFileSelected($event)">
+          <div class="d-flex gap-2 flex-wrap mt-3">
+            <button id="validate-config-btn" type="button" class="btn btn-outline-primary" (click)="validateCurrentConfig()">
+              <i class="bi bi-check-circle me-1"></i>Validate
+            </button>
+            <button id="load-from-json-btn" type="button" class="btn btn-primary" (click)="triggerFileSelection()">
+              <i class="bi bi-upload me-1"></i>Load from JSON
+            </button>
+            <button id="update-json-config-btn" type="button" class="btn btn-outline-secondary"
+              (click)="updateJsonConfig()">
+              <i class="bi bi-arrow-clockwise me-1"></i>Update from Form
+            </button>
           </div>
         </div>
+      </div>
       }
 
       <!-- Form Editor -->
       @if (!showJsonEditor()) {
-        <div class="row">
-          <!-- FHIR Server Configuration -->
-          <div class="col-md-6 mb-4">
-            <div class="card">
-              <div class="card-header">
-                <h5 class="card-title mb-0">
-                  <i class="bi bi-server me-2"></i>FHIR Server Configuration
-                </h5>
+      <div class="row">
+        <!-- FHIR Server Configuration -->
+        <div class="col-md-6 mb-4">
+          <div class="card">
+            <div class="card-header">
+              <h5 class="card-title mb-0">
+                <i class="bi bi-server me-2"></i>FHIR Server Configuration
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="form-floating mb-3">
+                <input type="url" class="form-control" id="baseUrl" [(ngModel)]="config().FhirServer.BaseUrl"
+                  placeholder="http://localhost:8080/fhir">
+                <label for="baseUrl">Base URL</label>
               </div>
-              <div class="card-body">
-                <div class="form-floating mb-3">
-                  <input 
-                    type="url" 
-                    class="form-control" 
-                    id="baseUrl"
-                    [(ngModel)]="config().FhirServer.BaseUrl"
-                    placeholder="http://localhost:8080/fhir">
-                  <label for="baseUrl">Base URL</label>
-                </div>
-                <div class="form-floating mb-3">
-                  <input 
-                    type="text" 
-                    class="form-control" 
-                    id="cqlOperation"
-                    [(ngModel)]="config().FhirServer.CqlOperation"
-                    placeholder="$cql">
-                  <label for="cqlOperation">CQL Operation</label>
-                </div>
-                <div class="form-floating mb-3">
-                  <input 
-                    type="url" 
-                    class="form-control" 
-                    id="ogBaseUrl"
-                    [(ngModel)]="config().FhirServer.ogBaseUrl"
-                    placeholder="https://example.com/fhir">
-                  <label for="ogBaseUrl">Original Base URL (Optional)</label>
-                </div>
+              <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="cqlOperation" [(ngModel)]="config().FhirServer.CqlOperation"
+                  placeholder="$cql">
+                <label for="cqlOperation">CQL Operation</label>
+              </div>
+              <div class="form-floating mb-3">
+                <input type="url" class="form-control" id="ogBaseUrl" [(ngModel)]="config().FhirServer.ogBaseUrl"
+                  placeholder="https://example.com/fhir">
+                <label for="ogBaseUrl">Original Base URL (Optional)</label>
               </div>
             </div>
           </div>
+        </div>
 
-          <!-- Build Configuration -->
-          <div class="col-md-6 mb-4">
-            <div class="card">
-              <div class="card-header">
-                <h5 class="card-title mb-0">
-                  <i class="bi bi-gear me-2"></i>CQL Configuration
-                </h5>
+        <!-- Build Configuration -->
+        <div class="col-md-6 mb-4">
+          <div class="card">
+            <div class="card-header">
+              <h5 class="card-title mb-0">
+                <i class="bi bi-gear me-2"></i>CQL Configuration
+              </h5>
+            </div>
+            <div class="card-body">
+              <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="cqlFileVersion" [(ngModel)]="config().Build.CqlFileVersion"
+                  placeholder="1.0.000" pattern="^\d+\.\d+\.\d+$">
+                <label for="cqlFileVersion">CQL File Version</label>
               </div>
-              <div class="card-body">
-                <div class="form-floating mb-3">
-                  <input 
-                    type="text" 
-                    class="form-control" 
-                    id="cqlFileVersion"
-                    [(ngModel)]="config().Build.CqlFileVersion"
-                    placeholder="1.0.000"
-                    pattern="^\d+\.\d+\.\d+$">
-                  <label for="cqlFileVersion">CQL File Version</label>
-                </div>
-                <!-- <div class="form-floating mb-3">
+              <!-- <div class="form-floating mb-3">
                   <input 
                     type="text" 
                     class="form-control" 
@@ -229,44 +124,31 @@
                     placeholder="./cql">
                   <label for="cqlOutputPath">CQL Output Path</label>
                 </div> -->
-                <div class="form-floating mb-3">
-                  <input 
-                    type="text" 
-                    class="form-control" 
-                    id="cqlVersion"
-                    [(ngModel)]="config().Build.CqlVersion"
-                    placeholder="1.5.3"
-                    pattern="^\d+\.\d+(\.\d+)?$">
-                  <label for="cqlVersion">CQL Version (Optional)</label>
-                </div>
-                <div class="form-text">CQL engine version for version-based test filtering</div>
-<hr>
-                <div class="form-floating mb-3">
-                  <input 
-                    type="text" 
-                    class="form-control" 
-                    id="testsRunDescription"
-                    [(ngModel)]="config().Build.testsRunDescription"
-                    placeholder="Quick Test Run">
-                  <label for="testsRunDescription">Test Run Description</label>
-                </div>
-                <div class="form-check">
-                  <input 
-                    class="form-check-input" 
-                    type="checkbox" 
-                    id="quickTest"
-                    [(ngModel)]="config().Debug.QuickTest">
-                  <label class="form-check-label" for="quickTest">
-                    Quick Test (smoke tests only)
-                  </label>
-                </div>
+              <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="cqlVersion" [(ngModel)]="config().Build.CqlVersion"
+                  placeholder="1.5.3" pattern="^\d+\.\d+(\.\d+)?$">
+                <label for="cqlVersion">CQL Version (Optional)</label>
+              </div>
+              <div class="form-text">CQL engine version for version-based test filtering</div>
+              <hr>
+              <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="testsRunDescription"
+                  [(ngModel)]="config().Build.testsRunDescription" placeholder="Quick Test Run">
+                <label for="testsRunDescription">Test Run Description</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="quickTest" [(ngModel)]="config().Debug.QuickTest">
+                <label class="form-check-label" for="quickTest">
+                  Quick Test (smoke tests only)
+                </label>
               </div>
             </div>
           </div>
+        </div>
 
 
-          <!-- Tests Configuration -->
-          <!-- <div class="col-md-6 mb-4">
+        <!-- Tests Configuration -->
+        <!-- <div class="col-md-6 mb-4">
             <div class="card">
               <div class="card-header">
                 <h5 class="card-title mb-0">
@@ -287,120 +169,98 @@
             </div>
           </div> -->
 
-          <!-- Skip List -->
-          <div class="col-12 mb-4">
-            <div class="card">
-              <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">
-                  <i class="bi bi-skip-backward me-2"></i>Skip List
-                </h5>
-                <button id="add-skip-item-btn" type="button" class="btn btn-sm btn-outline-primary" (click)="addSkipItem()">
-                  <i class="bi bi-plus me-1"></i>Add Skip Item
-                </button>
+        <!-- Skip List -->
+        <div class="col-12 mb-4">
+          <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+              <h5 class="card-title mb-0">
+                <i class="bi bi-skip-backward me-2"></i>Skip List
+              </h5>
+              <button id="add-skip-item-btn" type="button" class="btn btn-sm btn-outline-primary"
+                (click)="addSkipItem()">
+                <i class="bi bi-plus me-1"></i>Add Skip Item
+              </button>
+            </div>
+            <div class="card-body">
+              @if (config().Tests.SkipList.length === 0) {
+              <p class="text-muted mb-0">No skip items configured.</p>
+              } @else {
+              <div class="table-responsive">
+                <table class="table table-sm">
+                  <thead>
+                    <tr>
+                      <th>Tests Name</th>
+                      <th>Group Name</th>
+                      <th>Test Name</th>
+                      <th>Reason</th>
+                      <th width="100">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (item of config().Tests.SkipList; track $index) {
+                    <tr>
+                      <td>
+                        <div class="form-floating">
+                          <input type="text" class="form-control form-control-sm" id="testsName-{{ $index }}"
+                            [(ngModel)]="item.testsName" placeholder="Test suite name">
+                          <label for="testsName-{{ $index }}">Test Suite</label>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="form-floating">
+                          <input type="text" class="form-control form-control-sm" id="groupName-{{ $index }}"
+                            [(ngModel)]="item.groupName" placeholder="Group name">
+                          <label for="groupName-{{ $index }}">Group</label>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="form-floating">
+                          <input type="text" class="form-control form-control-sm" id="testName-{{ $index }}"
+                            [(ngModel)]="item.testName" placeholder="Test name">
+                          <label for="testName-{{ $index }}">Test</label>
+                        </div>
+                      </td>
+                      <td>
+                        <div class="form-floating">
+                          <input type="text" class="form-control form-control-sm" id="reason-{{ $index }}"
+                            [(ngModel)]="item.reason" placeholder="Skip reason">
+                          <label for="reason-{{ $index }}">Reason</label>
+                        </div>
+                      </td>
+                      <td>
+                        <button id="remove-skip-item-btn-{{ $index }}" type="button"
+                          class="btn btn-sm btn-outline-danger" (click)="removeSkipItem($index)">
+                          <i class="bi bi-trash"></i>
+                        </button>
+                      </td>
+                    </tr>
+                    }
+                  </tbody>
+                </table>
               </div>
-              <div class="card-body">
-                @if (config().Tests.SkipList.length === 0) {
-                  <p class="text-muted mb-0">No skip items configured.</p>
-                } @else {
-                  <div class="table-responsive">
-                    <table class="table table-sm">
-                      <thead>
-                        <tr>
-                          <th>Tests Name</th>
-                          <th>Group Name</th>
-                          <th>Test Name</th>
-                          <th>Reason</th>
-                          <th width="100">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (item of config().Tests.SkipList; track $index) {
-                          <tr>
-                            <td>
-                              <div class="form-floating">
-                                <input 
-                                  type="text" 
-                                  class="form-control form-control-sm"
-                                  id="testsName-{{ $index }}"
-                                  [(ngModel)]="item.testsName"
-                                  placeholder="Test suite name">
-                                <label for="testsName-{{ $index }}">Test Suite</label>
-                              </div>
-                            </td>
-                            <td>
-                              <div class="form-floating">
-                                <input 
-                                  type="text" 
-                                  class="form-control form-control-sm"
-                                  id="groupName-{{ $index }}"
-                                  [(ngModel)]="item.groupName"
-                                  placeholder="Group name">
-                                <label for="groupName-{{ $index }}">Group</label>
-                              </div>
-                            </td>
-                            <td>
-                              <div class="form-floating">
-                                <input 
-                                  type="text" 
-                                  class="form-control form-control-sm"
-                                  id="testName-{{ $index }}"
-                                  [(ngModel)]="item.testName"
-                                  placeholder="Test name">
-                                <label for="testName-{{ $index }}">Test</label>
-                              </div>
-                            </td>
-                            <td>
-                              <div class="form-floating">
-                                <input 
-                                  type="text" 
-                                  class="form-control form-control-sm"
-                                  id="reason-{{ $index }}"
-                                  [(ngModel)]="item.reason"
-                                  placeholder="Skip reason">
-                                <label for="reason-{{ $index }}">Reason</label>
-                              </div>
-                            </td>
-                            <td>
-                              <button 
-                                id="remove-skip-item-btn-{{ $index }}"
-                                type="button" 
-                                class="btn btn-sm btn-outline-danger" 
-                                (click)="removeSkipItem($index)">
-                                <i class="bi bi-trash"></i>
-                              </button>
-                            </td>
-                          </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                }
-              </div>
+              }
             </div>
           </div>
         </div>
+      </div>
       }
 
       <!-- Action Buttons -->
       <div class="card">
         <div class="card-body">
           <div class="d-flex gap-2 flex-wrap">
-            <button 
-              id="run-tests-btn"
-              type="button" 
-              class="btn btn-primary btn-lg" 
-              (click)="createJob()"
+            <button id="run-tests-btn" type="button" class="btn btn-primary btn-lg" (click)="createJob()"
               [disabled]="isCreatingJob() || isPolling() || apiUnavailable()"
               [class.btn-outline-secondary]="apiUnavailable()">
               @if (isCreatingJob()) {
-                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
-                Initializing Test Run...
+              <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+              Initializing Test Run...
               } @else if (apiUnavailable()) {
-                <i class="bi bi-wifi-off me-2"></i>
-                API Unavailable - Cannot Run Tests
+              <i class="bi bi-wifi-off me-2"></i>
+              API Unavailable - Cannot Run Tests
               } @else {
-                <i class="bi bi-play-circle me-2"></i>
-                Run Tests
+              <i class="bi bi-play-circle me-2"></i>
+              Run Tests
               }
             </button>
           </div>
@@ -410,124 +270,120 @@
 
       <!-- Job Status -->
       @if (currentJob() || jobStatus()) {
-        <div class="card mt-4">
-          <div class="card-header">
-            <h5 class="card-title mb-0">
-              <i class="bi bi-info-circle me-2"></i>Job Status
-            </h5>
-          </div>
-          <div class="card-body">
-            @if (currentJob()) {
-              <div class="row mb-3">
-                <div class="col-md-4">
-                  <strong>Job ID:</strong> 
-                  <code>{{ currentJob()!.jobId }}</code>
-                </div>
-                <div class="col-md-4">
-                  <strong>Created:</strong> 
-                  {{ currentJob()!.createdAt | date:'medium' }}
-                </div>
-                <div class="col-md-4">
-                  <strong>Elapsed Time:</strong> 
-                  <span class="text-primary fw-semibold">{{ getElapsedTime() }}</span>
-                </div>
-              </div>
-            }
-
-            @if (jobStatus()) {
-              <div class="row mb-3">
-                <div class="col-md-6">
-                  <strong>Status:</strong> 
-                  <span [class]="getStatusBadgeClass(jobStatus()!.status)">
-                    {{ jobStatus()!.status | titlecase }}
-                  </span>
-                </div>
-                @if (jobStatus()!.completedAt) {
-                  <div class="col-md-6">
-                    <strong>Completed:</strong> 
-                    {{ jobStatus()!.completedAt | date:'medium' }}
-                  </div>
-                }
-              </div>
-
-              @if (jobStatus()!.message) {
-                <div class="mb-3">
-                  <strong>Message:</strong> 
-                  <p class="mb-0">{{ jobStatus()!.message }}</p>
-                </div>
-              }
-
-              @if (isJobInProgress()) {
-                <!-- Prominent Progress Indicator -->
-                <div class="mb-4">
-                  <div class="alert alert-warning shadow-sm">
-                    <div class="d-flex align-items-center mb-3">
-                      <div class="spinner-border text-warning me-3" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                      </div>
-                      <div>
-                        <h6 class="mb-1 fw-bold">
-                          <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                          Tests Queued - Please Stay on This Page
-                        </h6>
-                        <p class="mb-0 text-muted">
-                          Your CQL tests are queued for execution and will run as quickly as possible. Do not navigate away or close this browser tab.
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <!-- Animated Progress Bar -->
-                    <div class="progress" style="height: 8px;">
-                      <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" 
-                           role="progressbar" 
-                           style="width: 100%"
-                           aria-valuenow="100" 
-                           aria-valuemin="0" 
-                           aria-valuemax="100">
-                      </div>
-                    </div>
-                  </div>
-                  
-                </div>
-              }
-
-              @if (isJobCompleted()) {
-                <div class="alert alert-success">
-                  <i class="bi bi-check-circle me-2"></i>
-                  Job completed successfully!
-                </div>
-                
-                <!-- Action buttons for completed job -->
-                <div class="d-flex gap-2 mt-3 flex-wrap">
-                  <button id="download-results-btn" type="button" class="btn btn-success" (click)="downloadResults()">
-                    <i class="bi bi-download me-1"></i>
-                    Download Results JSON
-                  </button>
-                  <button id="view-results-btn" type="button" class="btn btn-primary" (click)="viewResults()">
-                    <i class="bi bi-eye me-1"></i>
-                    View Results
-                  </button>
-                </div>
-              }
-
-              @if (isJobFailed()) {
-                <div class="alert alert-danger">
-                  <i class="bi bi-x-circle me-2"></i>
-                  Job failed: {{ jobStatus()!.error || 'Unknown error' }}
-                </div>
-              }
-
-              @if (jobStatus()!.results) {
-                <div class="mt-3">
-                  <h6>Results Preview</h6>
-                  <app-syntax-highlighter [code]="jobStatus()!.results | json" [language]="'json'"></app-syntax-highlighter>
-                </div>
-              }
-            }
-          </div>
+      <div class="card mt-4">
+        <div class="card-header">
+          <h5 class="card-title mb-0">
+            <i class="bi bi-info-circle me-2"></i>Job Status
+          </h5>
         </div>
+        <div class="card-body">
+          @if (currentJob()) {
+          <div class="row mb-3">
+            <div class="col-md-4">
+              <strong>Job ID:</strong>
+              <code>{{ currentJob()!.jobId }}</code>
+            </div>
+            <div class="col-md-4">
+              <strong>Created:</strong>
+              {{ currentJob()!.createdAt | date:'medium' }}
+            </div>
+            <div class="col-md-4">
+              <strong>Elapsed Time:</strong>
+              <span class="text-primary fw-semibold">{{ getElapsedTime() }}</span>
+            </div>
+          </div>
+          }
+
+          @if (jobStatus()) {
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <strong>Status:</strong>
+              <span [class]="getStatusBadgeClass(jobStatus()!.status)">
+                {{ jobStatus()!.status | titlecase }}
+              </span>
+            </div>
+            @if (jobStatus()!.completedAt) {
+            <div class="col-md-6">
+              <strong>Completed:</strong>
+              {{ jobStatus()!.completedAt | date:'medium' }}
+            </div>
+            }
+          </div>
+
+          @if (jobStatus()!.message) {
+          <div class="mb-3">
+            <strong>Message:</strong>
+            <p class="mb-0">{{ jobStatus()!.message }}</p>
+          </div>
+          }
+
+          @if (isJobInProgress()) {
+          <!-- Prominent Progress Indicator -->
+          <div class="mb-4">
+            <div class="alert alert-warning shadow-sm">
+              <div class="d-flex align-items-center mb-3">
+                <div class="spinner-border text-warning me-3" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <div>
+                  <h6 class="mb-1 fw-bold">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Tests Queued - Please Stay on This Page
+                  </h6>
+                  <p class="mb-0 text-muted">
+                    Your CQL tests are queued for execution and will run as quickly as possible. Do not navigate away or
+                    close this browser tab.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Animated Progress Bar -->
+              <div class="progress" style="height: 8px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" role="progressbar"
+                  style="width: 100%" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
+                </div>
+              </div>
+            </div>
+
+          </div>
+          }
+
+          @if (isJobCompleted()) {
+          <div class="alert alert-success">
+            <i class="bi bi-check-circle me-2"></i>
+            Job completed successfully!
+          </div>
+
+          <!-- Action buttons for completed job -->
+          <div class="d-flex gap-2 mt-3 flex-wrap">
+            <button id="download-results-btn" type="button" class="btn btn-success" (click)="downloadResults()">
+              <i class="bi bi-download me-1"></i>
+              Download Results JSON
+            </button>
+            <button id="view-results-btn" type="button" class="btn btn-primary" (click)="viewResults()">
+              <i class="bi bi-eye me-1"></i>
+              View Results
+            </button>
+          </div>
+          }
+
+          @if (isJobFailed()) {
+          <div class="alert alert-danger">
+            <i class="bi bi-x-circle me-2"></i>
+            Job failed: {{ jobStatus()!.error || 'Unknown error' }}
+          </div>
+          }
+
+          @if (jobStatus()!.results) {
+          <div class="mt-3">
+            <h6>Results Preview</h6>
+            <app-syntax-highlighter [code]="jobStatus()!.results | json" [language]="'json'"></app-syntax-highlighter>
+          </div>
+          }
+          }
+        </div>
+      </div>
       }
     </div>
   </div>
 </div>
-

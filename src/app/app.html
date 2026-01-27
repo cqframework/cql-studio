@@ -5,4 +5,34 @@
   <main class="main-content">
     <router-outlet></router-outlet>
   </main>
+
+  <!-- Toast Container -->
+  <div class="toast-container position-fixed bottom-0 end-0 p-3" aria-live="polite" aria-atomic="true">
+    @for (toast of toastService.toasts(); track toast.id) {
+      <div
+        #toastElement
+        [id]="toast.id"
+        [class]="'toast ' + getToastClass(toast.type)"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+        [attr.data-bs-autohide]="toast.duration > 0 ? true : false"
+        [attr.data-bs-delay]="toast.duration > 0 ? toast.duration : null">
+        <div [class]="'toast-header ' + getToastClass(toast.type)">
+          <i [class]="'bi ' + getToastIcon(toast.type) + ' me-2'"></i>
+          @if (toast.title) {
+            <strong class="me-auto">{{ toast.title }}</strong>
+          }
+          <button
+            type="button"
+            class="btn-close btn-close-white"
+            data-bs-dismiss="toast"
+            aria-label="Close"></button>
+        </div>
+        <div class="toast-body">
+          {{ toast.message }}
+        </div>
+      </div>
+    }
+  </div>
 </div>

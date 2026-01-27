@@ -46,6 +46,14 @@ export interface JobStatus extends JobResponse {
   // JobStatus extends JobResponse with additional fields that might be present
 }
 
+export interface ValidationResponse {
+  valid: boolean;
+  message?: string;
+  error?: string;
+  details?: string[];
+  errors?: any[];
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -95,6 +103,38 @@ export class RunnerService {
     return this.http.get<{ status: string; timestamp: string }>(`${this.baseUrl}/health`)
       .pipe(
         catchError(this.handleError)
+      );
+  }
+
+  /**
+   * Validate a test configuration against the schema
+   */
+  validateConfiguration(config: CQLTestConfiguration): Observable<ValidationResponse> {
+    return this.http.post<ValidationResponse>(`${this.baseUrl}/validate/configuration`, config)
+      .pipe(
+        catchError((error: HttpErrorResponse) => {
+          // For 422 errors, extract the validation response
+          if (error.status === 422 && error.error) {
+            return throwError(() => error.error as ValidationResponse);
+          }
+          return this.handleError(error);
+        })
+      );
+  }
+
+  /**
+   * Validate test results against the schema
+   */
+  validateResults(results: any): Observable<ValidationResponse> {
+    return this.http.post<ValidationResponse>(`${this.baseUrl}/validate/results`, results)
+      .pipe(
+        catchError((error: HttpErrorResponse) => {
+          // For 422 errors, extract the validation response
+          if (error.status === 422 && error.error) {
+            return throwError(() => error.error as ValidationResponse);
+          }
+          return this.handleError(error);
+        })
       );
   }
 

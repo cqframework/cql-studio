@@ -7,8 +7,11 @@ import { Router, ActivatedRoute } from '@angular/router';
 import { FileLoaderService } from '../../services/file-loader.service';
 import { SchemaValidationService } from '../../services/schema-validation.service';
 import { SettingsService } from '../../services/settings.service';
+import { RunnerService } from '../../services/runner.service';
+import { ToastService } from '../../services/toast.service';
 import { SessionStorageKeys } from '../../constants/session-storage.constants';
 import { CqlTestResults } from '../../models/cql-test-results.model';
+import { firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-open',
@@ -33,6 +36,8 @@ export class OpenComponent implements OnInit {
 
   private fileLoader = inject(FileLoaderService);
   private schemaValidation = inject(SchemaValidationService);
+  private runnerService = inject(RunnerService);
+  private toastService = inject(ToastService);
   public settingsService = inject(SettingsService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
@@ -245,14 +250,59 @@ export class OpenComponent implements OnInit {
     
     // Check if schema validation is enabled
     if (this.settingsService.settings().validateSchema) {
-      const validation = await this.schemaValidation.validateResults(data);
-      
-      if (validation.isValid) {
-        // Store data in sessionStorage for the results viewer
-        sessionStorage.setItem(SessionStorageKeys.CQL_TEST_RESULTS, JSON.stringify(data));
-        this.router.navigate(['/results']);
-      } else {
-        this.validationErrors.set(validation.errors);
+      try {
+        // Try server-side validation first
+        const validation = await firstValueFrom(this.runnerService.validateResults(data));
+        
+        if (validation.valid) {
+          // Store data in sessionStorage for the results viewer
+          sessionStorage.setItem(SessionStorageKeys.CQL_TEST_RESULTS, JSON.stringify(data));
+          this.toastService.showSuccess(
+            'Results file validated successfully',
+            'Validation Successful'
+          );
+          this.router.navigate(['/results']);
+        } else {
+          // Validation failed
+          const errorDetails = validation.details?.join('; ') || validation.message || 'Validation failed';
+          const errorArray = validation.details || [validation.message || 'Validation failed'];
+          this.validationErrors.set(errorArray);
+          this.toastService.showError(
+            `Results validation failed: ${errorDetails}`,
+            'Validation Error'
+          );
+        }
+      } catch (validationError: any) {
+        // Handle validation error response or network error
+        if (validationError.valid === false) {
+          // Server returned validation failure
+          const errorDetails = validationError.details?.join('; ') || validationError.message || 'Validation failed';
+          const errorArray = validationError.details || [validationError.message || 'Validation failed'];
+          this.validationErrors.set(errorArray);
+          this.toastService.showError(
+            `Results validation failed: ${errorDetails}`,
+            'Validation Error'
+          );
+        } else {
+          // Network error or server unavailable - fall back to client-side validation
+          console.warn('Server validation unavailable, falling back to client-side validation:', validationError);
+          const validation = await this.schemaValidation.validateResults(data);
+          
+          if (validation.isValid) {
+            sessionStorage.setItem(SessionStorageKeys.CQL_TEST_RESULTS, JSON.stringify(data));
+            this.toastService.showSuccess(
+              'Results file validated successfully (client-side validation)',
+              'Validation Successful'
+            );
+            this.router.navigate(['/results']);
+          } else {
+            this.validationErrors.set(validation.errors);
+            this.toastService.showError(
+              'Results validation failed. Server validation unavailable, used client-side validation.',
+              'Validation Error'
+            );
+          }
+        }
       }
     } else {
       // Skip validation, just store and navigate
@@ -264,15 +314,87 @@ export class OpenComponent implements OnInit {
   private async validateAndNavigateWithUrl(data: CqlTestResults, fileUrl: string): Promise<void> {
     // Check if schema validation is enabled
     if (this.settingsService.settings().validateSchema) {
-      const validation = await this.schemaValidation.validateResults(data);
-      
-      if (validation.isValid) {
-        // Store data in sessionStorage for the results viewer
-        sessionStorage.setItem(SessionStorageKeys.CQL_TEST_RESULTS, JSON.stringify(data));
-        // Navigate with the file URL and preserve all existing query parameters
-        this.navigateToResultsWithParams(fileUrl);
-      } else {
-        this.validationErrors.set(validation.errors);
+      try {
+        // Try server-side validation first
+        const validation = await firstValueFrom(this.runnerService.validateResults(data));
+        
+        if (validation.valid) {
+          // Store data in sessionStorage for the results viewer
+          sessionStorage.setItem(SessionStorageKeys.CQL_TEST_RESULTS, JSON.stringify(data));
+          this.toastService.showSuccess(
+            'Results file validated successfully',
+            'Validation Successful'
+          );
+          // Navigate with the file URL and preserve all existing query parameters
+          this.navigateToResultsWithParams(fileUrl);
+        } else {
+          // Validation failed
+          let errorDetails: string;
+          let errorArray: string[];
+          if (Array.isArray(validation.details)) {
+            errorDetails = validation.details.join('; ');
+            errorArray = validation.details;
+          } else if (validation.details) {
+            errorDetails = String(validation.details);
+            errorArray = [String(validation.details)];
+          } else if (validation.message) {
+            errorDetails = validation.message;
+            errorArray = [validation.message];
+          } else {
+            errorDetails = 'Validation failed';
+            errorArray = ['Validation failed'];
+          }
+          this.validationErrors.set(errorArray);
+          this.toastService.showError(
+            `Results validation failed: ${errorDetails}`,
+            'Validation Error'
+          );
+        }
+      } catch (validationError: any) {
+        // Handle validation error response or network error
+        if (validationError.valid === false) {
+          // Server returned validation failure
+          let errorDetails: string;
+          let errorArray: string[];
+          if (Array.isArray(validationError.details)) {
+            errorDetails = validationError.details.join('; ');
+            errorArray = validationError.details;
+          } else if (validationError.details) {
+            errorDetails = String(validationError.details);
+            errorArray = [String(validationError.details)];
+          } else if (validationError.message) {
+            errorDetails = validationError.message;
+            errorArray = [validationError.message];
+          } else {
+            errorDetails = 'Validation failed';
+            errorArray = ['Validation failed'];
+          }
+          this.validationErrors.set(errorArray);
+          this.toastService.showError(
+            `Results validation failed: ${errorDetails}`,
+            'Validation Error'
+          );
+        } else {
+          // Network error or server unavailable - fall back to client-side validation
+          console.warn('Server validation unavailable, falling back to client-side validation:', validationError);
+          const validation = await this.schemaValidation.validateResults(data);
+          
+          if (validation.isValid) {
+            sessionStorage.setItem(SessionStorageKeys.CQL_TEST_RESULTS, JSON.stringify(data));
+            this.toastService.showSuccess(
+              'Results file validated successfully (client-side validation)',
+              'Validation Successful'
+            );
+            // Navigate with the file URL and preserve all existing query parameters
+            this.navigateToResultsWithParams(fileUrl);
+          } else {
+            this.validationErrors.set(validation.errors);
+            this.toastService.showError(
+              'Results validation failed. Server validation unavailable, used client-side validation.',
+              'Validation Error'
+            );
+          }
+        }
       }
     } else {
       // Skip validation, just store and navigate
