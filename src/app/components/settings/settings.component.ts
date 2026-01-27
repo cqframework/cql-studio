@@ -6,6 +6,7 @@ import { Location } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ThemeType } from '../../models/settings.model';
+import { ToastService } from '../../services/toast.service';
 
 @Component({
   selector: 'app-settings',
@@ -20,6 +21,7 @@ export class SettingsComponent implements OnInit {
     protected settingsService: SettingsService,
     public location: Location,
     protected router: Router,
+    protected toastService: ToastService,
   ) {
   }
 
@@ -45,15 +47,13 @@ export class SettingsComponent implements OnInit {
 
   save() {
     this.settingsService.saveSettings();
-    // Simple alert instead of toastr for now
-    alert("Settings are local to your browser only. Settings Saved");
+    this.toastService.showSuccess("Settings are local to your browser only.", "Settings Saved");
     this.location.back();
   }
 
   restore() {
     this.settingsService.forceResetToDefaults();
-    // Simple alert instead of toastr for now
-    alert("All settings have been restored to their defaults. Settings Restored");
+    this.toastService.showSuccess("All settings have been restored to their defaults.", "Settings Restored");
   }
 
   back() {
