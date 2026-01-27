@@ -84,6 +84,9 @@ export class IdeStateService {
   private _library = signal<Library | null>(null);
   private _evaluationResults = signal<Parameters | null>(null);
   private _elmTranslationResults = signal<string | null>(null);
+  private _translationErrors = signal<string[]>([]);
+  private _translationWarnings = signal<string[]>([]);
+  private _translationMessages = signal<string[]>([]);
 
   // Drag and drop
   private _draggedTab = signal<IdePanelTab | null>(null);
@@ -112,6 +115,9 @@ export class IdeStateService {
   public library = computed(() => this._library());
   public evaluationResults = computed(() => this._evaluationResults());
   public elmTranslationResults = computed(() => this._elmTranslationResults());
+  public translationErrors = computed(() => this._translationErrors());
+  public translationWarnings = computed(() => this._translationWarnings());
+  public translationMessages = computed(() => this._translationMessages());
   public draggedTab = computed(() => this._draggedTab());
   public dragOverPanel = computed(() => this._dragOverPanel());
   public navigateToLineRequest = computed(() => this._navigateToLineRequest());
@@ -417,8 +423,23 @@ export class IdeStateService {
     this._elmTranslationResults.set(results);
   }
 
+  setTranslationErrors(errors: string[]): void {
+    this._translationErrors.set(errors);
+  }
+
+  setTranslationWarnings(warnings: string[]): void {
+    this._translationWarnings.set(warnings);
+  }
+
+  setTranslationMessages(messages: string[]): void {
+    this._translationMessages.set(messages);
+  }
+
   clearElmTranslationResults(): void {
     this._elmTranslationResults.set(null);
+    this._translationErrors.set([]);
+    this._translationWarnings.set([]);
+    this._translationMessages.set([]);
   }
 
   // Drag and drop management

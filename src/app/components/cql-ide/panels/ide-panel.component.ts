@@ -288,52 +288,49 @@ export class IdePanelComponent {
     if (cqlContent) {
       this.ideStateService.setTranslating(true);
       
-      // Get the translation service base URL from settings
-      const baseUrl = this.settingsService.getEffectiveTranslationBaseUrl();
+      // Call the translation service synchronously
+      const translationResult = this.translationService.translateCqlToElm(cqlContent);
       
-      if (!baseUrl) {
-        console.error('Translation service base URL not configured');
-        this.ideStateService.setTranslating(false);
-        return;
+      // Update translation state with errors/warnings
+      this.ideStateService.setTranslationErrors(translationResult.errors);
+      this.ideStateService.setTranslationWarnings(translationResult.warnings);
+      this.ideStateService.setTranslationMessages(translationResult.messages);
+      this.ideStateService.setElmTranslationResults(translationResult.elmXml);
+      this.ideStateService.setTranslating(false);
+      
+      if (translationResult.hasErrors) {
+        console.error('Translation failed with errors:', translationResult.errors);
+        
+        // Add error to output section for user feedback
+        const errorContent = translationResult.errors.join('\n');
+        this.ideStateService.addOutputSection({
+          id: `output_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          title: 'ELM Translation Error',
+          content: `Translation failed:\n${errorContent}`,
+          type: 'error',
+          status: 'error',
+          executionTime: 0,
+          expanded: true,
+          timestamp: new Date()
+        });
+      } else {
+        console.log('Translation successful');
+        
+        // Add success message to output section
+        const warningText = translationResult.warnings.length > 0 
+          ? `\n\nWarnings:\n${translationResult.warnings.join('\n')}`
+          : '';
+        this.ideStateService.addOutputSection({
+          id: `output_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          title: 'ELM Translation Success',
+          content: `CQL successfully translated to ELM${warningText}`,
+          type: 'info',
+          status: 'success',
+          executionTime: 0,
+          expanded: false,
+          timestamp: new Date()
+        });
       }
-      
-      // Call the translation service
-      this.translationService.translateCqlToElm(cqlContent, baseUrl).subscribe({
-        next: (elmXml: string) => {
-          console.log('Translation successful');
-          this.ideStateService.setElmTranslationResults(elmXml);
-          this.ideStateService.setTranslating(false);
-          
-          // Add success message to output section
-          this.ideStateService.addOutputSection({
-            id: `output_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            title: 'ELM Translation Success',
-            content: 'CQL successfully translated to ELM',
-            type: 'info',
-            status: 'success',
-            executionTime: 0,
-            expanded: false,
-            timestamp: new Date()
-          });
-        },
-        error: (error) => {
-          console.error('Translation failed:', error);
-          this.ideStateService.setElmTranslationResults(null);
-          this.ideStateService.setTranslating(false);
-          
-          // Add error to output section for user feedback
-          this.ideStateService.addOutputSection({
-            id: `output_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-            title: 'ELM Translation Error',
-            content: `Translation failed: ${error.message || error}`,
-            type: 'error',
-            status: 'error',
-            executionTime: 0,
-            expanded: true,
-            timestamp: new Date()
-          });
-        }
-      });
     }
   }
 

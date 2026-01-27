@@ -82,8 +82,6 @@ The application supports runtime configuration through environment variables. Th
 
 - **CQL_STUDIO_FHIR_BASE_URL**: Specifies the base URL for the FHIR server. This URL is used for FHIR resource operations and data retrieval. Defaults to `http://localhost:8080/fhir`.
 
-- **CQL_STUDIO_TRANSLATION_BASE_URL**: Specifies the base URL for the translation service. This URL is used for CQL translation and conversion operations. Defaults to `http://localhost:3001`.
-
 ## Adding New CQL Versions
 
 To add support for a new CQL version:

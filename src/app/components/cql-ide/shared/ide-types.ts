@@ -70,5 +70,4 @@ export type CqlVersion = '1.5.3' | '2.0.0-ballot';
 
 export interface IdeSettings {
   preserveLogs: boolean;
-  enableElmTranslation: boolean;
 }

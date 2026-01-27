@@ -4,16 +4,11 @@
   display: block;
 }
 
-// Minimal styles - let the global prism-theme.scss handle line numbers
+// Minimal styles - let Prism handle all font-size, line-height, and padding for proper gutter alignment
 .syntax-highlighter {
   margin: 0;
-  padding: 0;
   background: transparent;
   border: none;
   font-family: 'Courier New', Courier, monospace;
-  font-size: 13px;
-  line-height: 1.4;
   overflow-x: auto;
-  white-space: pre-wrap;
-  word-wrap: break-word;
 }

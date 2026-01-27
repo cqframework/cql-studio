@@ -188,64 +188,59 @@ export class GuidelinesComponent implements OnInit, OnDestroy {
     const cqlContent = this.cqlGenerationService.generateCql(artifact);
 
     // Translate to ELM
-    const baseUrl = this.settingsService.getEffectiveTranslationBaseUrl();
-    if (!baseUrl) {
-      console.error('Translation service not configured');
+    const translationResult = this.translationService.translateCqlToElm(cqlContent);
+    
+    if (translationResult.hasErrors) {
+      console.error('Translation failed:', translationResult.errors);
+      // Show error to user - you may want to add error handling UI here
       return;
     }
-
-    this.translationService.translateCqlToElm(cqlContent, baseUrl).subscribe({
-      next: (elmXml: string) => {
-        // Ensure URL is properly set using libraryService.urlFor (same as IDE)
-        const libraryUrl = this.libraryService.urlFor(libraryId);
-        
-        const newLibrary: Library = {
-          resourceType: 'Library' as const,
-          id: libraryId,
-          name: libraryData.name!,
-          title: libraryData.title || libraryData.name!,
-          version: libraryData.version || '1.0.0',
-          status: 'active' as const,
-          url: libraryUrl, // Use libraryService.urlFor to match IDE behavior
-          type: {
-            coding: [
-              {
-                system: 'http://terminology.hl7.org/CodeSystem/library-type',
-                code: 'logic-library',
-                display: 'Logic Library'
-              }
-            ]
-          },
-          content: [
-            {
-              contentType: 'text/cql',
-              data: btoa(cqlContent)
-            },
-            {
-              contentType: 'application/elm+xml',
-              data: btoa(elmXml)
-            }
-          ],
-          description: libraryData.description || `Guideline: ${libraryData.title || libraryData.name}`,
-          extension: [
-            {
-              url: 'http://cqframework.org/fhir/StructureDefinition/guidelines-builder-metadata',
-              valueString: JSON.stringify(artifact)
-            }
-          ]
-        };
-
-        this.libraryService.post(newLibrary).subscribe({
-          next: (library: Library) => {
-            this.openLibrary(library);
-          },
-          error: (error) => {
-            console.error('Error creating library:', error);
+    
+    const elmXml = translationResult.elmXml || '';
+    
+    // Reuse libraryUrl from above (already set using libraryService.urlFor)
+    const newLibrary: Library = {
+      resourceType: 'Library' as const,
+      id: libraryId,
+      name: libraryData.name!,
+      title: libraryData.title || libraryData.name!,
+      version: libraryData.version || '1.0.0',
+      status: 'active' as const,
+      url: libraryUrl, // Use libraryService.urlFor to match IDE behavior
+      type: {
+        coding: [
+          {
+            system: 'http://terminology.hl7.org/CodeSystem/library-type',
+            code: 'logic-library',
+            display: 'Logic Library'
           }
-        });
+        ]
+      },
+      content: [
+        {
+          contentType: 'text/cql',
+          data: btoa(cqlContent)
+        },
+        {
+          contentType: 'application/elm+xml',
+          data: btoa(elmXml)
+        }
+      ],
+      description: libraryData.description || `Guideline: ${libraryData.title || libraryData.name}`,
+      extension: [
+        {
+          url: 'http://cqframework.org/fhir/StructureDefinition/guidelines-builder-metadata',
+          valueString: JSON.stringify(artifact)
+        }
+      ]
+    };
+
+    this.libraryService.post(newLibrary).subscribe({
+      next: (library: Library) => {
+        this.openLibrary(library);
       },
       error: (error) => {
-        console.error('Error translating CQL:', error);
+        console.error('Error creating library:', error);
       }
     });
   }

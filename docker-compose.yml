@@ -57,12 +57,6 @@ services:
           memory: 1G
     restart: unless-stopped
 
-  cql-translation-service:
-    image: cqframework/cql-translation-service:latest
-    ports:
-      - "3001:8080"
-    restart: unless-stopped
-
   cql-tests-results:
     image: hlseven/quality-cql-tests-results:latest
     ports:

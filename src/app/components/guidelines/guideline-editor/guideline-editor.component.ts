@@ -196,27 +196,20 @@ export class GuidelineEditorComponent implements OnInit, OnDestroy {
     const cqlContent = this.cqlGenerationService.generateCql(artifact);
 
     // Translate to ELM for validation
-    const baseUrl = this.settingsService.getEffectiveTranslationBaseUrl();
-    if (!baseUrl) {
-      this.guidelinesStateService.setError('Translation service not configured');
+    const translationResult = this.translationService.translateCqlToElm(cqlContent);
+    
+    if (translationResult.hasErrors) {
+      const errorMessage = translationResult.errors.join('; ');
+      this.guidelinesStateService.setError(`Translation failed: ${errorMessage}`);
       this.guidelinesStateService.setSaving(false);
+      if (showMessage) {
+        this.statusMessage.set('Save failed');
+      }
       return;
     }
-
-    this.translationService.translateCqlToElm(cqlContent, baseUrl).subscribe({
-      next: (elmXml: string) => {
-        // Update existing library
-        this.updateLibrary(this.library(), cqlContent, elmXml, artifact);
-      },
-      error: (error) => {
-        const errorMessage = this.getErrorMessage(error);
-        this.guidelinesStateService.setError(`Translation failed: ${errorMessage}`);
-        this.guidelinesStateService.setSaving(false);
-        if (showMessage) {
-          this.statusMessage.set('Save failed');
-        }
-      }
-    });
+    
+    // Update existing library
+    this.updateLibrary(this.library(), cqlContent, translationResult.elmXml || '', artifact);
   }
 
   private updateLibrary(library: Library, cqlContent: string, elmXml: string, artifact: any): void {

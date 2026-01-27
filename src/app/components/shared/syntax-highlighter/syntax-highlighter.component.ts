@@ -16,6 +16,7 @@ declare const Prism: any;
 export class SyntaxHighlighterComponent implements AfterViewInit {
   code = input<string>('');
   language = input<string>('json');
+  showLineNumbers = input<boolean>(true);
   codeElement = viewChild<ElementRef>('codeElement');
   preElement = viewChild<ElementRef>('preElement');
 

@@ -69,17 +69,6 @@
 
             </div>
 
-            <div class="form-check form-switch mt-3 ms-1 ">
-                <input id="enable_elm_translation_switch" class="form-check-input" type="checkbox"
-                    name="enable_elm_translation_switch"
-                    [(ngModel)]="settingsService.settings().enableElmTranslation" />
-                <label class="form-check-label" for="enable_elm_translation_switch"><span
-                        class="bi bi-code-square"></span> Automatic ELM Translation</label>
-                <br />
-                <small class="form-text">Enable automatic CQL to ELM translation when evaluating libraries.</small>
-
-            </div>
-
         </div>
         <div class="row">
 
@@ -142,23 +131,6 @@
                             <small class="form-text">Base URL for the FHIR server. Defaults to CQL_STUDIO_FHIR_BASE_URL
                                 or {{
                                 settingsService.getDefaultFhirBaseUrl() }}</small>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h6 class="card-title mb-0"><span class="bi bi-translate me-2"></span>CQL Translation</h6>
-                    </div>
-                    <div class="card-body">
-                        <div class="form-floating">
-                            <input type="url" class="form-control" id="translationBaseUrl" name="translationBaseUrl"
-                                [(ngModel)]="settingsService.settings().translationBaseUrl"
-                                [placeholder]="settingsService.getDefaultTranslationBaseUrl()">
-                            <label for="translationBaseUrl">Translation Base URL</label>
-                            <small class="form-text">Base URL for the translation service. Defaults to
-                                CQL_STUDIO_TRANSLATION_BASE_URL or {{ settingsService.getDefaultTranslationBaseUrl()
-                                }}</small>
                         </div>
                     </div>
                 </div>

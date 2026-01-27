@@ -73,10 +73,6 @@ export class SettingsService {
           parsedSettings.validateSchema = false;
           shouldSave = true;
         }
-        if (parsedSettings.enableElmTranslation == null) {
-          parsedSettings.enableElmTranslation = false;
-          shouldSave = true;
-        }
         if (parsedSettings.runnerApiBaseUrl == null) {
           parsedSettings.runnerApiBaseUrl = '';
           shouldSave = true;
@@ -99,10 +95,6 @@ export class SettingsService {
         }
         if (parsedSettings.terminologyBasicAuthPassword == null) {
           parsedSettings.terminologyBasicAuthPassword = '';
-          shouldSave = true;
-        }
-        if (parsedSettings.translationBaseUrl == null) {
-          parsedSettings.translationBaseUrl = '';
           shouldSave = true;
         }
         if (parsedSettings.defaultTestResultsIndexUrl == null) {
@@ -206,11 +198,6 @@ export class SettingsService {
     return envValue && envValue.trim() !== '' ? envValue : '';
   }
 
-  getDefaultTranslationBaseUrl(): string {
-    const envValue = (window as any)['CQL_STUDIO_TRANSLATION_BASE_URL'];
-    return envValue && envValue.trim() !== '' ? envValue : 'http://localhost:3001';
-  }
-
   getDefaultTestResultsIndexUrl(): string {
     const envValue = (window as any)['CQL_STUDIO_DEFAULT_TEST_RESULTS_INDEX_URL'];
     return envValue && envValue.trim() !== '' ? envValue : '/examples/index.json';
@@ -264,11 +251,6 @@ export class SettingsService {
   getEffectiveTerminologyBasicAuthPassword(): string {
     const settingValue = this.settings().terminologyBasicAuthPassword;
     return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultTerminologyBasicAuthPassword();
-  }
-
-  getEffectiveTranslationBaseUrl(): string {
-    const settingValue = this.settings().translationBaseUrl;
-    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultTranslationBaseUrl();
   }
 
   getEffectiveTestResultsIndexUrl(): string {

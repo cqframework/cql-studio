@@ -323,21 +323,37 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.setExecutionStatus('Translating CQL to ELM...');
     this.ideStateService.setTranslating(true);
 
-    // Get the translation service base URL from settings
-    const baseUrl = this.settingsService.getEffectiveTranslationBaseUrl();
-    if (!baseUrl) {
-      console.error('Translation service base URL not configured');
-      this.ideStateService.setExecutionStatus('Translation service not configured');
-      this.ideStateService.setTranslating(false);
+    // Translate CQL to ELM using the translation service
+    const translationResult = this.translationService.translateCqlToElm(currentContent);
+    
+    // Update translation state with errors/warnings
+    this.ideStateService.setTranslationErrors(translationResult.errors);
+    this.ideStateService.setTranslationWarnings(translationResult.warnings);
+    this.ideStateService.setTranslationMessages(translationResult.messages);
+    
+    this.ideStateService.setTranslating(false);
+
+    if (translationResult.hasErrors) {
+      console.error('Translation failed with errors:', translationResult.errors);
+      this.ideStateService.setExecutionStatus('Translation failed - see errors in ELM tab');
+      
+      // Mark as dirty again since save failed
+      this.ideStateService.updateLibraryResource(activeLibrary.id, {
+        isDirty: true
+      });
+      
+      // Set ELM results even if there are errors (may have partial results)
+      this.ideStateService.setElmTranslationResults(translationResult.elmXml);
+      
+      // Clear error status after a short delay
+      setTimeout(() => {
+        this.ideStateService.setExecutionStatus('');
+      }, 5000);
       return;
     }
 
-    // Translate CQL to ELM using the translation service
-    this.translationService.translateCqlToElm(currentContent, baseUrl).subscribe({
-      next: (elmXml) => {
-        console.log('Translation successful');
-        this.ideStateService.setTranslating(false);
-        this.ideStateService.setExecutionStatus('Saving library...');
+    console.log('Translation successful');
+    this.ideStateService.setExecutionStatus('Saving library...');
 
     // Update the library resource with current content
     this.ideStateService.updateLibraryResource(activeLibrary.id, {
@@ -345,35 +361,21 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       isDirty: false
     });
 
-        // Check if this is a new library (no FHIR library object) or existing library
-        // Also check if the ID has changed (which requires creating a new library)
-        const hasExistingLibrary = activeLibrary.library && activeLibrary.library.id;
-        const idHasChanged = hasExistingLibrary && activeLibrary.library && activeLibrary.library.id !== activeLibrary.id;
-        
-        if (hasExistingLibrary && !idHasChanged) {
-          // Update existing library (ID hasn't changed)
-          this.updateExistingLibrary(activeLibrary.library, currentContent, elmXml);
-        } else {
-          // Create new library (either no existing library or ID has changed)
-          this.createNewLibrary(activeLibrary, currentContent, elmXml);
-        }
-      },
-      error: (error) => {
-        console.error('Translation failed:', error);
-        this.ideStateService.setTranslating(false);
-        this.ideStateService.setExecutionStatus('Translation failed');
-        
-        // Mark as dirty again since save failed
-        this.ideStateService.updateLibraryResource(activeLibrary.id, {
-          isDirty: true
-        });
-        
-        // Clear error status after a short delay
-        setTimeout(() => {
-          this.ideStateService.setExecutionStatus('');
-        }, 3000);
-      }
-    });
+    // Set ELM results
+    this.ideStateService.setElmTranslationResults(translationResult.elmXml);
+
+    // Check if this is a new library (no FHIR library object) or existing library
+    // Also check if the ID has changed (which requires creating a new library)
+    const hasExistingLibrary = activeLibrary.library && activeLibrary.library.id;
+    const idHasChanged = hasExistingLibrary && activeLibrary.library && activeLibrary.library.id !== activeLibrary.id;
+    
+    if (hasExistingLibrary && !idHasChanged) {
+      // Update existing library (ID hasn't changed)
+      this.updateExistingLibrary(activeLibrary.library, currentContent, translationResult.elmXml || '');
+    } else {
+      // Create new library (either no existing library or ID has changed)
+      this.createNewLibrary(activeLibrary, currentContent, translationResult.elmXml || '');
+    }
   }
 
   onDeleteLibrary(libraryId: string): void {

@@ -25,31 +25,64 @@
       </div>
     </div>
 
-    <!-- Auto-translate checkbox -->
-    <div class="form-check mb-3">
-      <input 
-        class="form-check-input" 
-        type="checkbox" 
-        id="enableElmTranslation" 
-        [(ngModel)]="settingsService.settings().enableElmTranslation"
-      >
-      <label class="form-check-label small text-light" for="enableElmTranslation">
-        Auto-translate
-      </label>
-    </div>
-    
+    <!-- Translation Errors -->
+    @if (hasErrors) {
+      <div class="alert alert-danger mb-3" role="alert">
+        <div class="d-flex align-items-center mb-2">
+          <i class="bi bi-exclamation-triangle-fill me-2"></i>
+          <strong>Translation Errors</strong>
+        </div>
+        <ul class="mb-0 small">
+          @for (error of translationErrors; track $index) {
+            <li>{{ error }}</li>
+          }
+        </ul>
+      </div>
+    }
+
+    <!-- Translation Warnings -->
+    @if (hasWarnings) {
+      <div class="alert alert-warning mb-3" role="alert">
+        <div class="d-flex align-items-center mb-2">
+          <i class="bi bi-exclamation-triangle me-2"></i>
+          <strong>Translation Warnings</strong>
+        </div>
+        <ul class="mb-0 small">
+          @for (warning of translationWarnings; track $index) {
+            <li>{{ warning }}</li>
+          }
+        </ul>
+      </div>
+    }
+
     <!-- ELM Translation Results -->
     @if (isTranslating || elmTranslationResults) {
-      <div class="border rounded p-2" style="overflow-y: auto;">
+      <div class="border rounded" style="overflow-y: auto;">
         @if (isTranslating) {
-          <div class="d-flex align-items-center justify-content-center py-4 text-muted">
+          <div class="d-flex align-items-center justify-content-center py-4 px-2 text-muted">
             <i class="bi bi-arrow-clockwise me-2"></i>
             <span>Translating CQL to ELM...</span>
           </div>
         }
         
         @if (!isTranslating && elmTranslationResults) {
-          <app-syntax-highlighter [code]="elmTranslationResultsAsString()" [language]="'xml'"></app-syntax-highlighter>
+          <div class="d-flex justify-content-end p-2 pb-0">
+            <button 
+              class="btn btn-outline-light btn-sm" 
+              (click)="onDownloadElmXml()" 
+              title="Download ELM XML"
+            >
+              <i class="bi bi-download me-1"></i>Download XML
+            </button>
+          </div>
+          <app-syntax-highlighter [code]="elmTranslationResultsAsString()" [language]="'xml'" [showLineNumbers]="false"></app-syntax-highlighter>
+        }
+        
+        @if (!isTranslating && !elmTranslationResults && hasErrors) {
+          <div class="text-muted text-center py-4 px-2">
+            <i class="bi bi-x-circle me-2"></i>
+            <span>No ELM output due to translation errors</span>
+          </div>
         }
       </div>
     }
