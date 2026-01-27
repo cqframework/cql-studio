@@ -1,0 +1,170 @@
+<div class="row">
+  <!-- Left Column: Search and Results -->
+  <div class="col-md-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="btn-group" role="group">
+        <button type="button" class="btn btn-sm btn-primary" (click)="loadConceptMaps()"
+          [disabled]="conceptmapLoading()">
+          @if (conceptmapLoading()) {
+          <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+          } @else {
+          <i class="bi bi-arrow-clockwise me-1"></i>
+          }
+          Reload ConceptMaps
+        </button>
+      </div>
+    </div>
+    <!-- Filter and Sort Controls -->
+    <div class="mb-3">
+      <div class="form-floating mb-2">
+        <input type="text" class="form-control form-control-sm" id="conceptmapFilter" [(ngModel)]="conceptmapFilter"
+          (ngModelChange)="onConceptMapFilterChange($event)" placeholder="Filter by name, title, or URL">
+        <label for="conceptmapFilter">Filter ConceptMaps</label>
+      </div>
+      <div class="row g-2">
+        <div class="col-8">
+          <select class="form-select form-select-sm" [(ngModel)]="conceptmapSortBy"
+            (ngModelChange)="setConceptMapSortBy($event)">
+            <option value="name">Sort by Name</option>
+            <option value="title">Sort by Title</option>
+            <option value="url">Sort by URL</option>
+            <option value="status">Sort by Status</option>
+          </select>
+        </div>
+        <div class="col-4">
+          <button type="button" class="btn btn-outline-secondary btn-sm w-100" (click)="toggleConceptMapSortOrder()">
+            <i class="bi bi-sort-alpha-down" [class.bi-sort-alpha-up]="conceptmapSortOrder() === 'desc'"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    @if (conceptmapLoading()) {
+    <div class="text-center py-4">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2 text-muted">Loading concept maps...</p>
+    </div>
+    }
+
+    <!-- Results List -->
+    @if (!conceptmapLoading() && conceptmapFilteredCount() > 0) {
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="mb-0">
+        <i class="bi bi-list me-2"></i>Results
+        @if (conceptmapFilteredCount() > 0) {
+        <span class="badge bg-primary ms-2">{{ conceptmapFilteredCount() }}</span>
+        }
+      </h6>
+      @if (conceptmapFilteredCount() > 0) {
+      <div class="d-flex align-items-center gap-2">
+        <label for="conceptmapPageSizeSelect" class="small text-muted mb-0">Items per page:</label>
+        <select class="form-select form-select-sm" id="conceptmapPageSizeSelect"
+          [ngModel]="conceptmapPageSize()" (ngModelChange)="setConceptMapPageSize(+$event)"
+          style="width: auto;">
+          @for (size of conceptmapAvailablePageSizes; track size) {
+          <option [value]="size">{{ size }}</option>
+          }
+        </select>
+      </div>
+      }
+    </div>
+    <div class="list-group mb-3">
+      @for (conceptmap of getFilteredAndSortedConceptMaps(); track getConceptMapTrackId(conceptmap, $index)) {
+      <div class="list-group-item list-group-item-action" (click)="selectConceptMap(conceptmap)"
+        [class.active]="selectedConceptMap()?.id === conceptmap.id && selectedConceptMap()?.url === conceptmap.url">
+        <div class="d-flex w-100 justify-content-between">
+          <h6 class="mb-1 text-truncate me-2" style="max-width: 60%;">{{ conceptmap.name || 'Unnamed ConceptMap' }}</h6>
+          <div class="d-flex align-items-center gap-1 flex-shrink-0">
+            <span class="badge text-nowrap" [class.bg-success]="conceptmap.status === 'active'"
+              [class.bg-warning]="conceptmap.status === 'draft'"
+              [class.bg-danger]="conceptmap.status === 'retired'"
+              [class.bg-secondary]="!conceptmap.status || (conceptmap.status !== 'active' && conceptmap.status !== 'draft' && conceptmap.status !== 'retired')">
+              {{ conceptmap.status || 'Unknown' }}
+            </span>
+          </div>
+        </div>
+        <p class="mb-1 text-break">{{ conceptmap.title || 'N/A' }}</p>
+        <small class="text-muted">
+          @if (conceptmap.url) {
+          <a [href]="conceptmap.url" target="_blank" rel="noopener noreferrer" 
+             (click)="$event.stopPropagation()" class="text-decoration-none text-break d-inline-block" style="max-width: 100%; word-break: break-all;">
+            {{ conceptmap.url }}
+          </a>
+          } @else {
+          <i class="bi bi-link-45deg me-1"></i>N/A
+          }
+        </small>
+      </div>
+      }
+    </div>
+
+    <!-- Pagination Controls -->
+    @if (conceptmapTotalPages() > 1) {
+    <nav aria-label="ConceptMaps page navigation">
+      <ul class="pagination justify-content-center my-4">
+        <li class="page-item" [class.disabled]="!conceptmapHasPreviousPage()">
+          <button class="page-link" (click)="conceptmapGoToFirstPage()"
+            [disabled]="!conceptmapHasPreviousPage()" type="button">
+            <i class="bi bi-chevron-double-left"></i>
+          </button>
+        </li>
+        <li class="page-item" [class.disabled]="!conceptmapHasPreviousPage()">
+          <button class="page-link" (click)="conceptmapPreviousPage()" [disabled]="!conceptmapHasPreviousPage()"
+            type="button">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+        </li>
+        <li class="page-item disabled">
+          <span class="page-link">
+            {{ conceptmapCurrentPage() }}/{{ conceptmapTotalPages() }}
+          </span>
+        </li>
+        <li class="page-item disabled">
+          <span class="page-link">
+            {{ conceptmapStartIndex() }}-{{ conceptmapEndIndex() }} of {{ conceptmapTotalCount() }}
+          </span>
+        </li>
+        <li class="page-item" [class.disabled]="!conceptmapHasNextPage()">
+          <button class="page-link" (click)="conceptmapNextPage()" [disabled]="!conceptmapHasNextPage()"
+            type="button">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+        </li>
+        <li class="page-item" [class.disabled]="!conceptmapHasNextPage()">
+          <button class="page-link" (click)="conceptmapGoToLastPage()" [disabled]="!conceptmapHasNextPage()"
+            type="button">
+            <i class="bi bi-chevron-double-right"></i>
+          </button>
+        </li>
+      </ul>
+    </nav>
+    }
+    }
+
+    <!-- Empty State -->
+    @if (!conceptmapLoading() && conceptmapTotalCount() === 0 && conceptmapResults().length === 0) {
+    <div class="text-center py-5">
+      <i class="bi bi-list-ul text-muted" style="font-size: 3rem;"></i>
+      <h5 class="mt-3 text-muted">No ConceptMaps Loaded</h5>
+      <p class="text-muted">Click "Reload ConceptMaps" to discover available concept maps.</p>
+    </div>
+    }
+
+    <!-- No Results After Filter -->
+    @if (!conceptmapLoading() && conceptmapResults().length > 0 && conceptmapFilteredCount() === 0) {
+    <div class="text-center py-4">
+      <i class="bi bi-search text-muted" style="font-size: 2rem;"></i>
+      <h6 class="mt-2 text-muted">No ConceptMaps Match Your Filter</h6>
+      <p class="text-muted">Try adjusting your search criteria.</p>
+    </div>
+    }
+  </div>
+
+  <!-- Right Column: Details Pane -->
+  <div class="col-md-8">
+    <app-conceptmap-details-pane [selectedConceptMap]="selectedConceptMap()" />
+  </div>
+</div>

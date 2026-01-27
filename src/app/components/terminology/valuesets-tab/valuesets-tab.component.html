@@ -1,0 +1,156 @@
+<div class="row">
+  <!-- Left Column: Search and Results -->
+  <div class="col-md-4">
+    <div class="input-group input-group-sm mb-3">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="valuesetSearch" [(ngModel)]="valuesetSearchTerm"
+          (keydown.enter)="searchValueSets()" placeholder="Enter ValueSet name or title">
+        <label for="valuesetSearch">Search ValueSets</label>
+      </div>
+      <button type="button" class="btn btn-primary" (click)="searchValueSets()"
+        [disabled]="valuesetLoading() || !hasValidConfiguration()">
+        @if (valuesetLoading()) {
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        } @else {
+        <i class="bi bi-search"></i>
+        }
+      </button>
+    </div>
+
+    <!-- Loading State -->
+    @if (valuesetLoading()) {
+    <div class="text-center py-4">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2 text-muted">Loading value sets...</p>
+    </div>
+    }
+
+    <!-- Results List -->
+    @if (!valuesetLoading() && valuesetTotalCount() > 0) {
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="mb-0">
+        <i class="bi bi-list me-2"></i>Results
+        @if (valuesetTotalCount() > 0) {
+        <span class="badge bg-primary ms-2">{{ valuesetTotalCount() }}</span>
+        }
+      </h6>
+      @if (valuesetResults().length > 0) {
+      <div class="d-flex align-items-center gap-2">
+        <label for="valuesetPageSizeSelect" class="small text-muted mb-0">Items per page:</label>
+        <select class="form-select form-select-sm" id="valuesetPageSizeSelect" [ngModel]="valuesetPageSize()"
+          (ngModelChange)="setValueSetPageSize(+$event)" style="width: auto;">
+          @for (size of valuesetAvailablePageSizes; track size) {
+          <option [value]="size">{{ size }}</option>
+          }
+        </select>
+      </div>
+      }
+    </div>
+    <div class="list-group mb-3">
+      @for (valueset of valuesetResults(); track getValueSetTrackId(valueset, $index)) {
+      <div class="list-group-item list-group-item-action" (click)="selectValueSet(valueset)"
+        [class.active]="selectedValueSet()?.id === valueset.id">
+        <div class="d-flex w-100 justify-content-between">
+          <h6 class="mb-1 text-truncate me-2" style="max-width: 60%;">{{ valueset.name || 'Unnamed ValueSet' }}</h6>
+          <div class="d-flex align-items-center gap-1 flex-shrink-0">
+            @if (valueset.version) {
+            <small class="text-muted text-nowrap">{{ valueset.version }}</small>
+            }
+            @if (valueset.status) {
+            <span class="badge text-nowrap" [class.bg-success]="valueset.status === 'active'"
+              [class.bg-warning]="valueset.status === 'draft'"
+              [class.bg-danger]="valueset.status === 'retired'">
+              {{ valueset.status }}
+            </span>
+            }
+          </div>
+        </div>
+        @if (valueset.title) {
+        <p class="mb-1 text-break">{{ valueset.title }}</p>
+        }
+        <small class="text-muted">
+          @if (valueset.url) {
+          <a [href]="valueset.url" target="_blank" rel="noopener noreferrer" 
+             (click)="$event.stopPropagation()" class="text-decoration-none text-break d-inline-block" style="max-width: 100%; word-break: break-all;">
+            {{ valueset.url }}
+          </a>
+          } @else {
+          <i class="bi bi-link-45deg me-1"></i>N/A
+          }
+        </small>
+      </div>
+      }
+    </div>
+
+    <!-- Pagination Controls -->
+    @if (valuesetTotalPages() > 1) {
+    <nav aria-label="ValueSets page navigation">
+      <ul class="pagination justify-content-center my-4">
+        <li class="page-item" [class.disabled]="!valuesetHasPreviousPage()">
+          <button class="page-link" (click)="valuesetGoToFirstPage()" [disabled]="!valuesetHasPreviousPage()"
+            type="button">
+            <i class="bi bi-chevron-double-left"></i>
+          </button>
+        </li>
+        <li class="page-item" [class.disabled]="!valuesetHasPreviousPage()">
+          <button class="page-link" (click)="valuesetPreviousPage()" [disabled]="!valuesetHasPreviousPage()"
+            type="button">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+        </li>
+        <li class="page-item disabled">
+          <span class="page-link">
+            {{ valuesetCurrentPage() }}/{{ valuesetTotalPages() }}
+          </span>
+        </li>
+        <li class="page-item disabled">
+          <span class="page-link">
+            {{ valuesetStartIndex() }}-{{ valuesetEndIndex() }} of {{ valuesetTotalCount() }}
+          </span>
+        </li>
+        <li class="page-item" [class.disabled]="!valuesetHasNextPage()">
+          <button class="page-link" (click)="valuesetNextPage()" [disabled]="!valuesetHasNextPage()"
+            type="button">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+        </li>
+        <li class="page-item" [class.disabled]="!valuesetHasNextPage()">
+          <button class="page-link" (click)="valuesetGoToLastPage()" [disabled]="!valuesetHasNextPage()"
+            type="button">
+            <i class="bi bi-chevron-double-right"></i>
+          </button>
+        </li>
+      </ul>
+    </nav>
+    }
+    }
+
+    <!-- Empty State -->
+    @if (!valuesetLoading() && valuesetTotalCount() === 0 && valuesetResults().length === 0) {
+    <div class="text-center py-5">
+      <i class="bi bi-list-ul text-muted" style="font-size: 3rem;"></i>
+      <h5 class="mt-3 text-muted">No ValueSets Found</h5>
+      <p class="text-muted">Enter a search term and click "Search" to find value sets.</p>
+    </div>
+    }
+
+    <!-- No Results After Search -->
+    @if (!valuesetLoading() && valuesetTotalCount() === 0 && valuesetResults().length > 0) {
+    <div class="text-center py-4">
+      <i class="bi bi-search text-muted" style="font-size: 2rem;"></i>
+      <h6 class="mt-2 text-muted">No ValueSets Match Your Search</h6>
+      <p class="text-muted">Try adjusting your search criteria.</p>
+    </div>
+    }
+  </div>
+
+  <!-- Right Column: Details Pane with Expanded Codes -->
+  <div class="col-md-8">
+    <app-valueset-details-pane [selectedValueSet]="selectedValueSet()" [expandLoading]="expandLoading()"
+      [expandedCodes]="expandedCodes()" [expandedRows]="expandedRows()"
+      [expandedCodeDetails]="expandedCodeDetails()" [loadingDetails]="loadingDetails()"
+      [availablePageSizes]="availablePageSizes" [onRowToggle]="toggleRowExpansion.bind(this)" />
+  </div>
+</div>

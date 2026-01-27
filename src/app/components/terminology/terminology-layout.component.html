@@ -1,0 +1,56 @@
+<div class="container-fluid">
+  <div class="row">
+    <div class="col-12">
+      <!-- Server Status -->
+      @if (serverLoading()) {
+      <div class="text-center py-5">
+        <div class="spinner-border text-primary mb-3" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <h5 class="text-muted">Connecting to Terminology Server...</h5>
+        <p class="text-muted">Checking server availability and loading resources</p>
+      </div>
+      } @else if (!serverAvailable()) {
+      <div class="alert alert-danger mb-4" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        <strong>Server Unavailable:</strong> {{ serverError() }}
+        @if (configurationStatus().showSettings) {
+        <a href="#" (click)="navigateToSettings(); $event.preventDefault()" class="alert-link ms-2">
+          <i class="bi bi-gear me-1"></i>Go to Settings
+        </a>
+        }
+      </div>
+      }
+
+      <!-- Main Content - Only show when server is available -->
+      @if (!serverLoading() && serverAvailable()) {
+      <!-- Navigation Tabs -->
+      <ul class="nav nav-pills mb-4 py-4" role="tablist">
+        <li class="nav-item" role="presentation">
+          <a class="nav-link" routerLink="/terminology/valuesets" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+            <i class="bi bi-list-ul me-1"></i>Value Sets
+          </a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a class="nav-link" routerLink="/terminology/conceptmaps" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+            <i class="bi bi-arrow-left-right me-1"></i>Concept Maps
+          </a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a class="nav-link" routerLink="/terminology/codesystems" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+            <i class="bi bi-collection me-1"></i>Code Systems
+          </a>
+        </li>
+        <li class="nav-item" role="presentation">
+          <a class="nav-link" routerLink="/terminology/validation" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+            <i class="bi bi-check-circle me-1"></i>Code Validation
+          </a>
+        </li>
+      </ul>
+
+      <!-- Child Component Outlet -->
+      <router-outlet></router-outlet>
+      }
+    </div>
+  </div>
+</div>

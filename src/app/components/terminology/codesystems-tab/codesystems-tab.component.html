@@ -1,0 +1,299 @@
+<div class="row">
+  <!-- Left Column: Search and Results -->
+  <div class="col-md-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="btn-group" role="group">
+        <button type="button" class="btn btn-sm btn-primary" (click)="loadCodeSystems()"
+          [disabled]="codeSystemsLoading()">
+          @if (codeSystemsLoading()) {
+          <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+          } @else {
+          <i class="bi bi-arrow-clockwise me-1"></i>
+          }
+          Reload Code Systems
+        </button>
+      </div>
+    </div>
+    <!-- Filter and Sort Controls -->
+    <div class="mb-3">
+      <div class="form-floating mb-2">
+        <input type="text" class="form-control form-control-sm" id="codeSystemsFilter" [(ngModel)]="codeSystemsFilter"
+          (ngModelChange)="onCodeSystemsFilterChange($event)" placeholder="Filter by name, title, or URL">
+        <label for="codeSystemsFilter">Filter Code Systems</label>
+      </div>
+      <div class="row g-2">
+        <div class="col-8">
+          <select class="form-select form-select-sm" [(ngModel)]="codeSystemsSortBy"
+            (ngModelChange)="setCodeSystemsSortBy($event)">
+            <option value="name">Sort by Name</option>
+            <option value="title">Sort by Title</option>
+            <option value="url">Sort by URL</option>
+            <option value="version">Sort by Version</option>
+            <option value="status">Sort by Status</option>
+          </select>
+        </div>
+        <div class="col-4">
+          <button type="button" class="btn btn-outline-secondary btn-sm w-100" (click)="toggleCodeSystemsSortOrder()">
+            <i class="bi bi-sort-alpha-down" [class.bi-sort-alpha-up]="codeSystemsSortOrder() === 'desc'"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    @if (codeSystemsLoading()) {
+    <div class="text-center py-4">
+      <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      <p class="mt-2 text-muted">Loading code systems...</p>
+    </div>
+    }
+
+    <!-- Results List -->
+    @if (!codeSystemsLoading() && codeSystemsTotalCount() > 0) {
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h6 class="mb-0">
+        <i class="bi bi-list me-2"></i>Results
+        @if (codeSystemsTotalCount() > 0) {
+        <span class="badge bg-primary ms-2">{{ codeSystemsTotalCount() }}</span>
+        }
+      </h6>
+      @if (paginatedCodeSystems().length > 0) {
+      <div class="d-flex align-items-center gap-2">
+        <label for="codeSystemsPageSizeSelect" class="small text-muted mb-0">Items per page:</label>
+        <select class="form-select form-select-sm" id="codeSystemsPageSizeSelect"
+          [ngModel]="codeSystemsPageSize()" (ngModelChange)="setCodeSystemsPageSize(+$event)"
+          style="width: auto;">
+          @for (size of codeSystemsAvailablePageSizes; track size) {
+          <option [value]="size">{{ size }}</option>
+          }
+        </select>
+      </div>
+      }
+    </div>
+    <div class="list-group mb-3">
+      @for (codeSystem of paginatedCodeSystems(); track getCodeSystemTrackId(codeSystem, $index)) {
+      <div class="list-group-item list-group-item-action" (click)="selectCodeSystem(codeSystem)"
+        [class.active]="selectedCodeSystem()?.id === codeSystem.id && selectedCodeSystem()?.url === codeSystem.url">
+        <div class="d-flex w-100 justify-content-between">
+          <h6 class="mb-1 text-truncate me-2" style="max-width: 60%;">{{ codeSystem.name || 'Unnamed CodeSystem' }}</h6>
+          <div class="d-flex align-items-center gap-1 flex-shrink-0">
+            <small class="text-muted text-nowrap">{{ codeSystem.version || 'N/A' }}</small>
+            <span class="badge text-nowrap" style="" [class.bg-success]="codeSystem.status === 'active'"
+              [class.bg-warning]="codeSystem.status === 'draft'"
+              [class.bg-danger]="codeSystem.status === 'retired'">
+              {{ codeSystem.status || 'Unknown' }}
+            </span>
+          </div>
+        </div>
+        <p class="mb-1 text-break">{{ codeSystem.title || 'N/A' }}</p>
+        <small class="text-muted">
+          @if (codeSystem.url) {
+          <a [href]="codeSystem.url" target="_blank" rel="noopener noreferrer" 
+             (click)="$event.stopPropagation()" class="text-decoration-none text-break d-inline-block" style="max-width: 100%; word-break: break-all;">
+            <!-- <i class="bi bi-link-45deg me-1"></i> -->
+            {{ codeSystem.url }}
+          </a>
+          } @else {
+          <i class="bi bi-link-45deg me-1"></i>N/A
+          }
+        </small>
+      </div>
+      }
+    </div>
+
+    <!-- Pagination Controls -->
+    @if (codeSystemsTotalPages() > 1) {
+    <nav aria-label="Code Systems page navigation">
+      <ul class="pagination justify-content-center my-4">
+        <li class="page-item" [class.disabled]="!codeSystemsHasPreviousPage()">
+          <button class="page-link" (click)="codeSystemsGoToFirstPage()"
+            [disabled]="!codeSystemsHasPreviousPage()" type="button">
+            <i class="bi bi-chevron-double-left"></i>
+          </button>
+        </li>
+        <li class="page-item" [class.disabled]="!codeSystemsHasPreviousPage()">
+          <button class="page-link" (click)="codeSystemsPreviousPage()" [disabled]="!codeSystemsHasPreviousPage()"
+            type="button">
+            <i class="bi bi-chevron-left"></i>
+          </button>
+        </li>
+        <li class="page-item disabled">
+          <span class="page-link">
+            {{ codeSystemsCurrentPage() }}/{{ codeSystemsTotalPages() }}
+          </span>
+        </li>
+        <li class="page-item disabled">
+          <span class="page-link">
+            {{ codeSystemsStartIndex() }}-{{ codeSystemsEndIndex() }} of {{ codeSystemsTotalCount() }}
+          </span>
+        </li>
+        <li class="page-item" [class.disabled]="!codeSystemsHasNextPage()">
+          <button class="page-link" (click)="codeSystemsNextPage()" [disabled]="!codeSystemsHasNextPage()"
+            type="button">
+            <i class="bi bi-chevron-right"></i>
+          </button>
+        </li>
+        <li class="page-item" [class.disabled]="!codeSystemsHasNextPage()">
+          <button class="page-link" (click)="codeSystemsGoToLastPage()" [disabled]="!codeSystemsHasNextPage()"
+            type="button">
+            <i class="bi bi-chevron-double-right"></i>
+          </button>
+        </li>
+      </ul>
+    </nav>
+    }
+    }
+
+    <!-- Empty State -->
+    @if (!codeSystemsLoading() && codeSystemsTotalCount() === 0 && codeSystemsResults().length === 0) {
+    <div class="text-center py-5">
+      <i class="bi bi-collection text-muted" style="font-size: 3rem;"></i>
+      <h5 class="mt-3 text-muted">No Code Systems Loaded</h5>
+      <p class="text-muted">Click "Reload Code Systems" to discover available terminology systems.</p>
+    </div>
+    }
+
+    <!-- No Results After Filter -->
+    @if (!codeSystemsLoading() && codeSystemsTotalCount() === 0 && codeSystemsResults().length > 0) {
+    <div class="text-center py-4">
+      <i class="bi bi-search text-muted" style="font-size: 2rem;"></i>
+      <h6 class="mt-2 text-muted">No Code Systems Match Your Filter</h6>
+      <p class="text-muted">Try adjusting your search criteria.</p>
+    </div>
+    }
+  </div>
+
+  <!-- Right Column: Details Pane -->
+  <div class="col-md-8">
+    @if (selectedCodeSystem()) {
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">{{ selectedCodeSystem()?.name || 'Unnamed CodeSystem' }}</h5>
+        @if (selectedCodeSystem()?.id || selectedCodeSystem()?.url) {
+        <button type="button" class="btn btn-sm btn-outline-primary" 
+          (click)="downloadCodeSystem(selectedCodeSystem()!)"
+          title="Download CodeSystem JSON">
+          <i class="bi bi-download me-1"></i>
+          Download
+        </button>
+        }
+      </div>
+      <div class="card-body">
+        <div class="row">
+          <div class="col-md-6">
+            <!-- <h6 class="small mb-2">CodeSystem Details</h6> -->
+            <div class="small">
+              @if (selectedCodeSystem()?.description) {
+              <div class="mb-2">
+                <strong>Description:</strong>
+                <p class="mt-1">{{ selectedCodeSystem()?.description }}</p>
+              </div>
+              }
+              @if (selectedCodeSystem()?.publisher) {
+              <div class="mb-1">
+                <strong>Publisher:</strong> {{ selectedCodeSystem()?.publisher }}
+              </div>
+              }
+              @if (selectedCodeSystem()?.date) {
+              <div class="mb-1">
+                <strong>Date:</strong> {{ formatDate(selectedCodeSystem()?.date) }}
+              </div>
+              }
+              @if (selectedCodeSystem()?.version) {
+              <div class="mb-1">
+                <strong>Version:</strong> {{ selectedCodeSystem()?.version }}
+              </div>
+              }
+              @if (selectedCodeSystem()?.purpose) {
+              <div class="mb-1">
+                <strong>Purpose:</strong> {{ selectedCodeSystem()?.purpose }}
+              </div>
+              }
+              @if (selectedCodeSystem()?.copyright) {
+              <div class="mb-1">
+                <strong>Copyright:</strong> {{ selectedCodeSystem()?.copyright }}
+              </div>
+              }
+              @if (selectedCodeSystem()?.url) {
+              <div class="mb-1">
+                <strong>URL:</strong> 
+                <a [href]="selectedCodeSystem()!.url" target="_blank" rel="noopener noreferrer" class="ms-1">
+                  <code class="small">{{ selectedCodeSystem()?.url }}</code>
+                </a>
+              </div>
+              }
+              @if (selectedCodeSystem()?.status) {
+              <div class="mb-1">
+                <strong>Status:</strong>
+                <span class="badge ms-1" [class.bg-success]="selectedCodeSystem()?.status === 'active'"
+                  [class.bg-warning]="selectedCodeSystem()?.status === 'draft'"
+                  [class.bg-danger]="selectedCodeSystem()?.status === 'retired'">
+                  {{ selectedCodeSystem()?.status }}
+                </span>
+              </div>
+              }
+            </div>
+          </div>
+          <div class="col-md-6">
+            <h6 class="small mb-2">Additional Information</h6>
+            <div class="small">
+              @if (selectedCodeSystem()?.experimental !== undefined) {
+              <div class="mb-1">
+                <strong>Experimental:</strong>
+                <span class="badge ms-1" [class.bg-warning]="selectedCodeSystem()?.experimental"
+                  [class.bg-success]="!selectedCodeSystem()?.experimental">
+                  {{ selectedCodeSystem()?.experimental ? 'Yes' : 'No' }}
+                </span>
+              </div>
+              }
+              @if (selectedCodeSystem()?.caseSensitive !== undefined) {
+              <div class="mb-1">
+                <strong>Case Sensitive:</strong>
+                <span class="badge ms-1" [class.bg-info]="selectedCodeSystem()?.caseSensitive"
+                  [class.bg-secondary]="!selectedCodeSystem()?.caseSensitive">
+                  {{ selectedCodeSystem()?.caseSensitive ? 'Yes' : 'No' }}
+                </span>
+              </div>
+              }
+              @if (selectedCodeSystem()?.content) {
+              <div class="mb-1">
+                <strong>Content:</strong> {{ selectedCodeSystem()?.content }}
+              </div>
+              }
+              @if (selectedCodeSystem()?.count) {
+              <div class="mb-1">
+                <strong>Code Count:</strong> {{ selectedCodeSystem()?.count }}
+              </div>
+              }
+              @if (selectedCodeSystem()?.contact && selectedCodeSystem()!.contact!.length > 0) {
+              <div class="mb-1">
+                <strong>Contact:</strong>
+                <ul class="list-unstyled mt-1">
+                  @for (contact of selectedCodeSystem()!.contact!; track $index) {
+                  <li class="small">
+                    @if (contact.name) {
+                    {{ contact.name }}
+                    }
+                    @if (contact.telecom && contact.telecom.length > 0) {
+                    <br><small class="text-muted">{{ contact.telecom[0].value }}</small>
+                    }
+                  </li>
+                  }
+                </ul>
+              </div>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    } @else {
+    <div class="text-center text-muted py-5">
+      <i class="bi bi-info-circle display-4"></i>
+      <p class="mt-2">Select a CodeSystem from the list to view details.</p>
+    </div>
+    }
+  </div>
+</div>

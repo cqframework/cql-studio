@@ -1,9 +1,10 @@
 // Author: Preston Lee
 
-import { Component, input, computed, signal, effect } from '@angular/core';
+import { Component, input, computed, signal, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ValueSet } from 'fhir/r4';
+import { ToastService } from '../../../services/toast.service';
 
 @Component({
   selector: 'app-valueset-details-pane',
@@ -22,6 +23,9 @@ export class ValueSetDetailsPaneComponent {
   loadingDetails = input<Set<string>>(new Set());
   availablePageSizes = input<number[]>([25, 50, 100, 200]);
   onRowToggle = input<(code: any) => void>();
+  
+  // Services
+  private toastService = inject(ToastService);
   
   // Internal pagination state
   protected readonly currentPage = signal<number>(1);
@@ -142,6 +146,36 @@ export class ValueSetDetailsPaneComponent {
     const handler = this.onRowToggle();
     if (handler) {
       handler(code);
+    }
+  }
+
+  downloadValueSet(): void {
+    const valueSet = this.selectedValueSet();
+    if (!valueSet) {
+      return;
+    }
+
+    try {
+      const jsonString = JSON.stringify(valueSet, null, 2);
+      const blob = new Blob([jsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      
+      const filename = valueSet.id 
+        ? `ValueSet-${valueSet.id}.json`
+        : valueSet.url 
+          ? `ValueSet-${valueSet.url.replace(/[^a-zA-Z0-9]/g, '_')}.json`
+          : 'ValueSet.json';
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Failed to download ValueSet:', error);
+      this.toastService.showError('Failed to download ValueSet', 'Download Error');
     }
   }
 }

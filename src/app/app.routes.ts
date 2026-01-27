@@ -11,7 +11,11 @@ import { SettingsComponent } from './components/settings/settings.component';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { RunnerComponent } from './components/runner/runner.component';
 import { FhirUploaderComponent } from './components/fhir-uploader/fhir-uploader.component';
-import { TerminologyComponent } from './components/terminology/terminology.component';
+import { TerminologyLayoutComponent } from './components/terminology/terminology-layout.component';
+import { ValueSetsTabComponent } from './components/terminology/valuesets-tab/valuesets-tab.component';
+import { ConceptMapsTabComponent } from './components/terminology/conceptmaps-tab/conceptmaps-tab.component';
+import { CodeSystemsTabComponent } from './components/terminology/codesystems-tab/codesystems-tab.component';
+import { ValidationTabComponent } from './components/terminology/validation-tab/validation-tab.component';
 import { AboutComponent } from './components/about/about.component';
 import { LandingComponent } from './components/landing/landing.component';
 import { GuidelinesComponent } from './components/guidelines/guidelines.component';
@@ -28,7 +32,17 @@ export const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent },
   { path: 'runner', component: RunnerComponent },
   { path: 'uploader', component: FhirUploaderComponent },
-  { path: 'terminology', component: TerminologyComponent },
+  { 
+    path: 'terminology', 
+    component: TerminologyLayoutComponent,
+    children: [
+      { path: '', redirectTo: 'valuesets', pathMatch: 'full' },
+      { path: 'valuesets', component: ValueSetsTabComponent },
+      { path: 'conceptmaps', component: ConceptMapsTabComponent },
+      { path: 'codesystems', component: CodeSystemsTabComponent },
+      { path: 'validation', component: ValidationTabComponent }
+    ]
+  },
   { path: 'guidelines', component: GuidelinesComponent },
   { path: 'guidelines/:id/testing', component: GuidelinesComponent },
   { path: 'guidelines/:id', component: GuidelinesComponent },

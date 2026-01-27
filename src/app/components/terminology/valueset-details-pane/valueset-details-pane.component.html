@@ -1,48 +1,59 @@
 @if (selectedValueSet()) {
   <div class="card h-100">
-    <div class="card-header">
+    <div class="card-header d-flex justify-content-between align-items-center">
       <h5 class="card-title mb-0">
-        <i class="bi bi-collection me-2"></i>{{ selectedValueSet()?.name }}
+        <i class="bi bi-list-ul me-2"></i>{{ selectedValueSet()?.name }}
         @if (expandLoading()) {
           <span class="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true"></span>
         }
       </h5>
+      <button type="button" class="btn btn-sm btn-outline-primary" 
+        (click)="downloadValueSet()"
+        title="Download ValueSet JSON">
+        <i class="bi bi-download me-1"></i>
+        Download
+      </button>
     </div>
     <div class="card-body">
       <!-- Basic Information -->
       <div class="mb-4">
-        <h6 class="border-bottom pb-2 mb-3">Basic Information</h6>
-        <div class="row">
+        <h6 class="text-muted text-uppercase small fw-normal mb-3">Basic Information</h6>
+        <div class="row g-3">
           <div class="col-md-6">
             @if (selectedValueSet()?.id) {
-              <div class="mb-2">
-                <strong>ID:</strong> <code class="small">{{ selectedValueSet()?.id }}</code>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">ID</div>
+                <code class="small">{{ selectedValueSet()?.id }}</code>
               </div>
             }
             @if (selectedValueSet()?.name) {
-              <div class="mb-2">
-                <strong>Name:</strong> <span class="small">{{ selectedValueSet()?.name }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Name</div>
+                <div>{{ selectedValueSet()?.name }}</div>
               </div>
             }
             @if (selectedValueSet()?.title) {
-              <div class="mb-2">
-                <strong>Title:</strong> <span class="small">{{ selectedValueSet()?.title }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Title</div>
+                <div>{{ selectedValueSet()?.title }}</div>
               </div>
             }
             @if (selectedValueSet()?.url) {
-              <div class="mb-2">
-                <strong>URL:</strong> <code class="small">{{ selectedValueSet()?.url }}</code>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">URL</div>
+                <code class="small text-break">{{ selectedValueSet()?.url }}</code>
               </div>
             }
             @if (selectedValueSet()?.version) {
-              <div class="mb-2">
-                <strong>Version:</strong> <span class="small">{{ selectedValueSet()?.version }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Version</div>
+                <div>{{ selectedValueSet()?.version }}</div>
               </div>
             }
             @if (selectedValueSet()?.status) {
-              <div class="mb-2">
-                <strong>Status:</strong>
-                <span class="badge ms-2" 
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Status</div>
+                <span class="badge" 
                       [class.bg-success]="selectedValueSet()?.status === 'active'" 
                       [class.bg-warning]="selectedValueSet()?.status === 'draft'"
                       [class.bg-danger]="selectedValueSet()?.status === 'retired'"
@@ -52,9 +63,9 @@
               </div>
             }
             @if (selectedValueSet()?.experimental !== undefined) {
-              <div class="mb-2">
-                <strong>Experimental:</strong>
-                <span class="badge ms-2" 
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Experimental</div>
+                <span class="badge" 
                       [class.bg-warning]="selectedValueSet()?.experimental" 
                       [class.bg-success]="!selectedValueSet()?.experimental">
                   {{ selectedValueSet()?.experimental ? 'Yes' : 'No' }}
@@ -62,39 +73,41 @@
               </div>
             }
             @if (selectedValueSet()?.date) {
-              <div class="mb-2">
-                <strong>Date:</strong> <span class="small">{{ formatDate(selectedValueSet()?.date) }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Date</div>
+                <div>{{ formatDate(selectedValueSet()?.date) }}</div>
               </div>
             }
             @if (selectedValueSet()?.publisher) {
-              <div class="mb-2">
-                <strong>Publisher:</strong> <span class="small">{{ selectedValueSet()?.publisher }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Publisher</div>
+                <div>{{ selectedValueSet()?.publisher }}</div>
               </div>
             }
           </div>
           <div class="col-md-6">
             @if (selectedValueSet()?.description) {
-              <div class="mb-2">
-                <strong>Description:</strong>
-                <p class="small mt-1 mb-0">{{ selectedValueSet()?.description }}</p>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Description</div>
+                <div class="text-break">{{ selectedValueSet()?.description }}</div>
               </div>
             }
             @if (selectedValueSet()?.purpose) {
-              <div class="mb-2">
-                <strong>Purpose:</strong>
-                <p class="small mt-1 mb-0">{{ selectedValueSet()?.purpose }}</p>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Purpose</div>
+                <div class="text-break">{{ selectedValueSet()?.purpose }}</div>
               </div>
             }
             @if (selectedValueSet()?.copyright) {
-              <div class="mb-2">
-                <strong>Copyright:</strong>
-                <p class="small mt-1 mb-0">{{ selectedValueSet()?.copyright }}</p>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Copyright</div>
+                <div class="text-break">{{ selectedValueSet()?.copyright }}</div>
               </div>
             }
             @if (selectedValueSet()?.immutable !== undefined) {
-              <div class="mb-2">
-                <strong>Immutable:</strong>
-                <span class="badge ms-2" 
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Immutable</div>
+                <span class="badge" 
                       [class.bg-info]="selectedValueSet()?.immutable" 
                       [class.bg-secondary]="!selectedValueSet()?.immutable">
                   {{ selectedValueSet()?.immutable ? 'Yes' : 'No' }}
@@ -108,18 +121,20 @@
       <!-- Identifiers -->
       @if (selectedValueSet()?.identifier && selectedValueSet()!.identifier!.length > 0) {
         <div class="mb-4">
-          <h6 class="border-bottom pb-2 mb-3">Identifiers</h6>
-          <div class="small">
+          <h6 class="text-muted text-uppercase small fw-normal mb-3">Identifiers</h6>
+          <div>
             @for (identifier of selectedValueSet()?.identifier; track $index) {
-              <div class="mb-2">
+              <div class="mb-3">
                 @if (identifier.system) {
-                  <strong>System:</strong> <code class="small">{{ identifier.system }}</code>
+                  <div class="text-muted small mb-1">System</div>
+                  <code class="small">{{ identifier.system }}</code>
                 }
                 @if (identifier.value) {
-                  <span class="ms-2"><strong>Value:</strong> {{ identifier.value }}</span>
+                  <div class="text-muted small mb-1 mt-2">Value</div>
+                  <div>{{ identifier.value }}</div>
                 }
                 @if (identifier.use) {
-                  <span class="badge bg-secondary ms-2">{{ identifier.use }}</span>
+                  <span class="badge bg-secondary mt-1">{{ identifier.use }}</span>
                 }
               </div>
             }
@@ -130,24 +145,25 @@
       <!-- Contact Information -->
       @if (selectedValueSet()?.contact && selectedValueSet()!.contact!.length > 0) {
         <div class="mb-4">
-          <h6 class="border-bottom pb-2 mb-3">Contact</h6>
-          <div class="small">
+          <h6 class="text-muted text-uppercase small fw-normal mb-3">Contact</h6>
+          <div>
             @for (contact of selectedValueSet()?.contact; track $index) {
-              <div class="mb-2">
+              <div class="mb-3">
                 @if (contact.name) {
-                  <strong>Name:</strong> {{ contact.name }}
+                  <div class="text-muted small mb-1">Name</div>
+                  <div>{{ contact.name }}</div>
                 }
                 @if (contact.telecom && contact.telecom.length > 0) {
-                  <div class="mt-1">
+                  <div class="mt-2">
                     @for (telecom of contact.telecom; track $index) {
-                      <div>
-                        <strong>{{ telecom.system }}:</strong> 
+                      <div class="mb-2">
+                        <div class="text-muted small mb-1">{{ telecom.system }}</div>
                         <a [href]="telecom.system === 'email' ? 'mailto:' + telecom.value : telecom.system === 'phone' ? 'tel:' + telecom.value : telecom.value" 
                            [target]="telecom.system === 'url' ? '_blank' : undefined">
                           {{ telecom.value }}
                         </a>
                         @if (telecom.use) {
-                          <span class="badge bg-secondary ms-1">{{ telecom.use }}</span>
+                          <span class="badge bg-secondary ms-2">{{ telecom.use }}</span>
                         }
                       </div>
                     }
@@ -162,31 +178,33 @@
       <!-- Use Context -->
       @if (selectedValueSet()?.useContext && selectedValueSet()!.useContext!.length > 0) {
         <div class="mb-4">
-          <h6 class="border-bottom pb-2 mb-3">Use Context</h6>
-          <div class="small">
+          <h6 class="text-muted text-uppercase small fw-normal mb-3">Use Context</h6>
+          <div>
             @for (context of selectedValueSet()?.useContext; track $index) {
-              <div class="mb-2">
+              <div class="mb-3">
                 @if (context.code) {
-                  <strong>Code:</strong> 
+                  <div class="text-muted small mb-1">Code</div>
                   @if (context.code.code) {
-                    <code class="small ms-1">{{ context.code.code }}</code>
+                    <code class="small">{{ context.code.code }}</code>
                     @if (context.code.display) {
-                      <span class="ms-1">({{ context.code.display }})</span>
+                      <span class="ms-2 text-muted">{{ context.code.display }}</span>
                     }
                     @if (context.code.system) {
-                      <small class="text-muted ms-1">[{{ context.code.system }}]</small>
+                      <div class="text-muted small mt-1">{{ context.code.system }}</div>
                     }
                   }
                 }
                 @if (context.valueCodeableConcept) {
-                  <div class="mt-1">
-                    <strong>Value:</strong>
+                  <div class="mt-2">
+                    <div class="text-muted small mb-1">Value</div>
                     @if (context.valueCodeableConcept.coding && context.valueCodeableConcept.coding.length > 0) {
                       @for (coding of context.valueCodeableConcept.coding; track $index) {
-                        <code class="small ms-1">{{ coding.code }}</code>
-                        @if (coding.display) {
-                          <span class="ms-1">({{ coding.display }})</span>
-                        }
+                        <div class="mb-1">
+                          <code class="small">{{ coding.code }}</code>
+                          @if (coding.display) {
+                            <span class="ms-2 text-muted">{{ coding.display }}</span>
+                          }
+                        </div>
                       }
                     }
                   </div>
@@ -200,22 +218,24 @@
       <!-- Jurisdiction -->
       @if (selectedValueSet()?.jurisdiction && selectedValueSet()!.jurisdiction!.length > 0) {
         <div class="mb-4">
-          <h6 class="border-bottom pb-2 mb-3">Jurisdiction</h6>
-          <div class="small">
+          <h6 class="text-muted text-uppercase small fw-normal mb-3">Jurisdiction</h6>
+          <div>
             @for (jurisdiction of selectedValueSet()?.jurisdiction; track $index) {
-              <div class="mb-1">
+              <div class="mb-2">
                 @if (jurisdiction.coding && jurisdiction.coding.length > 0) {
                   @for (coding of jurisdiction.coding; track $index) {
-                    <code class="small">{{ coding.code }}</code>
-                    @if (coding.display) {
-                      <span class="ms-1">({{ coding.display }})</span>
-                    }
-                    @if (coding.system) {
-                      <small class="text-muted ms-1">[{{ coding.system }}]</small>
-                    }
+                    <div>
+                      <code class="small">{{ coding.code }}</code>
+                      @if (coding.display) {
+                        <span class="ms-2 text-muted">{{ coding.display }}</span>
+                      }
+                      @if (coding.system) {
+                        <div class="text-muted small mt-1">{{ coding.system }}</div>
+                      }
+                    </div>
                   }
                 } @else if (jurisdiction.text) {
-                  {{ jurisdiction.text }}
+                  <div>{{ jurisdiction.text }}</div>
                 }
               </div>
             }
@@ -226,17 +246,18 @@
       <!-- Compose (ValueSet Definition) -->
       @if (selectedValueSet()?.compose) {
         <div class="mb-4">
-          <h6 class="border-bottom pb-2 mb-3">Compose (ValueSet Definition)</h6>
-          <div class="small">
+          <h6 class="text-muted text-uppercase small fw-normal mb-3">Compose (ValueSet Definition)</h6>
+          <div>
             @if (selectedValueSet()?.compose?.lockedDate) {
-              <div class="mb-2">
-                <strong>Locked Date:</strong> <span>{{ formatDate(selectedValueSet()?.compose?.lockedDate) }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Locked Date</div>
+                <div>{{ formatDate(selectedValueSet()?.compose?.lockedDate) }}</div>
               </div>
             }
             @if (selectedValueSet()?.compose?.inactive !== undefined) {
-              <div class="mb-2">
-                <strong>Inactive:</strong>
-                <span class="badge ms-2" 
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Inactive</div>
+                <span class="badge" 
                       [class.bg-warning]="selectedValueSet()?.compose?.inactive" 
                       [class.bg-success]="!selectedValueSet()?.compose?.inactive">
                   {{ selectedValueSet()?.compose?.inactive ? 'Yes' : 'No' }}
@@ -245,72 +266,73 @@
             }
             @if (selectedValueSet()?.compose?.include && selectedValueSet()!.compose!.include!.length > 0) {
               <div class="mb-3">
-                <strong>Includes:</strong>
+                <div class="text-muted small mb-2">Includes</div>
                 @for (include of selectedValueSet()?.compose?.include; track $index) {
-                  <div class="card mt-2">
-                    <div class="card-body p-2">
-                      @if (include.system) {
-                        <div class="mb-1">
-                          <strong>System:</strong> <code class="small">{{ include.system }}</code>
-                        </div>
-                      }
-                      @if (include.version) {
-                        <div class="mb-1">
-                          <strong>Version:</strong> <span class="small">{{ include.version }}</span>
-                        </div>
-                      }
-                      @if (include.concept && include.concept.length > 0) {
-                        <div class="mb-1">
-                          <strong>Concepts ({{ include.concept.length }}):</strong>
-                          <ul class="list-unstyled mt-1 mb-0">
-                            @for (concept of include.concept; track concept.code) {
-                              <li>
-                                <code class="small">{{ concept.code }}</code>
-                                @if (concept.display) {
-                                  <span class="ms-1">- {{ concept.display }}</span>
-                                }
-                              </li>
-                            }
-                          </ul>
-                        </div>
-                      }
-                      @if (include.filter && include.filter.length > 0) {
-                        <div class="mb-1">
-                          <strong>Filters:</strong>
-                          @for (filter of include.filter; track $index) {
-                            <div class="ms-2">
-                              <code class="small">{{ filter.property }}</code>
-                              <span class="ms-1">{{ filter.op }}</span>
-                              <code class="small ms-1">{{ filter.value }}</code>
+                  <div class="bg-rounded p-3 mb-2">
+                    @if (include.system) {
+                      <div class="mb-2">
+                        <div class="text-muted small mb-1">System</div>
+                        <code class="small">{{ include.system }}</code>
+                      </div>
+                    }
+                    @if (include.version) {
+                      <div class="mb-2">
+                        <div class="text-muted small mb-1">Version</div>
+                        <div>{{ include.version }}</div>
+                      </div>
+                    }
+                    @if (include.concept && include.concept.length > 0) {
+                      <div class="mb-2">
+                        <div class="text-muted small mb-1">Concepts ({{ include.concept.length }})</div>
+                        <div>
+                          @for (concept of include.concept; track concept.code) {
+                            <div class="mb-1">
+                              <code class="small">{{ concept.code }}</code>
+                              @if (concept.display) {
+                                <span class="ms-2 text-muted">{{ concept.display }}</span>
+                              }
                             </div>
                           }
                         </div>
-                      }
-                    </div>
+                      </div>
+                    }
+                    @if (include.filter && include.filter.length > 0) {
+                      <div class="mb-2">
+                        <div class="text-muted small mb-1">Filters</div>
+                        @for (filter of include.filter; track $index) {
+                          <div class="mb-1">
+                            <code class="small">{{ filter.property }}</code>
+                            <span class="ms-2">{{ filter.op }}</span>
+                            <code class="small ms-2">{{ filter.value }}</code>
+                          </div>
+                        }
+                      </div>
+                    }
                   </div>
                 }
               </div>
             }
             @if (selectedValueSet()?.compose?.exclude && selectedValueSet()!.compose!.exclude!.length > 0) {
               <div class="mb-2">
-                <strong>Excludes:</strong>
+                <div class="text-muted small mb-2">Excludes</div>
                 @for (exclude of selectedValueSet()?.compose?.exclude; track $index) {
-                  <div class="card mt-2 border-danger">
-                    <div class="card-body p-2">
-                      @if (exclude.system) {
-                        <div class="mb-1">
-                          <strong>System:</strong> <code class="small">{{ exclude.system }}</code>
-                        </div>
-                      }
-                      @if (exclude.concept && exclude.concept.length > 0) {
-                        <div class="mb-1">
-                          <strong>Concepts:</strong>
+                  <div class="rounded p-3 mb-2 border-start border-danger border-3">
+                    @if (exclude.system) {
+                      <div class="mb-2">
+                        <div class="text-muted small mb-1">System</div>
+                        <code class="small">{{ exclude.system }}</code>
+                      </div>
+                    }
+                    @if (exclude.concept && exclude.concept.length > 0) {
+                      <div class="mb-2">
+                        <div class="text-muted small mb-1">Concepts</div>
+                        <div>
                           @for (concept of exclude.concept; track concept.code) {
-                            <code class="small ms-1">{{ concept.code }}</code>
+                            <code class="small me-2">{{ concept.code }}</code>
                           }
                         </div>
-                      }
-                    </div>
+                      </div>
+                    }
                   </div>
                 }
               </div>
@@ -322,51 +344,55 @@
       <!-- Expansion Information -->
       @if (selectedValueSet()?.expansion) {
         <div class="mb-4">
-          <h6 class="border-bottom pb-2 mb-3">Expansion Information</h6>
-          <div class="small">
+          <h6 class="text-muted text-uppercase small fw-normal mb-3">Expansion Information</h6>
+          <div>
             @if (selectedValueSet()?.expansion?.identifier) {
-              <div class="mb-2">
-                <strong>Identifier:</strong> <code class="small">{{ selectedValueSet()?.expansion?.identifier }}</code>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Identifier</div>
+                <code class="small">{{ selectedValueSet()?.expansion?.identifier }}</code>
               </div>
             }
             @if (selectedValueSet()?.expansion?.timestamp) {
-              <div class="mb-2">
-                <strong>Timestamp:</strong> <span>{{ formatDate(selectedValueSet()?.expansion?.timestamp) }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Timestamp</div>
+                <div>{{ formatDate(selectedValueSet()?.expansion?.timestamp) }}</div>
               </div>
             }
             @if (selectedValueSet()?.expansion?.total !== undefined) {
-              <div class="mb-2">
-                <strong>Total:</strong> <span>{{ selectedValueSet()?.expansion?.total }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Total</div>
+                <div>{{ selectedValueSet()?.expansion?.total }}</div>
               </div>
             }
             @if (selectedValueSet()?.expansion?.offset !== undefined) {
-              <div class="mb-2">
-                <strong>Offset:</strong> <span>{{ selectedValueSet()?.expansion?.offset }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Offset</div>
+                <div>{{ selectedValueSet()?.expansion?.offset }}</div>
               </div>
             }
             @if (selectedValueSet()?.expansion?.parameter && selectedValueSet()!.expansion!.parameter!.length > 0) {
-              <div class="mb-2">
-                <strong>Parameters:</strong>
-                <ul class="list-unstyled mt-1 mb-0">
+              <div class="mb-3">
+                <div class="text-muted small mb-2">Parameters</div>
+                <div>
                   @for (param of selectedValueSet()?.expansion?.parameter; track $index) {
-                    <li>
-                      <strong>{{ param.name }}:</strong>
+                    <div class="mb-2">
+                      <div class="text-muted small mb-1">{{ param.name }}</div>
                       @if (param.valueString) {
-                        {{ param.valueString }}
+                        <div>{{ param.valueString }}</div>
                       } @else if (param.valueBoolean !== undefined) {
-                        {{ param.valueBoolean }}
+                        <div>{{ param.valueBoolean }}</div>
                       } @else if (param.valueInteger !== undefined) {
-                        {{ param.valueInteger }}
+                        <div>{{ param.valueInteger }}</div>
                       } @else if (param.valueDecimal !== undefined) {
-                        {{ param.valueDecimal }}
+                        <div>{{ param.valueDecimal }}</div>
                       } @else if (param.valueUri) {
                         <code class="small">{{ param.valueUri }}</code>
                       } @else if (param.valueCode) {
                         <code class="small">{{ param.valueCode }}</code>
                       }
-                    </li>
+                    </div>
                   }
-                </ul>
+                </div>
               </div>
             }
           </div>
@@ -377,55 +403,65 @@
       <!-- Meta Information -->
       @if (selectedValueSet()?.meta) {
         <div class="mb-4">
-          <h6 class="border-bottom pb-2 mb-3">Meta Information</h6>
-          <div class="small">
+          <h6 class="text-muted text-uppercase small fw-normal mb-3">Meta Information</h6>
+          <div>
             @if (selectedValueSet()?.meta?.versionId) {
-              <div class="mb-1">
-                <strong>Version ID:</strong> <code class="small">{{ selectedValueSet()?.meta?.versionId }}</code>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Version ID</div>
+                <code class="small">{{ selectedValueSet()?.meta?.versionId }}</code>
               </div>
             }
             @if (selectedValueSet()?.meta?.lastUpdated) {
-              <div class="mb-1">
-                <strong>Last Updated:</strong> <span>{{ formatDate(selectedValueSet()?.meta?.lastUpdated) }}</span>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Last Updated</div>
+                <div>{{ formatDate(selectedValueSet()?.meta?.lastUpdated) }}</div>
               </div>
             }
             @if (selectedValueSet()?.meta?.profile && selectedValueSet()!.meta!.profile!.length > 0) {
-              <div class="mb-1">
-                <strong>Profiles:</strong>
-                @for (profile of selectedValueSet()!.meta!.profile!; track profile) {
-                  <code class="small ms-1">{{ profile }}</code>
-                }
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Profiles</div>
+                <div>
+                  @for (profile of selectedValueSet()!.meta!.profile!; track profile) {
+                    <code class="small me-2">{{ profile }}</code>
+                  }
+                </div>
               </div>
             }
             @if (selectedValueSet()?.meta?.security && selectedValueSet()!.meta!.security!.length > 0) {
-              <div class="mb-1">
-                <strong>Security:</strong>
-                @for (security of selectedValueSet()!.meta!.security!; track $index) {
-                  @if (security?.code) {
-                    <code class="small ms-1">{{ security.code }}</code>
-                    @if (security?.display) {
-                      <span class="ms-1">({{ security.display }})</span>
-                    }
-                    @if (security?.system) {
-                      <small class="text-muted ms-1">[{{ security.system }}]</small>
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Security</div>
+                <div>
+                  @for (security of selectedValueSet()!.meta!.security!; track $index) {
+                    @if (security?.code) {
+                      <div class="mb-1">
+                        <code class="small">{{ security.code }}</code>
+                        @if (security?.display) {
+                          <span class="ms-2 text-muted">{{ security.display }}</span>
+                        }
+                        @if (security?.system) {
+                          <div class="text-muted small mt-1">{{ security.system }}</div>
+                        }
+                      </div>
                     }
                   }
-                }
+                </div>
               </div>
             }
             @if (selectedValueSet()?.meta?.tag && selectedValueSet()!.meta!.tag!.length > 0) {
-              <div class="mb-1">
-                <strong>Tags:</strong>
-                @for (tag of selectedValueSet()!.meta!.tag!; track $index) {
-                  <span class="badge bg-secondary ms-1">
-                    @if (tag.code) {
-                      {{ tag.code }}
-                    }
-                    @if (tag.display) {
-                      ({{ tag.display }})
-                    }
-                  </span>
-                }
+              <div class="mb-3">
+                <div class="text-muted small mb-1">Tags</div>
+                <div>
+                  @for (tag of selectedValueSet()!.meta!.tag!; track $index) {
+                    <span class="badge bg-secondary me-1">
+                      @if (tag.code) {
+                        {{ tag.code }}
+                      }
+                      @if (tag.display) {
+                        ({{ tag.display }})
+                      }
+                    </span>
+                  }
+                </div>
               </div>
             }
           </div>
@@ -456,7 +492,7 @@
         </div>
         <div class="table-responsive">
           <table class="table table-sm table-striped table-hover mb-0">
-            <thead class="table-light sticky-top">
+            <thead class="sticky-top">
               <tr>
                 <th scope="col" class="text-nowrap">Code</th>
                 <th scope="col" class="text-nowrap">Display</th>
@@ -488,49 +524,153 @@
                               <small>{{ getCodeDetails(code).error }}</small>
                             </div>
                           } @else if (getCodeDetails(code)) {
-                            <div class="row">
+                            <div class="row g-3">
                               <div class="col-md-6">
-                                <h6 class="small mb-2">Code Details</h6>
-                                <div class="small">
-                                  <div class="mb-1">
-                                    <strong>Code:</strong> <code>{{ code.code }}</code>
+                                <div class="text-muted text-uppercase small fw-normal mb-2">Code Details</div>
+                                <div>
+                                  <div class="mb-2">
+                                    <div class="text-muted small mb-1">Code</div>
+                                    <code>{{ code.code }}</code>
                                   </div>
-                                  <div class="mb-1">
-                                    <strong>Display:</strong> {{ code.display || 'No display name' }}
+                                  <div class="mb-2">
+                                    <div class="text-muted small mb-1">Display</div>
+                                    <div>{{ code.display || 'No display name' }}</div>
                                   </div>
-                                  <div class="mb-1">
-                                    <strong>System:</strong> <small class="text-muted">{{ code.system }}</small>
+                                  <div class="mb-2">
+                                    <div class="text-muted small mb-1">System</div>
+                                    <div class="text-muted small">{{ code.system }}</div>
                                   </div>
                                   @if (getCodeDetails(code)?.parameter) {
                                     @for (param of getCodeDetails(code).parameter; track $index) {
+                                      @if (param.name === 'name') {
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">Code System Name</div>
+                                          <div>{{ param.valueString }}</div>
+                                        </div>
+                                      }
+                                      @if (param.name === 'version') {
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">Version</div>
+                                          <div>{{ param.valueString }}</div>
+                                        </div>
+                                      }
                                       @if (param.name === 'display') {
-                                        <div class="mb-1">
-                                          <strong>Full Display:</strong> {{ param.valueString }}
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">Full Display</div>
+                                          <div>{{ param.valueString }}</div>
                                         </div>
                                       }
                                       @if (param.name === 'definition') {
-                                        <div class="mb-1">
-                                          <strong>Definition:</strong> {{ param.valueString }}
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">Definition</div>
+                                          <div>{{ param.valueString }}</div>
                                         </div>
                                       }
                                     }
                                   }
                                 </div>
+                                @if (getCodeDetails(code)?.parameter) {
+                                  @for (param of getCodeDetails(code).parameter; track $index) {
+                                    @if (param.name === 'designation') {
+                                      <div class="mt-3">
+                                        <div class="text-muted text-uppercase small fw-normal mb-2">Designations</div>
+                                        <div>
+                                          @if (param.part && param.part.length > 0) {
+                                            @for (part of param.part; track $index) {
+                                              @if (part.name === 'value') {
+                                                <div class="mb-2">
+                                                  @if (part.valueString) {
+                                                    <div class="d-inline">{{ part.valueString }}</div>
+                                                  }
+                                                  @for (otherPart of param.part; track $index) {
+                                                    @if (otherPart.name === 'language' && otherPart !== part) {
+                                                      <span class="badge bg-secondary ms-2">{{ otherPart.valueCode }}</span>
+                                                    }
+                                                    @if (otherPart.name === 'use' && otherPart !== part) {
+                                                      <span class="badge bg-info ms-1">{{ otherPart.valueCoding?.code || otherPart.valueCode }}</span>
+                                                    }
+                                                  }
+                                                </div>
+                                              }
+                                            }
+                                          } @else if (param.valueString) {
+                                            <div class="mb-2">{{ param.valueString }}</div>
+                                          } @else if (param.valueCoding) {
+                                            <div class="mb-2">
+                                              @if (param.valueCoding.display) {
+                                                <div>{{ param.valueCoding.display }}</div>
+                                              }
+                                              @if (param.valueCoding.code) {
+                                                <code class="small">{{ param.valueCoding.code }}</code>
+                                              }
+                                            </div>
+                                          }
+                                        </div>
+                                      </div>
+                                    }
+                                  }
+                                }
                               </div>
                               <div class="col-md-6">
                                 @if (getCodeDetails(code)?.parameter) {
-                                  <h6 class="small mb-2">Additional Properties</h6>
-                                  <div class="small">
+                                  <div class="text-muted text-uppercase small fw-normal mb-2">Additional Properties</div>
+                                  <div>
                                     @for (param of getCodeDetails(code).parameter; track $index) {
-                                      @if (param.name !== 'display' && param.name !== 'definition' && param.name !== 'name') {
-                                        <div class="mb-1">
-                                          <strong>{{ param.name }}:</strong> 
+                                      @if (param.name !== 'display' && param.name !== 'definition' && param.name !== 'name' && param.name !== 'version' && param.name !== 'designation') {
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">{{ param.name }}</div>
                                           @if (param.valueString) {
-                                            {{ param.valueString }}
+                                            <div>{{ param.valueString }}</div>
                                           } @else if (param.valueBoolean !== undefined) {
-                                            {{ param.valueBoolean }}
+                                            <div>
+                                              <span class="badge" [class.bg-success]="param.valueBoolean" [class.bg-secondary]="!param.valueBoolean">
+                                                {{ param.valueBoolean ? 'Yes' : 'No' }}
+                                              </span>
+                                            </div>
                                           } @else if (param.valueCode) {
-                                            {{ param.valueCode }}
+                                            <code class="small">{{ param.valueCode }}</code>
+                                          } @else if (param.valueInteger !== undefined) {
+                                            <div>{{ param.valueInteger }}</div>
+                                          } @else if (param.valueDecimal !== undefined) {
+                                            <div>{{ param.valueDecimal }}</div>
+                                          } @else if (param.valueUri) {
+                                            <a [href]="param.valueUri" target="_blank" rel="noopener noreferrer" class="text-break">
+                                              <code class="small">{{ param.valueUri }}</code>
+                                            </a>
+                                          } @else if (param.valueDateTime) {
+                                            <div>{{ formatDate(param.valueDateTime) }}</div>
+                                          } @else if (param.valueDate) {
+                                            <div>{{ formatDate(param.valueDate) }}</div>
+                                          } @else if (param.valueCoding) {
+                                            <div>
+                                              @if (param.valueCoding.code) {
+                                                <code class="small me-2">{{ param.valueCoding.code }}</code>
+                                              }
+                                              @if (param.valueCoding.display) {
+                                                <span>{{ param.valueCoding.display }}</span>
+                                              }
+                                              @if (param.valueCoding.system) {
+                                                <div class="text-muted small mt-1">{{ param.valueCoding.system }}</div>
+                                              }
+                                            </div>
+                                          } @else if (param.part) {
+                                            <div class="ms-2">
+                                              @for (part of param.part; track $index) {
+                                                <div class="mb-1">
+                                                  <span class="text-muted small">{{ part.name }}:</span>
+                                                  @if (part.valueString) {
+                                                    <span class="ms-1">{{ part.valueString }}</span>
+                                                  } @else if (part.valueCode) {
+                                                    <code class="small ms-1">{{ part.valueCode }}</code>
+                                                  } @else if (part.valueCoding) {
+                                                    <code class="small ms-1">{{ part.valueCoding.code }}</code>
+                                                    @if (part.valueCoding.display) {
+                                                      <span class="ms-1">({{ part.valueCoding.display }})</span>
+                                                    }
+                                                  }
+                                                </div>
+                                              }
+                                            </div>
                                           }
                                         </div>
                                       }
@@ -596,13 +736,9 @@
     </div>
   </div>
 } @else {
-  <div class="card h-100">
-    <div class="card-body d-flex align-items-center justify-content-center" style="min-height: 400px;">
-      <div class="text-center text-muted">
-        <i class="bi bi-arrow-left display-4"></i>
-        <p class="mt-3">Select a ValueSet from the results to view expanded codes</p>
-      </div>
-    </div>
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-info-circle display-4"></i>
+    <p class="mt-2">Select a ValueSet from the list to view details.</p>
   </div>
 }
 
