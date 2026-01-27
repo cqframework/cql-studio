@@ -1,69 +1,144 @@
 <div class="row">
   <div class="col-md-6">
-    <div class="card">
-      <div class="card-header">
-        <h6 class="card-title mb-0">
-          <i class="bi bi-check-circle me-1"></i>Validate Code
-        </h6>
+    <div class="form-floating mb-3">
+      <input type="text" class="form-control form-control-sm" id="validationCode" [(ngModel)]="validationCode"
+        (keydown.enter)="onCodeInputEnter($event)"
+        placeholder="e.g., 12345-6">
+      <label for="validationCode">Code</label>
+    </div>
+    <div class="mb-3 position-relative">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="validationSystem" 
+          [ngModel]="validationSystem()" 
+          (ngModelChange)="onCodeSystemInputChange($event)"
+          (focus)="onCodeSystemInputFocus()"
+          (blur)="onCodeSystemInputBlur()"
+          (keydown)="onCodeSystemInputKeyDown($event)"
+          placeholder="e.g., http://loinc.org or search by name">
+        <label for="validationSystem">Code System</label>
       </div>
-      <div class="card-body">
-        <div class="form-floating mb-3">
-          <input type="text" class="form-control form-control-sm" id="validationCode" [(ngModel)]="validationCode"
-            placeholder="e.g., 12345-6">
-          <label for="validationCode">Code</label>
-          <div class="form-text">The code to validate</div>
-        </div>
-        <div class="form-floating mb-3">
-          <input type="url" class="form-control form-control-sm" id="validationSystem" [(ngModel)]="validationSystem"
-            placeholder="e.g., http://loinc.org">
-          <label for="validationSystem">Code System</label>
-          <div class="form-text">The code system URL</div>
-        </div>
-        <div class="form-floating mb-3">
-          <input type="url" class="form-control form-control-sm" id="validationValueSet" [(ngModel)]="validationValueSet"
-            placeholder="e.g., http://hl7.org/fhir/ValueSet/example">
-          <label for="validationValueSet">ValueSet URL (Optional)</label>
-          <div class="form-text">Check if code is in specific ValueSet</div>
-        </div>
-        <button type="button" class="btn btn-primary btn-sm w-100" (click)="validateCode()"
-          [disabled]="validationLoading() || !hasValidConfiguration()">
-          @if (validationLoading()) {
+      @if (showCodesystemDropdown()) {
+      <div class="dropdown-menu show w-100" style="position: absolute; top: 100%; z-index: 1000; max-height: 300px; overflow-y: auto;">
+        @if (codesystemSearchLoading()) {
+        <div class="dropdown-item-text text-center py-2">
           <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-          Validating...
-          } @else {
-          <i class="bi bi-check-circle me-2"></i>Validate Code
+          Searching...
+        </div>
+        } @else if (codesystemSearchResults().length > 0) {
+        @for (codesystem of codesystemSearchResults(); track getCodeSystemTrackKey(codesystem, $index); let i = $index) {
+        <button type="button" 
+          [id]="'codesystem-item-' + i"
+          class="dropdown-item" 
+          [class.active]="codesystemHighlightedIndex() === i"
+          (click)="selectCodeSystemFromSearch(codesystem)" 
+          (mousedown)="$event.preventDefault()">
+          <div class="fw-bold">{{ getCodeSystemDisplayName(codesystem) }}</div>
+          @if (codesystem.url) {
+          <div class="small text-muted">{{ codesystem.url }}</div>
           }
         </button>
-      </div>
-    </div>
-  </div>
-  <div class="col-md-6">
-    <div class="card">
-      <div class="card-header">
-        <h5 class="card-title mb-0">
-          <i class="bi bi-info-circle me-2"></i>Validation Result
-        </h5>
-      </div>
-      <div class="card-body">
-        @if (validationResult()) {
-        <div class="alert" [class.alert-success]="validationResult()?.valid"
-          [class.alert-danger]="!validationResult()?.valid" role="alert">
-                <i class="bi me-2" [class.bi-check-circle]="validationResult()?.valid"
-                  [class.bi-x-circle]="!validationResult()?.valid"></i>
-          <strong>{{ validationResult()?.message }}</strong>
-          @if (validationResult()?.display) {
-          <div class="mt-2">
-            <strong>Display:</strong> {{ validationResult()?.display }}
-          </div>
-          }
-        </div>
-        } @else {
-        <div class="text-center text-muted py-4">
-          <i class="bi bi-arrow-up display-4"></i>
-          <p class="mt-2">Enter code details and click "Validate Code" to see results</p>
+        }
+        } @else if (codesystemSearchTerm().trim().length >= 2) {
+        <div class="dropdown-item-text text-center py-2 text-muted">
+          No Code Systems found
         </div>
         }
       </div>
+      }
     </div>
+    <div class="mb-3 position-relative">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="validationValueSet" 
+          [ngModel]="validationValueSet()" 
+          (ngModelChange)="onValueSetInputChange($event)"
+          (focus)="onValueSetInputFocus()"
+          (blur)="onValueSetInputBlur()"
+          (keydown)="onValueSetInputKeyDown($event)"
+          placeholder="e.g., http://hl7.org/fhir/ValueSet/example or search by name">
+        <label for="validationValueSet">ValueSet URL (Optional)</label>
+      </div>
+      @if (showValuesetDropdown()) {
+      <div class="dropdown-menu show w-100" style="position: absolute; top: 100%; z-index: 1000; max-height: 300px; overflow-y: auto;">
+        @if (valuesetSearchLoading()) {
+        <div class="dropdown-item-text text-center py-2">
+          <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+          Searching...
+        </div>
+        } @else if (valuesetSearchResults().length > 0) {
+        @for (valueset of valuesetSearchResults(); track getValueSetTrackKey(valueset, $index); let i = $index) {
+        <button type="button" 
+          [id]="'valueset-item-' + i"
+          class="dropdown-item" 
+          [class.active]="valuesetHighlightedIndex() === i"
+          (click)="selectValueSetFromSearch(valueset)" 
+          (mousedown)="$event.preventDefault()">
+          <div class="fw-bold">{{ getValueSetDisplayName(valueset) }}</div>
+          @if (valueset.url) {
+          <div class="small text-muted">{{ valueset.url }}</div>
+          }
+        </button>
+        }
+        } @else if (valuesetSearchTerm().trim().length >= 2) {
+        <div class="dropdown-item-text text-center py-2 text-muted">
+          No ValueSets found
+        </div>
+        }
+      </div>
+      }
+    </div>
+    <button type="button" class="btn btn-primary btn-lg w-100" (click)="validateCode()"
+      [disabled]="validationLoading() || !hasValidConfiguration()">
+      @if (validationLoading()) {
+      <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+      Validating...
+      } @else {
+      <i class="bi bi-check-circle me-2"></i>Validate Code
+      }
+    </button>
+  </div>
+  <div class="col-md-6">
+    @if (validationResult()) {
+    <div>
+      @if (getValidationParameters().length > 0) {
+      <div>
+        <h6 class="mb-3">
+          <i class="bi bi-info-circle me-2"></i>Validation Details
+        </h6>
+        <div class="table-responsive">
+          <table class="table table-sm table-borderless mb-0">
+            <tbody>
+              @for (param of getValidationParameters(); track param.name) {
+              <tr>
+                <td class="text-muted" style="width: 30%; vertical-align: top;">
+                  <strong>{{ getParameterDisplayName(param.name) }}</strong>
+                  <br>
+                  <small class="text-muted">{{ param.type }}</small>
+                </td>
+                <td style="vertical-align: top;">
+                  @if (param.name === 'result') {
+                  <span class="badge" [class.bg-success]="param.value === 'true'"
+                    [class.bg-danger]="param.value === 'false'">
+                    {{ param.value === 'true' ? 'Valid' : 'Invalid' }}
+                  </span>
+                  } @else if (param.name === 'system' || param.name === 'url') {
+                  <code class="small">{{ param.value }}</code>
+                  } @else {
+                  {{ param.value }}
+                  }
+                </td>
+              </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      </div>
+      }
+    </div>
+    } @else {
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-info-circle display-4"></i>
+      <p class="mt-2">Enter code details and click "Validate Code" to see results</p>
+    </div>
+    }
   </div>
 </div>

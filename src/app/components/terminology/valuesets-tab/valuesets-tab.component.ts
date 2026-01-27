@@ -205,6 +205,14 @@ export class ValueSetsTabComponent implements OnInit {
   }
 
   async selectValueSet(valueset: ValueSet): Promise<void> {
+    // Reset all expanded state from previous ValueSet selection
+    this.expandedCodes.set([]);
+    this.expandedRows.set(new Set());
+    this.expandedCodeDetails.set(new Map());
+    this.loadingDetails.set(new Set());
+    this.expandedValueSet.set(null);
+    this.currentPage.set(1);
+    
     this.selectedValueSet.set(valueset);
     await this.expandValueSet();
   }
