@@ -140,6 +140,16 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       component: null
     };
 
+    const clipboardTab = {
+      id: 'clipboard-tab',
+      title: 'Clipboard',
+      icon: 'bi-clipboard',
+      type: 'clipboard',
+      isActive: false,
+      isClosable: true,
+      component: null
+    };
+
     const aiTab = {
       id: 'ai-tab',
       title: 'AI',
@@ -176,6 +186,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.addTabToPanel('left', outlineTab);
     this.ideStateService.addTabToPanel('right', fhirTab);
     this.ideStateService.addTabToPanel('right', elmTab);
+    this.ideStateService.addTabToPanel('right', clipboardTab);
     
     // Only add AI tab if Ollama is configured
     const aiTabAdded = this.settingsService.getEffectiveOllamaBaseUrl() && this.settingsService.settings().enableAiAssistant;

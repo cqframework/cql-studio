@@ -48,6 +48,8 @@
             <i class="bi bi-clipboard-check me-1"></i>Testing
           </a>
           <ul class="dropdown-menu" aria-labelledby="testingDropdown">
+            <h6 class="dropdown-header">CQL Engines</h6>
+
             <li>
               <a id="runner-nav-link" class="dropdown-item" routerLink="/runner" routerLinkActive="active">
                 <i class="bi bi-play-circle me-2"></i>Test Runner
@@ -72,12 +74,12 @@
                 <i class="bi bi-book me-2"></i>Terminology Browser
               </a>
             </li>
-            @if (settingsService.settings().experimental) {
             <li>
               <a id="cql-with-fhir-nav-link" class="dropdown-item" routerLink="/ide" routerLinkActive="active">
                 <i class="bi bi-code-square me-2"></i>CQL IDE
               </a>
             </li>
+            @if (settingsService.settings().experimental) {
             <li>
               <a id="guidelines-nav-link" class="dropdown-item" routerLink="/guidelines" routerLinkActive="active">
                 <i class="bi bi-diagram-3 me-2"></i>Guidelines

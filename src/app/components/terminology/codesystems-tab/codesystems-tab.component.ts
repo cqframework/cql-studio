@@ -8,6 +8,7 @@ import { SettingsService } from '../../../services/settings.service';
 import { TerminologyService } from '../../../services/terminology.service';
 import { ToastService } from '../../../services/toast.service';
 import { CodeSystem } from 'fhir/r4';
+import { ClipboardService } from '../../../services/clipboard.service';
 
 @Component({
   selector: 'app-codesystems-tab',
@@ -44,6 +45,7 @@ export class CodeSystemsTabComponent implements OnInit {
   protected settingsService = inject(SettingsService);
   private terminologyService = inject(TerminologyService);
   private toastService = inject(ToastService);
+  private clipboardService = inject(ClipboardService);
 
   ngOnInit(): void {
     // Auto-load Code Systems when component is initialized
@@ -229,6 +231,16 @@ export class CodeSystemsTabComponent implements OnInit {
   // CodeSystem selection method
   selectCodeSystem(codeSystem: CodeSystem): void {
     this.selectedCodeSystem.set(codeSystem);
+  }
+
+  onAddCodeSystemToClipboard(codeSystem: CodeSystem): void {
+    try {
+      this.clipboardService.addResource(codeSystem);
+      this.toastService.showSuccess('CodeSystem added to clipboard.', 'Clipboard Updated');
+    } catch (error) {
+      console.error('Failed to add CodeSystem to clipboard:', error);
+      this.toastService.showError('Failed to add CodeSystem to clipboard.', 'Clipboard Error');
+    }
   }
 
   // CodeSystem Download Method

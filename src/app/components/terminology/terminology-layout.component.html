@@ -27,22 +27,22 @@
       <!-- Navigation Tabs -->
       <ul class="nav nav-pills mb-4 py-4" role="tablist">
         <li class="nav-item" role="presentation">
-          <a class="nav-link" routerLink="/terminology/valuesets" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+          <a class="nav-link" [routerLink]="['/terminology', 'valuesets']" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
             <i class="bi bi-list-ul me-1"></i>Value Sets
           </a>
         </li>
         <li class="nav-item" role="presentation">
-          <a class="nav-link" routerLink="/terminology/conceptmaps" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+          <a class="nav-link" [routerLink]="['/terminology', 'conceptmaps']" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
             <i class="bi bi-arrow-left-right me-1"></i>Concept Maps
           </a>
         </li>
         <li class="nav-item" role="presentation">
-          <a class="nav-link" routerLink="/terminology/codesystems" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+          <a class="nav-link" [routerLink]="['/terminology', 'codesystems']" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
             <i class="bi bi-collection me-1"></i>Code Systems
           </a>
         </li>
         <li class="nav-item" role="presentation">
-          <a class="nav-link" routerLink="/terminology/validation" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
+          <a class="nav-link" [routerLink]="['/terminology', 'validation']" routerLinkActive="active" [routerLinkActiveOptions]="{exact: false}">
             <i class="bi bi-check-circle me-1"></i>Code Validation
           </a>
         </li>

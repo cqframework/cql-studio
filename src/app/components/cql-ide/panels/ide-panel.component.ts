@@ -16,6 +16,7 @@ import { ElmTabComponent } from '../tabs/elm-tab/elm-tab.component';
 import { ProblemsTabComponent } from '../tabs/problems-tab/problems-tab.component';
 import { ConsoleTabComponent } from '../tabs/console-tab/console-tab.component';
 import { AiTabComponent } from '../tabs/ai-tab/ai-tab.component';
+import { ClipboardTabComponent } from '../tabs/clipboard-tab/clipboard-tab.component';
 
 @Component({
   selector: 'app-ide-panel',
@@ -28,7 +29,8 @@ import { AiTabComponent } from '../tabs/ai-tab/ai-tab.component';
     ElmTabComponent,
     ProblemsTabComponent,
     ConsoleTabComponent,
-    AiTabComponent
+    AiTabComponent,
+    ClipboardTabComponent
   ],
   templateUrl: './ide-panel.component.html',
   styleUrls: ['./ide-panel.component.scss']

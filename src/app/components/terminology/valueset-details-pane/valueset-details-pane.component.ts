@@ -3,8 +3,9 @@
 import { Component, input, computed, signal, effect, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { ValueSet } from 'fhir/r4';
+import { ValueSet, Coding } from 'fhir/r4';
 import { ToastService } from '../../../services/toast.service';
+import { ClipboardService } from '../../../services/clipboard.service';
 
 @Component({
   selector: 'app-valueset-details-pane',
@@ -26,6 +27,7 @@ export class ValueSetDetailsPaneComponent {
   
   // Services
   private toastService = inject(ToastService);
+  private clipboardService = inject(ClipboardService);
   
   // Internal pagination state
   protected readonly currentPage = signal<number>(1);
@@ -176,6 +178,27 @@ export class ValueSetDetailsPaneComponent {
     } catch (error) {
       console.error('Failed to download ValueSet:', error);
       this.toastService.showError('Failed to download ValueSet', 'Download Error');
+    }
+  }
+
+  onAddCodeToClipboard(code: any): void {
+    if (!code || !code.system || !code.code) {
+      this.toastService.showWarning('Code is missing system or code and cannot be added to the clipboard.', 'Clipboard Warning');
+      return;
+    }
+
+    const coding: Coding = {
+      system: code.system,
+      code: code.code,
+      display: code.display
+    };
+
+    try {
+      this.clipboardService.addCoding(coding);
+      this.toastService.showSuccess('Coding added to clipboard.', 'Clipboard Updated');
+    } catch (error) {
+      console.error('Failed to add Coding to clipboard:', error);
+      this.toastService.showError('Failed to add Coding to clipboard.', 'Clipboard Error');
     }
   }
 }

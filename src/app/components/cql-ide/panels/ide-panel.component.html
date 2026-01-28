@@ -81,6 +81,13 @@
         (replaceCqlCode)="onReplaceCqlCode($event)">
       </app-ai-tab>
     }
+
+    <!-- Clipboard Tab -->
+    @if (getActiveTab()?.type === 'clipboard') {
+      <app-clipboard-tab
+        (insertCqlCode)="onInsertCqlCode($event)">
+      </app-clipboard-tab>
+    }
   </div>
   
   <!-- Resize Handle -->

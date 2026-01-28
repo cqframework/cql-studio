@@ -497,6 +497,7 @@
                 <th scope="col" class="text-nowrap">Code</th>
                 <th scope="col" class="text-nowrap">Display</th>
                 <th scope="col" class="text-nowrap">System</th>
+                <th scope="col" class="text-nowrap text-end">Clipboard</th>
               </tr>
             </thead>
             <tbody>
@@ -505,6 +506,17 @@
                   <td><code class="small">{{ code.code }}</code></td>
                   <td class="text-muted small">{{ code.display || 'No display name' }}</td>
                   <td><small class="text-muted small">{{ code.system }}</small></td>
+                  <td class="text-end">
+                    <button
+                      type="button"
+                      id="expanded-code-clipboard-plus-btn"
+                      class="btn btn-outline-secondary btn-sm"
+                      title="Add Coding to Clipboard"
+                      (click)="onAddCodeToClipboard(code); $event.stopPropagation()"
+                    >
+                      <i class="bi bi-clipboard-plus"></i>
+                    </button>
+                  </td>
                 </tr>
                 @if (isRowExpanded(code)) {
                   <tr class="table-active">

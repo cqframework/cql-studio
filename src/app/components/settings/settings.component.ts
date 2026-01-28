@@ -7,6 +7,7 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ThemeType } from '../../models/settings.model';
 import { ToastService } from '../../services/toast.service';
+import { ClipboardService } from '../../services/clipboard.service';
 
 @Component({
   selector: 'app-settings',
@@ -22,6 +23,7 @@ export class SettingsComponent implements OnInit {
     public location: Location,
     protected router: Router,
     protected toastService: ToastService,
+    private clipboardService: ClipboardService
   ) {
   }
 
@@ -54,6 +56,11 @@ export class SettingsComponent implements OnInit {
   restore() {
     this.settingsService.forceResetToDefaults();
     this.toastService.showSuccess("All settings have been restored to their defaults.", "Settings Restored");
+  }
+
+  onResetClipboard(): void {
+    this.clipboardService.resetClipboard();
+    this.toastService.showSuccess('Clipboard has been cleared.', 'Clipboard Reset');
   }
 
   back() {

@@ -1,0 +1,81 @@
+<div class="clipboard-panel d-flex flex-column h-100">
+  <!-- Clipboard Controls -->
+  <div class="px-2 py-1 border-bottom flex-shrink-0">
+    <div class="d-flex align-items-center gap-1">
+      <input id="clipboardSearch" type="text" class="form-control form-control-sm flex-fill"
+        placeholder="Search clipboard..." [(ngModel)]="searchTerm">
+
+      <div class="d-flex align-items-center gap-1">
+        <!-- <label class="form-label mb-0 small text-light" for="clipboardSort">Sort:</label> -->
+        <select id="clipboardSort" class="form-select form-select-sm" [(ngModel)]="sortBy"
+          (change)="onSortByChange($event)" title="Sort by" style="min-width: 90px;">
+          <option value="addedAt">Added</option>
+          <option value="name">Name</option>
+          <option value="type">Type</option>
+        </select>
+        <button id="clipboardSortOrder" class="btn btn-outline-secondary btn-sm" (click)="toggleSortOrder()"
+          [title]="'Sort ' + (sortOrder === 'asc' ? 'Descending' : 'Ascending')">
+          <i class="bi bi-{{ sortOrder === 'asc' ? 'arrow-up' : 'arrow-down' }}"></i>
+        </button>
+        <button id="clipboardClear" class="btn btn-outline-danger btn-sm ms-1" (click)="onClearClipboard()"
+          [disabled]="items().length === 0" title="Clear clipboard">
+          <i class="bi bi-clipboard-x"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Clipboard Items -->
+  <div class="flex-fill overflow-auto">
+    @for (item of items(); track item.id) {
+    <div class="clipboard-item d-flex align-items-center px-2 py-1 border-bottom">
+      <i class="bi bi-{{ getIconForItem(item) }} me-2 text-info" style="font-size: 0.8rem;"></i>
+      <div class="flex-fill">
+        <div class="d-flex justify-content-between align-items-center">
+          <span class="text-light small text-truncate">
+            {{ item.name || getTypeLabel(item) }}
+          </span>
+          <!-- <span class="badge bg-secondary ms-2 small">
+            {{ getTypeLabel(item) }}
+          </span> -->
+          <div class="text-muted small">
+            {{ getAddedAtLabel(item) }}
+          </div>
+        </div>
+        <div class="text-muted small">
+          @if (item.urlOrSystem) {
+          <span class="me-2 text-truncate d-inline-block" style="max-width: 220px;">
+            {{ item.urlOrSystem }}
+          </span>
+          }
+          @if (item.code) {
+          <code>{{ item.code }}</code>
+          }
+          @if (item.display) {
+          <span class="ms-1">{{ item.display }}</span>
+          }
+        </div>
+    
+      </div>
+      <div class="ms-2 d-flex align-items-center gap-1">
+        <button id="clipboardInsertButton" class="btn btn-primary btn-sm" type="button"
+          [disabled]="!canInsertIntoCql(item)" (click)="onInsertItem(item, $event)"
+          [title]="canInsertIntoCql(item) ? 'Insert CQL declaration into active editor' : 'Open a CQL library and ensure this item has the required URL/system/code to insert'">
+          <i class="bi bi-file-earmark-plus"></i>
+        </button>
+        <button class="btn  btn-sm" type="button" (click)="onRemoveItem(item, $event)" title="Remove from clipboard">
+          <i class="bi bi-clipboard-x"></i>
+        </button>
+      </div>
+    </div>
+    }
+
+    @if (items().length === 0) {
+    <div class="text-center text-muted py-4">
+      <i class="bi bi-clipboard display-6 d-block mb-2"></i>
+      <span class="d-block">Clipboard is empty</span>
+      <small>Add ValueSets, CodeSystems, or Codings from the Terminology Browser.</small>
+    </div>
+    }
+  </div>
+</div>

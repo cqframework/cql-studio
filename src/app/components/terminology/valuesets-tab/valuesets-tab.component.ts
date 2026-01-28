@@ -9,6 +9,7 @@ import { TerminologyService } from '../../../services/terminology.service';
 import { ToastService } from '../../../services/toast.service';
 import { ValueSet, Bundle } from 'fhir/r4';
 import { ValueSetDetailsPaneComponent } from '../valueset-details-pane/valueset-details-pane.component';
+import { ClipboardService } from '../../../services/clipboard.service';
 
 @Component({
   selector: 'app-valuesets-tab',
@@ -114,6 +115,7 @@ export class ValueSetsTabComponent implements OnInit {
   protected settingsService = inject(SettingsService);
   private terminologyService = inject(TerminologyService);
   private toastService = inject(ToastService);
+  private clipboardService = inject(ClipboardService);
 
   ngOnInit(): void {
     // Auto-load ValueSets when component is initialized
@@ -215,6 +217,16 @@ export class ValueSetsTabComponent implements OnInit {
     
     this.selectedValueSet.set(valueset);
     await this.expandValueSet();
+  }
+
+  onAddValueSetToClipboard(valueset: ValueSet): void {
+    try {
+      this.clipboardService.addResource(valueset);
+      this.toastService.showSuccess('ValueSet added to clipboard.', 'Clipboard Updated');
+    } catch (error) {
+      console.error('Failed to add ValueSet to clipboard:', error);
+      this.toastService.showError('Failed to add ValueSet to clipboard.', 'Clipboard Error');
+    }
   }
 
   async expandValueSet(): Promise<void> {

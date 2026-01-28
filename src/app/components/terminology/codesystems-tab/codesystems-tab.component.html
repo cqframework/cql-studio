@@ -56,7 +56,7 @@
       <h6 class="mb-0">
         <i class="bi bi-list me-2"></i>Results
         @if (codeSystemsTotalCount() > 0) {
-        <span class="badge bg-primary ms-2">{{ codeSystemsTotalCount() }}</span>
+        <span class="badge bg-secondary ms-2">{{ codeSystemsTotalCount() }}</span>
         }
       </h6>
       @if (paginatedCodeSystems().length > 0) {
@@ -76,8 +76,10 @@
       @for (codeSystem of paginatedCodeSystems(); track getCodeSystemTrackId(codeSystem, $index)) {
       <div class="list-group-item list-group-item-action" (click)="selectCodeSystem(codeSystem)"
         [class.active]="selectedCodeSystem()?.id === codeSystem.id && selectedCodeSystem()?.url === codeSystem.url">
-        <div class="d-flex w-100 justify-content-between">
-          <h6 class="mb-1 text-truncate me-2" style="max-width: 60%;">{{ codeSystem.name || 'Unnamed CodeSystem' }}</h6>
+        <div class="d-flex w-100 justify-content-between align-items-start">
+          <div class="d-flex align-items-center flex-grow-1">
+            <h6 class="mb-1 text-truncate me-2" style="max-width: 60%;">{{ codeSystem.name || 'Unnamed CodeSystem' }}</h6>
+          </div>
           <div class="d-flex align-items-center gap-1 flex-shrink-0">
             <small class="text-muted text-nowrap">{{ codeSystem.version || 'N/A' }}</small>
             <span class="badge text-nowrap" style="" [class.bg-success]="codeSystem.status === 'active'"
@@ -85,6 +87,15 @@
               [class.bg-danger]="codeSystem.status === 'retired'">
               {{ codeSystem.status || 'Unknown' }}
             </span>
+            <button
+              type="button"
+              id="codesystem-clipboard-plus-btn"
+              class="btn btn-primary btn-sm"
+              title="Add CodeSystem to Clipboard"
+              (click)="onAddCodeSystemToClipboard(codeSystem); $event.stopPropagation()"
+            >
+              <i class="bi bi-clipboard-plus"></i>
+            </button>
           </div>
         </div>
         <p class="mb-1 text-break">{{ codeSystem.title || 'N/A' }}</p>

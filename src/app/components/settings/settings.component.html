@@ -1,13 +1,20 @@
 <div id="settings" class="container mt-5">
 
     <div class="row">
-        <div class="col-sm-12 p-4">
-            <button id="save-settings-btn" class="btn btn-primary" (click)="save()"><span
-                    class="bi bi-file-check"></span> Save to
-                Browser</button> &nbsp;
-            <button id="reset-settings-btn" class="btn float-end" (click)="restore()"><span
-                    class="bi bi-arrow-counterclockwise"></span>
-                Reset to Defaults</button>
+        <div class="col-sm-12 p-4 d-flex justify-content-between align-items-center">
+            <div>
+                <button id="save-settings-btn" class="btn btn-primary" (click)="save()">
+                    <span class="bi bi-file-check"></span> Save to Browser
+                </button>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <button id="reset-clipboard-btn" class="btn btn-outline-secondary btn-sm" (click)="onResetClipboard()">
+                    <span class="bi bi-clipboard-x"></span> Reset Clipboard
+                </button>
+                <button id="reset-settings-btn" class="btn" (click)="restore()">
+                    <span class="bi bi-arrow-counterclockwise"></span> Reset to Defaults
+                </button>
+            </div>
         </div>
         <div class="col-sm-6 p-4">
             <h4><span class="bi bi-code-slash"></span> Advanced</h4>
@@ -267,13 +274,20 @@
                 </div>
             </div>
         </div>
-        <div class="col-sm-12 p-4">
-            <button id="save-settings-btn" class="btn btn-primary" (click)="save()"><span
-                    class="bi bi-file-check"></span> Save to
-                Browser</button> &nbsp;
-            <button id="reset-settings-btn" class="btn float-end" (click)="restore()"><span
-                    class="bi bi-arrow-counterclockwise"></span>
-                Reset to Defaults</button>
+        <div class="col-sm-12 p-4 d-flex justify-content-between align-items-center">
+            <div>
+                <button id="save-settings-btn-bottom" class="btn btn-primary" (click)="save()">
+                    <span class="bi bi-file-check"></span> Save to Browser
+                </button>
+            </div>
+            <div class="d-flex align-items-center gap-2">
+                <button id="reset-clipboard-btn-bottom" class="btn btn-outline-secondary btn-sm" (click)="onResetClipboard()">
+                    <span class="bi bi-clipboard-x"></span> Reset Clipboard
+                </button>
+                <button id="reset-settings-btn-bottom" class="btn" (click)="restore()">
+                    <span class="bi bi-arrow-counterclockwise"></span> Reset to Defaults
+                </button>
+            </div>
         </div>
     </div>
 </div>
