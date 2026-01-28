@@ -66,8 +66,20 @@
         }
         
         @if (!isTranslating() && elmTranslationResults()) {
-          <div class="d-flex justify-content-end p-2 pb-0">
+          <div class="d-flex justify-content-end gap-2 p-2 pb-0">
+            <button
+              id="elm-copy-xml-btn"
+              type="button"
+              class="btn btn-outline-light btn-sm"
+              (click)="onCopyElmXml()"
+              title="Copy ELM XML"
+              aria-label="Copy ELM XML"
+            >
+              <i class="bi bi-copy"></i>
+            </button>
             <button 
+              id="elm-download-xml-btn"
+              type="button"
               class="btn btn-outline-light btn-sm" 
               (click)="onDownloadElmXml()" 
               title="Download ELM XML"

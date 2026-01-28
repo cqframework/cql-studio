@@ -113,6 +113,35 @@ export class ElmTabComponent {
     window.URL.revokeObjectURL(url);
   }
 
+  async onCopyElmXml(): Promise<void> {
+    const xml = this.formattedElmXml();
+    if (!xml) {
+      return;
+    }
+
+    const activeLibrary = this.ideStateService.getActiveLibraryResource();
+    const libraryName = activeLibrary?.name || activeLibrary?.id || 'Library';
+
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error('Clipboard API is not available');
+      }
+      await navigator.clipboard.writeText(xml);
+      this.ideStateService.addTextOutput(
+        `ELM XML Copied: ${libraryName}`,
+        `Copied ELM XML to clipboard.\n\nCharacters: ${xml.length}`,
+        'success'
+      );
+    } catch (e) {
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      this.ideStateService.addTextOutput(
+        `ELM XML Copy Failed: ${libraryName}`,
+        `Failed to copy ELM XML to clipboard.\n\nError: ${errorMessage}`,
+        'error'
+      );
+    }
+  }
+
 
   /**
    * Pretty format XML using browser-native APIs (no dependencies required)
