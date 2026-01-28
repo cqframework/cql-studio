@@ -7,6 +7,7 @@ import { map } from 'rxjs/operators';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { SettingsService } from './settings.service';
 import { Parameters, Endpoint, Library } from 'fhir/r4';
+import { LibraryResource } from '../components/cql-ide/shared/ide-types';
 
 export type CqlOperationType = '$evaluate' | '$cql';
 
@@ -27,9 +28,14 @@ export interface CqlExecutionOptions {
   cqlExpression?: string;
   cqlContent?: string;
   elmXml?: string;
+  libraryResource?: LibraryResource; // Current library resource from IDE (preferred)
+  // Legacy fields for backward compatibility - used only if libraryResource is not provided
   libraryName?: string;
+  libraryTitle?: string;
   libraryVersion?: string;
   libraryUrl?: string;
+  libraryDescription?: string;
+  library?: Library; // Original Library resource to preserve all fields
 }
 
 @Injectable({
@@ -79,7 +85,6 @@ export class CqlExecutionService extends BaseService {
    */
   private executeLibraryWithoutPatient(libraryId: string, options?: CqlExecutionOptions): Observable<CqlExecutionResult[]> {
     const parameters = this.createBaseParameters();
-    this.addLibraryResourceParameter(parameters, libraryId, options);
     return this.executeHttpRequest(
       this.getLibraryEvaluateUrl(libraryId),
       parameters,
@@ -93,16 +98,17 @@ export class CqlExecutionService extends BaseService {
    * Execute library for multiple patients using $evaluate
    */
   private executeLibraryForPatients(libraryId: string, patientIds: string[], options?: CqlExecutionOptions): Observable<CqlExecutionResult[]> {
-    const executions = patientIds.map(patientId => {
-      const parameters = this.createBaseParameters();
-      this.addLibraryResourceParameter(parameters, libraryId, options);
-      this.addSubjectParameter(parameters, patientId);
-      return this.executeHttpRequest(
-        this.getLibraryEvaluateUrl(libraryId),
-        parameters,
-        { libraryId, libraryName: options?.libraryName || libraryId, patientId, patientName: `Patient ${patientId}` }
-      );
-    });
+    const executions = patientIds
+      .filter(patientId => patientId && patientId.trim().length > 0) // Filter out empty/invalid patient IDs
+      .map(patientId => {
+        const parameters = this.createBaseParameters();
+        this.addSubjectParameter(parameters, patientId);
+        return this.executeHttpRequest(
+          this.getLibraryEvaluateUrl(libraryId),
+          parameters,
+          { libraryId, libraryName: options?.libraryName || libraryId, patientId, patientName: `Patient ${patientId}` }
+        );
+      });
 
     return forkJoin(executions);
   }
@@ -156,7 +162,7 @@ export class CqlExecutionService extends BaseService {
   }
 
   /**
-   * Get the evaluate URL for a library
+   * Get the evaluate URL for a library (instance-level operation)
    */
   private getLibraryEvaluateUrl(libraryId: string): string {
     const baseUrl = this.settingsService.getEffectiveFhirBaseUrl();
@@ -254,54 +260,6 @@ export class CqlExecutionService extends BaseService {
   }
 
   /**
-   * Add library resource parameter with encoded CQL content if provided
-   * Includes ELM XML if provided (similar to how Save works)
-   */
-  private addLibraryResourceParameter(parameters: Parameters, libraryId: string, options?: CqlExecutionOptions): void {
-    if (options?.cqlContent && options.cqlContent.trim()) {
-      const baseUrl = this.settingsService.getEffectiveFhirBaseUrl();
-      const libraryUrl = options.libraryUrl || `${baseUrl}/Library/${libraryId}`;
-      
-      // Build content array with CQL (required) and ELM (if provided)
-      const content: Array<{ contentType: string; data: string }> = [
-        {
-          contentType: 'text/cql',
-          data: btoa(options.cqlContent)
-        }
-      ];
-      
-      // Add ELM XML if provided (similar to how Save includes it)
-      if (options.elmXml && options.elmXml.trim()) {
-        content.push({
-          contentType: 'application/elm+xml',
-          data: btoa(options.elmXml)
-        });
-      }
-      
-      const library: Library = {
-        resourceType: 'Library',
-        id: libraryId,
-        name: options.libraryName || libraryId,
-        version: options.libraryVersion || '1.0.0',
-        url: libraryUrl,
-        status: 'active',
-        type: {
-          coding: [{
-            system: 'http://terminology.hl7.org/CodeSystem/library-type',
-            code: 'logic-library'
-          }]
-        },
-        content: content
-      };
-
-      parameters.parameter!.push({
-        name: 'library',
-        resource: library
-      });
-    }
-  }
-
-  /**
    * Execute HTTP request and create CqlExecutionResult observable
    */
   private executeHttpRequest(
@@ -316,7 +274,14 @@ export class CqlExecutionService extends BaseService {
     };
     
     return new Observable<CqlExecutionResult>(observer => {
-      this.http.post<Parameters>(url, JSON.stringify(parameters), { headers: this.headers() })
+      // Use FHIR content type headers for FHIR operations
+      const fhirHeaders = new HttpHeaders({
+        'Content-Type': 'application/fhir+json',
+        'Accept': 'application/fhir+json'
+      });
+      
+      // Pass the object directly - HttpClient will serialize it correctly
+      this.http.post<Parameters>(url, parameters, { headers: fhirHeaders })
         .subscribe({
           next: (response: any) => {
             observer.next({

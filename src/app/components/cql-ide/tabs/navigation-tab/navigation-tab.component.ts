@@ -205,6 +205,11 @@ export class NavigationTabComponent implements OnInit {
       error: (error: any) => {
         this.isLoadingLibraries = false;
         console.error('Error loading paginated libraries:', error);
+        const errorMessage = error?.message || error?.error?.message || 'Unable to connect to server';
+        this.ideStateService.addErrorOutput(
+          'Library List Error',
+          `Failed to load libraries from server: ${errorMessage}`
+        );
         this.paginatedLibraries = [];
         this.totalPages = 0;
         this.totalLibraries = 0;

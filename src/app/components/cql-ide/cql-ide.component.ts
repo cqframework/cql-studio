@@ -579,16 +579,14 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     }
     
     // Execute single library using CQL execution service
-    // Pass current CQL content, ELM XML, and library metadata for encoding
+    // Pass the entire activeLibrary resource with current CQL content and ELM
     this.cqlExecutionService.executeLibrary(
       activeLibrary.id, 
       patientIds,
       {
         cqlContent: currentCqlContent,
         elmXml: translationResult.elmXml || undefined,
-        libraryName: activeLibrary.name,
-        libraryVersion: activeLibrary.version,
-        libraryUrl: activeLibrary.url
+        libraryResource: activeLibrary // Pass entire library resource with current values
       }
     ).subscribe({
       next: (result) => {
