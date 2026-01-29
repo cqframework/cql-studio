@@ -1,0 +1,250 @@
+<div class="container-fluid py-3">
+  <div class="d-flex align-items-center gap-2 mb-3">
+    <a id="measure-workspace-back-link" class="btn btn-sm btn-outline-secondary" (click)="backToLibrary()"
+      routerLink="/measures">
+      <i class="bi bi-arrow-left"></i> Library
+    </a>
+  </div>
+
+  @if (loading()) {
+  <div class="text-center py-4">
+    <div class="spinner-border spinner-border-sm text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+    <p class="text-muted small mt-2 mb-0">Loading measure...</p>
+  </div>
+  } @else if (error()) {
+  <div class="alert alert-danger small py-2" role="alert">
+    <i class="bi bi-exclamation-circle me-2"></i>{{ error() }}
+  </div>
+  } @else if (measure()) {
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+    <div>
+      <h5 id="measure-workspace-title" class="mb-1">{{ measureTitle() }}</h5>
+      <div class="small text-muted">
+        @if (measureId()) {
+        <span id="measure-workspace-id">ID: {{ measureId() }}</span>
+        } @else if (isNewMeasure()) {
+        <i class="text-muted">This new measure is unsaved. Set the Name and Title and save it.</i>
+        }
+        @if (measureStatus()) {
+        <span class="badge ms-2" [class.bg-success]="measureStatus() === 'active'"
+          [class.bg-warning]="measureStatus() === 'draft'"
+          [class.bg-secondary]="measureStatus() !== 'active' && measureStatus() !== 'draft'">
+          {{ measureStatus() }}
+        </span>
+        }
+      </div>
+    </div>
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-primary btn-sm" id="measure-workspace-save" (click)="save()"
+        [disabled]="saving() || !hasValidConfiguration()">
+        @if (saving()) {
+        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+        }
+        <i class="bi bi-save me-1"></i>Save
+      </button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-workspace-reload"
+        (click)="reload()" [disabled]="reloading() || isNewMeasure() || !measureId() || !hasValidConfiguration()"
+        title="Load latest from server">
+        @if (reloading()) {
+        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+        }
+        <i class="bi bi-arrow-clockwise me-1"></i>Reload
+      </button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-workspace-validate"
+        (click)="validate()" [disabled]="validating() || !hasValidConfiguration()">
+        @if (validating()) {
+        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+        }
+        <i class="bi bi-check2-circle me-1"></i>Validate
+      </button>
+      <button type="button" class="btn btn-outline-danger btn-sm" id="measure-workspace-delete"
+        (click)="deleteMeasure()" [disabled]="deleting() || isNewMeasure() || !measureId() || !hasValidConfiguration()"
+        title="Delete measure from server">
+        @if (deleting()) {
+        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+        }
+        <i class="bi bi-trash me-1"></i>Delete
+      </button>
+    </div>
+  </div>
+  <div class="row g-3">
+    <div class="col measure-workspace-main">
+      <ul class="nav nav-tabs mb-3" id="measure-workspace-tabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button type="button" class="nav-link" [class.active]="activeTab() === 'definition'"
+            id="measure-tab-definition" role="tab" [attr.aria-selected]="activeTab() === 'definition'"
+            aria-controls="measure-workspace-tabpanel" (click)="setTab('definition')">Definition</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button type="button" class="nav-link" [class.active]="activeTab() === 'groups'" id="measure-tab-groups"
+            role="tab" [attr.aria-selected]="activeTab() === 'groups'" aria-controls="measure-workspace-tabpanel"
+            (click)="setTab('groups')">Groups</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button type="button" class="nav-link" [class.active]="activeTab() === 'run'" id="measure-tab-run" role="tab"
+            [attr.aria-selected]="activeTab() === 'run'" aria-controls="measure-workspace-tabpanel"
+            (click)="setTab('run')">Run</button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button type="button" class="nav-link" [class.active]="activeTab() === 'reports'" id="measure-tab-reports"
+            role="tab" [attr.aria-selected]="activeTab() === 'reports'" aria-controls="measure-workspace-tabpanel"
+            (click)="setTab('reports')">Reports</button>
+        </li>
+      </ul>
+
+      <div class="tab-content p-2" id="measure-workspace-tabpanel" role="tabpanel"
+        [attr.aria-labelledby]="'measure-tab-' + activeTab()" tabindex="0">
+        @switch (activeTab()) {
+        @case ('definition') {
+        <app-measure-definition-tab [measure]="measure()" (measureChange)="onMeasureChange($event)" />
+        }
+        @case ('groups') {
+        <app-measure-groups-tab [measure]="measure()" (measureChange)="onMeasureChange($event)" />
+        }
+        @case ('run') {
+        <app-measure-run-tab [measure]="measure()" />
+        }
+        @case ('reports') {
+        <app-measure-reports-tab [measure]="measure()" />
+        }
+        }
+      </div>
+    </div>
+    <div class="col-auto measure-workspace-sidebar">
+      <div class="measure-workspace-sidebar-inner">
+        <ul class="nav nav-tabs nav-tabs-sm" id="measure-workspace-sidebar-tabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button type="button" class="nav-link" [class.active]="sidebarTab() === 'validation'"
+              id="measure-sidebar-tab-validation" role="tab" [attr.aria-selected]="sidebarTab() === 'validation'"
+              aria-controls="measure-sidebar-tabpanel" (click)="setSidebarTab('validation')">Validation</button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button type="button" class="nav-link" [class.active]="sidebarTab() === 'summary'"
+              id="measure-sidebar-tab-summary" role="tab" [attr.aria-selected]="sidebarTab() === 'summary'"
+              aria-controls="measure-sidebar-tabpanel" (click)="setSidebarTab('summary')">Summary</button>
+          </li>
+        </ul>
+        <div class="tab-content border border-top-0 rounded-bottom p-2 measure-workspace-sidebar-content"
+          id="measure-sidebar-tabpanel" role="tabpanel" [attr.aria-labelledby]="'measure-sidebar-tab-' + sidebarTab()"
+          tabindex="0">
+          @switch (sidebarTab()) {
+          @case ('validation') {
+          <div id="measure-sidebar-validation">
+            @if (validating()) {
+            <div class="text-center py-3 small text-muted">
+              <div class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></div>
+              <p class="mb-0 mt-2">Validating...</p>
+            </div>
+            } @else if (validationError()) {
+            <div class="alert alert-danger small py-2 mb-0" role="alert">
+              {{ validationError() }}
+            </div>
+            } @else if (validationOutcomeRaw(); as outcome) {
+            @if ((outcome.issue || []).length === 0) {
+            <p class="small text-success mb-0">No issues found.</p>
+            } @else {
+            <div class="d-flex align-items-center small text-muted mb-2">
+              <span>{{ (outcome.issue || []).length }} issue(s)</span>
+            </div>
+            <div class="measure-validation-issues">
+              @for (issue of outcome.issue; track $index) {
+              <div class="measure-validation-issue small mb-2 p-2 rounded"
+                [class.border-danger]="issue.severity === 'error' || issue.severity === 'fatal'"
+                [class.border-warning]="issue.severity === 'warning'"
+                [class.border-info]="issue.severity === 'information'">
+                <span class="badge me-1" [class.bg-danger]="issue.severity === 'error' || issue.severity === 'fatal'"
+                  [class.bg-warning]="issue.severity === 'warning'" [class.bg-info]="issue.severity === 'information'"
+                  [class.bg-secondary]="!issue.severity || (issue.severity !== 'error' && issue.severity !== 'fatal' && issue.severity !== 'warning' && issue.severity !== 'information')">
+                  {{ issue.severity }}
+                </span>
+                @if (issue.code) {
+                <span class="text-muted">{{ issue.code }}</span>
+                }
+                @if (issue.diagnostics) {
+                <div class="mt-1 text-break">{{ issue.diagnostics }}</div>
+                }
+                @if (issue.details?.text) {
+                <div class="mt-1 text-break">{{ issue.details?.text }}</div>
+                }
+                @if ((issue.location ?? []).length) {
+                <div class="mt-1 text-muted">Location: {{ issue.location?.join(', ') }}</div>
+                }
+                @if ((issue.expression ?? []).length) {
+                <div class="mt-1 text-muted">Expression: {{ issue.expression?.join(', ') }}</div>
+                }
+              </div>
+              }
+            </div>
+            }
+            } @else {
+            <p class="small text-muted mb-0">Run Validate to see results.</p>
+            }
+          </div>
+          }
+          @case ('summary') {
+          <div id="measure-sidebar-summary" class="measure-summary">
+            @if (measure(); as m) {
+            <dl class="small mb-0">
+              @if (m.id) { <dt>ID</dt>
+              <dd class="mb-1">{{ m.id }}</dd> }
+              @if (m.url) { <dt>URL</dt>
+              <dd class="mb-1 text-break">{{ m.url }}</dd> }
+              @if (m.version) { <dt>Version</dt>
+              <dd class="mb-1">{{ m.version }}</dd> }
+              <dt>Name</dt>
+              <dd class="mb-1">{{ m.name ?? '—' }}</dd>
+              <dt>Title</dt>
+              <dd class="mb-1">{{ m.title ?? '—' }}</dd>
+              @if (m.status) { <dt>Status</dt>
+              <dd class="mb-1">{{ m.status }}</dd> }
+              @if (m.scoring) { <dt>Scoring</dt>
+              <dd class="mb-1">{{ displayCodeableConcept(m.scoring) }}</dd> }
+              @if (m.type?.length) { <dt>Type</dt>
+              <dd class="mb-1">{{ displayCodeableConcept(m.type?.[0]) }}</dd> }
+              @if (m.identifier?.length) { <dt>Identifier</dt>
+              <dd class="mb-1">{{ displayIdentifiers(m.identifier) }}</dd> }
+              @if (m.library?.length) { <dt>Library</dt>
+              <dd class="mb-1">{{ (m.library ?? []).join(', ') }}</dd> }
+              @if (m.description) { <dt>Description</dt>
+              <dd class="mb-1 text-break">{{ m.description }}</dd> }
+            </dl>
+            @if (m.group?.length) {
+            <h6 class="small fw-semibold mt-2 mb-1">Groups</h6>
+            @for (group of m.group; track group.id ?? $index) {
+            <div class="measure-summary-group small mb-2">
+              <span class="fw-medium">{{ group.code?.text || displayCodeableConcept(group.code) || ('Group ' + ($index +
+                1)) }}</span>
+              @if (group.population?.length) {
+              <ul class="list-unstyled mt-1 mb-0 ps-2">
+                @for (pop of group.population; track $index) {
+                <li>{{ populationCodeDisplay(pop) }}: {{ criteriaExpression(pop.criteria) }}</li>
+                }
+              </ul>
+              }
+              @if (group.stratifier?.length) {
+              <div class="mt-1 text-muted">Stratifiers: {{ (group.stratifier ?? []).length }}</div>
+              }
+            </div>
+            }
+            }
+            @if (m.supplementalData?.length) {
+            <h6 class="small fw-semibold mt-2 mb-1">Supplemental data</h6>
+            <ul class="list-unstyled small mb-0 ps-2">
+              @for (sd of m.supplementalData; track $index) {
+              <li>{{ sd.code?.text || displayCodeableConcept(sd.code) || '—' }}: {{ criteriaExpression(sd.criteria) }}
+              </li>
+              }
+            </ul>
+            }
+            }
+          </div>
+          }
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+  }
+</div>

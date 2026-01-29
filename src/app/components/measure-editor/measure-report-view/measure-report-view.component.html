@@ -1,0 +1,81 @@
+<div class="measure-report-view py-2">
+  @if (report(); as r) {
+  <div class="small mb-3">
+    <div class="d-flex flex-wrap gap-2 mb-1">
+      <span class="badge" [class.bg-success]="r.status === 'complete'" [class.bg-warning]="r.status === 'pending'" [class.bg-danger]="r.status === 'error'">
+        {{ r.status }}
+      </span>
+      <span class="text-muted">Type: {{ r.type }}</span>
+      @if (r.period) {
+      <span class="text-muted">Period: {{ r.period.start }} – {{ r.period.end }}</span>
+      }
+    </div>
+    @if (r.measure) {
+    <div class="text-muted">Measure: {{ r.measure }}</div>
+    }
+  </div>
+  @if (groups().length) {
+  <div class="mb-2">
+    <h6 class="small fw-semibold mb-2">Groups</h6>
+    @for (group of groups(); track group.code?.text ?? $index) {
+    <div class="card card-body py-2 mb-2 small">
+      <div class="fw-medium mb-2">{{ group.code?.text ?? ('Group ' + ($index + 1)) }}</div>
+      @if (group.measureScore != null) {
+      <div class="mb-2">Score: {{ displayQuantity(group.measureScore) }}</div>
+      }
+      @if (group.population?.length) {
+      <table class="table table-sm table-bordered mb-0">
+        <thead>
+          <tr>
+            <th class="small">Population</th>
+            <th class="small">Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (pop of group.population; track $index) {
+          <tr>
+            <td class="small">{{ getPopulationCode(pop) }}</td>
+            <td class="small">{{ getPopulationCount(pop) }}</td>
+          </tr>
+          }
+        </tbody>
+      </table>
+      }
+      @if (group.stratifier?.length) {
+      <div class="mt-2 small fw-medium">Stratifiers</div>
+      @for (strat of group.stratifier; track $index) {
+      <table class="table table-sm table-bordered mt-1 small">
+        <thead>
+          <tr>
+            <th class="small">Stratum</th>
+            <th class="small">Population</th>
+            <th class="small">Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (stratum of strat.stratum ?? []; track $index) {
+          <tr>
+            <td class="small">{{ stratum.value?.text ?? stratum.value?.coding?.[0]?.display ?? stratum.value?.coding?.[0]?.code ?? '—' }}</td>
+            <td class="small">—</td>
+            <td class="small">—</td>
+          </tr>
+          @for (pop of stratum.population ?? []; track $index) {
+          <tr>
+            <td class="small"></td>
+            <td class="small">{{ getPopulationCode(pop) }}</td>
+            <td class="small">{{ getPopulationCount(pop) }}</td>
+          </tr>
+          }
+          }
+        </tbody>
+      </table>
+      }
+      }
+    </div>
+    }
+  </div>
+  }
+  } @else {
+  <p class="small text-muted mb-0">No report to display.</p>
+  }
+</div>

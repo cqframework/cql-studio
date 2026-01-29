@@ -29,7 +29,8 @@ export class PatientService extends BaseService {
 	}
 
 	search(searchTerm: string): Observable<Bundle<Patient>> {
-		return this.http.get<Bundle<Patient>>(this.url() + "?name:contains=" + searchTerm, { headers: this.headers() });
+		const encoded = encodeURIComponent(searchTerm);
+		return this.http.get<Bundle<Patient>>(this.url() + "?name:contains=" + encoded, { headers: this.headers() });
 	}
 
 	get(id: string) {

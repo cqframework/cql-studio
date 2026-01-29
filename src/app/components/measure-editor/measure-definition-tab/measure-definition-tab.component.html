@@ -1,0 +1,508 @@
+<div class="py-2">
+  @if (measure(); as m) {
+  <div class="d-flex justify-content-end gap-1 mb-3">
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-definition-paste-measure"
+      (click)="pasteMeasureFromClipboard()" title="Paste Measure from clipboard">
+      <i class="bi bi-clipboard me-1"></i>Paste Measure
+    </button>
+    <button type="button" class="btn btn-primary btn-sm" id="measure-definition-add-to-clipboard"
+      (click)="addMeasureToClipboard(m)">
+      <i class="bi bi-clipboard-plus me-1"></i>Add Measure to clipboard
+    </button>
+  </div>
+
+  <div class="row g-2 g-md-3">
+    <div class="col-12">
+      <h6 class="small fw-semibold text-muted mb-2">Identification</h6>
+    </div>
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-url" placeholder=" "
+          [ngModel]="m.url" (ngModelChange)="patchMeasure({ url: $event })">
+        <label for="measure-def-url">URL</label>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-version" placeholder=" "
+          [ngModel]="m.version" (ngModelChange)="patchMeasure({ version: $event })">
+        <label for="measure-def-version">Version</label>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-name" placeholder=" "
+          [ngModel]="m.name" (ngModelChange)="patchMeasure({ name: $event })">
+        <label for="measure-def-name">Name</label>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-title" placeholder=" "
+          [ngModel]="m.title" (ngModelChange)="patchMeasure({ title: $event })">
+        <label for="measure-def-title">Title</label>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-subtitle" placeholder=" "
+          [ngModel]="m.subtitle" (ngModelChange)="patchMeasure({ subtitle: $event })">
+        <label for="measure-def-subtitle">Subtitle</label>
+      </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Identifier (0..*)</label>
+      @for (ident of m.identifier ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <input type="text" class="form-control form-control-sm" [id]="'measure-def-identifier-system-' + $index"
+          placeholder="system" [ngModel]="ident.system" (ngModelChange)="patchIdentifier($index, { system: $event })">
+        <input type="text" class="form-control form-control-sm" [id]="'measure-def-identifier-value-' + $index"
+          placeholder="value" [ngModel]="ident.value" (ngModelChange)="patchIdentifier($index, { value: $event })">
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove identifier" (click)="removeIdentifier($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-identifier" (click)="addIdentifier()">
+        <i class="bi bi-plus-lg me-1"></i>Add identifier
+      </button>
+    </div>
+
+    <div class="col-12 mt-2">
+      <h6 class="small fw-semibold text-muted mb-2">Status</h6>
+    </div>
+    <div class="col-md-4">
+      <div class="form-floating">
+        <select class="form-select form-select-sm" id="measure-def-status"
+          [ngModel]="m.status" (ngModelChange)="patchMeasure({ status: $event })">
+          @for (opt of statusOptions; track opt) {
+          <option [value]="opt">{{ opt }}</option>
+          }
+        </select>
+        <label for="measure-def-status">Status</label>
+      </div>
+    </div>
+    <div class="col-md-4 d-flex align-items-center">
+      <div class="form-check form-check-inline">
+        <input class="form-check-input" type="checkbox" id="measure-def-experimental"
+          [ngModel]="m.experimental" (ngModelChange)="patchMeasure({ experimental: $event })">
+        <label class="form-check-label small" for="measure-def-experimental">Experimental</label>
+      </div>
+    </div>
+
+    <div class="col-12 mt-2">
+      <h6 class="small fw-semibold text-muted mb-2">Subject</h6>
+    </div>
+    <div class="col-md-6">
+      <div class="d-flex align-items-center gap-1">
+        <div class="form-floating flex-grow-1">
+          <input type="text" class="form-control form-control-sm" id="measure-def-subject" placeholder=" "
+            [ngModel]="displayCodeableConcept(m.subjectCodeableConcept)" readonly>
+          <label for="measure-def-subject">Subject (0..1)</label>
+        </div>
+        @if (m.subjectCodeableConcept) {
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Clear subject" (click)="clearSubjectCodeableConcept()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+        }
+        <button type="button" class="btn btn-outline-secondary btn-sm" title="Add to clipboard"
+          (click)="addCodeableConceptToClipboard(m.subjectCodeableConcept)">
+          <i class="bi bi-clipboard-plus"></i>
+        </button>
+        <button type="button" class="btn btn-outline-secondary btn-sm" title="Paste from clipboard"
+          (click)="pasteFromClipboardIntoField('subjectCodeableConcept')">
+          <i class="bi bi-clipboard"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="col-12 mt-2">
+      <h6 class="small fw-semibold text-muted mb-2">Dates &amp; publisher</h6>
+    </div>
+    <div class="col-md-4">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-date" placeholder=" "
+          [ngModel]="m.date" (ngModelChange)="patchMeasure({ date: $event })" title="e.g. 2017-03-10 or 2017-03-10T12:00:00">
+        <label for="measure-def-date">Date last changed</label>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="form-floating">
+        <input type="date" class="form-control form-control-sm" id="measure-def-approvalDate" placeholder=" "
+          [ngModel]="m.approvalDate" (ngModelChange)="patchMeasure({ approvalDate: $event })">
+        <label for="measure-def-approvalDate">Approval date</label>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="form-floating">
+        <input type="date" class="form-control form-control-sm" id="measure-def-lastReviewDate" placeholder=" "
+          [ngModel]="m.lastReviewDate" (ngModelChange)="patchMeasure({ lastReviewDate: $event })">
+        <label for="measure-def-lastReviewDate">Last review date</label>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-publisher" placeholder=" "
+          [ngModel]="m.publisher" (ngModelChange)="patchMeasure({ publisher: $event })">
+        <label for="measure-def-publisher">Publisher</label>
+      </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Contact (0..*)</label>
+      @for (c of m.contact ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <input type="text" class="form-control form-control-sm" [id]="'measure-def-contact-name-' + $index"
+          placeholder="Name" [ngModel]="c.name" (ngModelChange)="patchContact($index, { name: $event })">
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove contact" (click)="removeContact($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-contact" (click)="addContact()">
+        <i class="bi bi-plus-lg me-1"></i>Add contact
+      </button>
+    </div>
+    <div class="col-md-6">
+      <div class="d-flex align-items-center gap-1 flex-wrap">
+        <input type="date" class="form-control form-control-sm" id="measure-def-effectivePeriod-start" placeholder="Start"
+          [ngModel]="m.effectivePeriod?.start" (ngModelChange)="setEffectivePeriod({ ...(m.effectivePeriod ?? {}), start: $event })" style="max-width: 10rem;">
+        <input type="date" class="form-control form-control-sm" id="measure-def-effectivePeriod-end" placeholder="End"
+          [ngModel]="m.effectivePeriod?.end" (ngModelChange)="setEffectivePeriod({ ...(m.effectivePeriod ?? {}), end: $event })" style="max-width: 10rem;">
+        @if (m.effectivePeriod) {
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Clear effective period" (click)="clearEffectivePeriod()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+        }
+      </div>
+      <label class="form-label small text-muted mb-0">Effective period (0..1)</label>
+    </div>
+
+    <div class="col-12 mt-2">
+      <h6 class="small fw-semibold text-muted mb-2">Description &amp; context</h6>
+    </div>
+    <div class="col-12">
+      <div class="form-floating">
+        <textarea class="form-control form-control-sm" id="measure-def-description" placeholder=" " rows="2"
+          [ngModel]="m.description" (ngModelChange)="patchMeasure({ description: $event })"></textarea>
+        <label for="measure-def-description">Description</label>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="form-floating">
+        <textarea class="form-control form-control-sm" id="measure-def-purpose" placeholder=" " rows="2"
+          [ngModel]="m.purpose" (ngModelChange)="patchMeasure({ purpose: $event })"></textarea>
+        <label for="measure-def-purpose">Purpose</label>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-usage" placeholder=" "
+          [ngModel]="m.usage" (ngModelChange)="patchMeasure({ usage: $event })">
+        <label for="measure-def-usage">Usage</label>
+      </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Use context (0..*)</label>
+      @for (uc of m.useContext ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <input type="text" class="form-control form-control-sm" [id]="'measure-def-useContext-' + $index" placeholder="code / value"
+          [ngModel]="displayUsageContextSummary([uc])" readonly>
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove use context" (click)="removeUseContext($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-useContext" (click)="addUseContext()">
+        <i class="bi bi-plus-lg me-1"></i>Add use context
+      </button>
+    </div>
+    <div class="col-12">
+      <div class="form-floating">
+        <textarea class="form-control form-control-sm" id="measure-def-copyright" placeholder=" " rows="2"
+          [ngModel]="m.copyright" (ngModelChange)="patchMeasure({ copyright: $event })"></textarea>
+        <label for="measure-def-copyright">Copyright</label>
+      </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Jurisdiction (0..*)</label>
+      @for (j of m.jurisdiction ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <div class="form-floating flex-grow-1">
+          <input type="text" class="form-control form-control-sm" [id]="'measure-def-jurisdiction-' + $index" placeholder=" "
+            [ngModel]="displayCodeableConcept(j)" readonly>
+          <label [for]="'measure-def-jurisdiction-' + $index">Jurisdiction {{ $index + 1 }}</label>
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" title="Paste from clipboard" (click)="pasteJurisdictionFromClipboard($index)">
+          <i class="bi bi-clipboard"></i>
+        </button>
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove jurisdiction" (click)="removeJurisdiction($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-jurisdiction" (click)="addJurisdiction()">
+        <i class="bi bi-plus-lg me-1"></i>Add jurisdiction
+      </button>
+    </div>
+
+    <div class="col-12 mt-2">
+      <h6 class="small fw-semibold text-muted mb-2">Contributors &amp; artifacts</h6>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Author (0..*)</label>
+      @for (a of m.author ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <input type="text" class="form-control form-control-sm" [id]="'measure-def-author-' + $index" placeholder="Name"
+          [ngModel]="a.name" (ngModelChange)="patchAuthor($index, { name: $event })">
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove author" (click)="removeAuthor($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-author" (click)="addAuthor()">
+        <i class="bi bi-plus-lg me-1"></i>Add author
+      </button>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Editor (0..*)</label>
+      @for (e of m.editor ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <input type="text" class="form-control form-control-sm" [id]="'measure-def-editor-' + $index" placeholder="Name"
+          [ngModel]="e.name" (ngModelChange)="patchEditor($index, { name: $event })">
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove editor" (click)="removeEditor($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-editor" (click)="addEditor()">
+        <i class="bi bi-plus-lg me-1"></i>Add editor
+      </button>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Reviewer (0..*)</label>
+      @for (r of m.reviewer ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <input type="text" class="form-control form-control-sm" [id]="'measure-def-reviewer-' + $index" placeholder="Name"
+          [ngModel]="r.name" (ngModelChange)="patchReviewer($index, { name: $event })">
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove reviewer" (click)="removeReviewer($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-reviewer" (click)="addReviewer()">
+        <i class="bi bi-plus-lg me-1"></i>Add reviewer
+      </button>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Endorser (0..*)</label>
+      @for (en of m.endorser ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <input type="text" class="form-control form-control-sm" [id]="'measure-def-endorser-' + $index" placeholder="Name"
+          [ngModel]="en.name" (ngModelChange)="patchEndorser($index, { name: $event })">
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove endorser" (click)="removeEndorser($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-endorser" (click)="addEndorser()">
+        <i class="bi bi-plus-lg me-1"></i>Add endorser
+      </button>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Related artifact (0..*)</label>
+      @for (ra of m.relatedArtifact ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <select class="form-select form-select-sm" [id]="'measure-def-relatedArtifact-type-' + $index" style="max-width: 10rem;"
+          [ngModel]="ra.type" (ngModelChange)="patchRelatedArtifact($index, { type: $event })">
+          @for (rt of relatedArtifactTypes; track rt) {
+          <option [value]="rt">{{ rt }}</option>
+          }
+        </select>
+        <input type="text" class="form-control form-control-sm flex-grow-1" [id]="'measure-def-relatedArtifact-display-' + $index"
+          placeholder="display" [ngModel]="ra.display" (ngModelChange)="patchRelatedArtifact($index, { display: $event })">
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove related artifact" (click)="removeRelatedArtifact($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-relatedArtifact" (click)="addRelatedArtifact()">
+        <i class="bi bi-plus-lg me-1"></i>Add related artifact
+      </button>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Library (0..*)</label>
+      @for (lib of m.library ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <input type="text" class="form-control form-control-sm" [id]="'measure-def-library-' + $index" placeholder="Canonical URL"
+          [ngModel]="lib" (ngModelChange)="patchLibrary($index, $event)">
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove library" (click)="removeLibrary($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-library" (click)="addLibrary()">
+        <i class="bi bi-plus-lg me-1"></i>Add library
+      </button>
+    </div>
+
+    <div class="col-12 mt-2">
+      <h6 class="small fw-semibold text-muted mb-2">Clinical &amp; scoring</h6>
+    </div>
+    <div class="col-12">
+      <div class="d-flex align-items-start gap-1">
+        <div class="form-floating flex-grow-1">
+          <textarea class="form-control form-control-sm" id="measure-def-disclaimer" placeholder=" " rows="2"
+            [ngModel]="m.disclaimer" (ngModelChange)="patchMeasure({ disclaimer: $event })"></textarea>
+          <label for="measure-def-disclaimer">Disclaimer (0..1)</label>
+        </div>
+        @if (m.disclaimer) {
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Clear disclaimer" (click)="clearDisclaimer()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+        }
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="d-flex align-items-center gap-1">
+        <div class="form-floating flex-grow-1">
+          <select class="form-select form-select-sm" id="measure-def-scoring"
+            [ngModel]="getCodeFromCodeableConcept(m.scoring)" (ngModelChange)="setScoringCode($event)">
+            @for (opt of scoringOptions; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+          <label for="measure-def-scoring">Scoring (0..1)</label>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="d-flex align-items-center gap-1">
+        <div class="form-floating flex-grow-1">
+          <select class="form-select form-select-sm" id="measure-def-compositeScoring"
+            [ngModel]="getCodeFromCodeableConcept(m.compositeScoring)" (ngModelChange)="setCompositeScoringCode($event)">
+            @for (opt of compositeScoringOptions; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+          <label for="measure-def-compositeScoring">Composite scoring (0..1)</label>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="d-flex align-items-center gap-1">
+        <div class="form-floating flex-grow-1">
+          <select class="form-select form-select-sm" id="measure-def-improvement"
+            [ngModel]="getCodeFromCodeableConcept(m.improvementNotation)" (ngModelChange)="setImprovementNotationCode($event)">
+            @for (opt of improvementNotationOptions; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+          <label for="measure-def-improvement">Improvement notation (0..1)</label>
+        </div>
+      </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Type (0..*)</label>
+      @for (t of m.type ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <div class="form-floating flex-grow-1">
+          <select class="form-select form-select-sm" [id]="'measure-def-type-' + $index"
+            [ngModel]="getTypeCodeAtIndex($index)" (ngModelChange)="setTypeCode($index, $event)">
+            @for (opt of measureTypeOptions; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+          <label [for]="'measure-def-type-' + $index">Type {{ $index + 1 }}</label>
+        </div>
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove type" (click)="removeType($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-type" (click)="addType()">
+        <i class="bi bi-plus-lg me-1"></i>Add type
+      </button>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Topic (0..*)</label>
+      @for (t of m.topic ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <div class="form-floating flex-grow-1">
+          <input type="text" class="form-control form-control-sm" [id]="'measure-def-topic-' + $index" placeholder=" "
+            [ngModel]="displayCodeableConcept(t)" readonly>
+          <label [for]="'measure-def-topic-' + $index">Topic {{ $index + 1 }}</label>
+        </div>
+        <button type="button" class="btn btn-outline-secondary btn-sm" title="Paste from clipboard" (click)="pasteTopicFromClipboard($index)">
+          <i class="bi bi-clipboard"></i>
+        </button>
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove topic" (click)="removeTopic($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-topic" (click)="addTopic()">
+        <i class="bi bi-plus-lg me-1"></i>Add topic
+      </button>
+    </div>
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-riskAdjustment" placeholder=" "
+          [ngModel]="m.riskAdjustment" (ngModelChange)="patchMeasure({ riskAdjustment: $event })">
+        <label for="measure-def-riskAdjustment">Risk adjustment</label>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-def-rateAggregation" placeholder=" "
+          [ngModel]="m.rateAggregation" (ngModelChange)="patchMeasure({ rateAggregation: $event })">
+        <label for="measure-def-rateAggregation">Rate aggregation</label>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="form-floating">
+        <textarea class="form-control form-control-sm" id="measure-def-rationale" placeholder=" " rows="2"
+          [ngModel]="m.rationale" (ngModelChange)="patchMeasure({ rationale: $event })"></textarea>
+        <label for="measure-def-rationale">Rationale</label>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="form-floating">
+        <textarea class="form-control form-control-sm" id="measure-def-clinicalRecommendationStatement" placeholder=" " rows="2"
+          [ngModel]="m.clinicalRecommendationStatement" (ngModelChange)="patchMeasure({ clinicalRecommendationStatement: $event })"></textarea>
+        <label for="measure-def-clinicalRecommendationStatement">Clinical recommendation statement</label>
+      </div>
+    </div>
+    <div class="col-12">
+      <div class="d-flex align-items-start gap-1">
+        <div class="form-floating flex-grow-1">
+          <textarea class="form-control form-control-sm" id="measure-def-guidance" placeholder=" " rows="2"
+            [ngModel]="m.guidance" (ngModelChange)="patchMeasure({ guidance: $event })"></textarea>
+          <label for="measure-def-guidance">Guidance (0..1)</label>
+        </div>
+        @if (m.guidance) {
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Clear guidance" (click)="clearGuidance()">
+          <i class="bi bi-x-lg"></i>
+        </button>
+        }
+      </div>
+    </div>
+    <div class="col-12">
+      <label class="form-label small mb-1">Definition (0..*)</label>
+      @for (def of m.definition ?? []; track $index) {
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <textarea class="form-control form-control-sm" [id]="'measure-def-definition-' + $index" rows="1" placeholder="Definition text"
+          [ngModel]="def" (ngModelChange)="patchDefinition($index, $event)"></textarea>
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove definition" (click)="removeDefinition($index)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      }
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-def-add-definition" (click)="addDefinition()">
+        <i class="bi bi-plus-lg me-1"></i>Add definition
+      </button>
+    </div>
+  </div>
+  } @else {
+  <p class="small text-muted mb-0">No measure loaded.</p>
+  }
+</div>

@@ -1,0 +1,94 @@
+<div class="py-2">
+  @if (measure(); as m) {
+  <div class="row g-2 mb-3">
+    <div class="col-md-3">
+      <div class="form-floating">
+        <input type="date" class="form-control form-control-sm" id="measure-run-period-start" placeholder=" "
+          [ngModel]="periodStartValue" (ngModelChange)="periodStart.set($event)">
+        <label for="measure-run-period-start">Period start</label>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="form-floating">
+        <input type="date" class="form-control form-control-sm" id="measure-run-period-end" placeholder=" "
+          [ngModel]="periodEndValue" (ngModelChange)="periodEnd.set($event)">
+        <label for="measure-run-period-end">Period end</label>
+      </div>
+    </div>
+    <div class="col-md-2 d-flex align-items-end pb-1">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-run-default-period"
+        (click)="setDefaultPeriod()">Default period</button>
+    </div>
+  </div>
+  <div class="row g-2 mb-3">
+    <div class="col-md-3">
+      <div class="form-floating">
+        <select class="form-select form-select-sm" id="measure-run-report-type"
+          [ngModel]="reportTypeValue" (ngModelChange)="reportTypeValue = $event">
+          <option value="subject">subject</option>
+          <option value="subject-list">subject-list</option>
+          <option value="population">population</option>
+        </select>
+        <label for="measure-run-report-type">Report type</label>
+      </div>
+    </div>
+    <div class="col-md-4 position-relative">
+      @if (showSubjectSearch()) {
+      <div class="position-relative">
+        <div class="form-floating">
+          <input #subjectInput type="text" class="form-control form-control-sm" id="measure-run-subject"
+            placeholder=" " autocomplete="off"
+            [ngModel]="subjectSearchQuery()" (ngModelChange)="onSubjectInput($event)"
+            (keydown)="onSubjectKeydown($event)" (blur)="onSubjectBlur()">
+          <label for="measure-run-subject">Subject</label>
+        </div>
+        @if (subjectSearchOpen()) {
+        <ul #subjectResultsList class="list-group list-group-flush position-absolute top-100 start-0 end-0 mt-0 rounded border shadow-sm small z-3 overflow-auto"
+          style="max-height: 12rem;" role="listbox" id="measure-run-subject-results">
+          @if (subjectSearchLoading()) {
+          <li class="list-group-item py-2 text-muted">Searching...</li>
+          }
+          @for (option of subjectSearchResults(); track option.reference) {
+          <li class="list-group-item list-group-item-action py-2 cursor-pointer"
+            [class.bg-light]="subjectSearchHighlightIndex() === $index"
+            [attr.data-subject-index]="$index" role="option"
+            [attr.aria-selected]="subjectSearchHighlightIndex() === $index"
+            (click)="selectSubjectOption(option)">
+            {{ option.display }}
+            <span class="text-muted small ms-1">{{ option.reference }}</span>
+          </li>
+          }
+        </ul>
+        }
+      </div>
+      } @else {
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="measure-run-subject" placeholder=" "
+          [ngModel]="subjectValue" (ngModelChange)="subject.set($event)">
+        <label for="measure-run-subject">Subject (optional)</label>
+      </div>
+      }
+    </div>
+  </div>
+  <div class="mb-3">
+    <button type="button" class="btn btn-primary btn-sm" id="measure-run-button"
+      (click)="run()" [disabled]="running() || !hasValidConfiguration()">
+      @if (running()) {
+      <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+      }
+      Run $evaluate-measure
+    </button>
+  </div>
+  @if (runError()) {
+  <div class="alert alert-danger small py-2 mb-2" role="alert">
+    <i class="bi bi-exclamation-circle me-2"></i>{{ runError() }}
+  </div>
+  }
+  @if (result()) {
+  <h6 class="small fw-semibold mb-2">Result</h6>
+  <app-measure-report-view [report]="result()" />
+  }
+  } @else {
+  <p class="small text-muted mb-0">No measure loaded.</p>
+  }
+</div>

@@ -1,0 +1,49 @@
+// Author: Preston Lee
+
+.nav-tabs .nav-link {
+  font-size: 0.875rem;
+}
+
+.measure-workspace-main {
+  min-width: 0;
+}
+
+.measure-workspace-sidebar {
+  width: 100%;
+  max-width: 360px;
+}
+
+.measure-workspace-sidebar-inner {
+  // border: 1px solid var(--bs-border-color);
+  // border-radius: var(--bs-border-radius);
+  // overflow: hidden;
+}
+
+.measure-workspace-sidebar-content {
+  // max-height: 70vh;
+  // overflow-y: auto;
+  font-size: 0.8125rem;
+}
+
+.measure-workspace-sidebar .nav-tabs .nav-link {
+  font-size: 0.8125rem;
+}
+
+.measure-validation-issue {
+  border: 1px solid var(--bs-border-color);
+}
+
+.measure-summary dt {
+  // font-weight: 600;
+  color: var(--bs-secondary);
+  // margin-top: 0.25rem;
+
+  &:first-child {
+    margin-top: 0;
+  }
+}
+
+.measure-summary-group {
+  // border-left: 2px solid var(--bs-border-color);
+  padding-left: 0.5rem;
+}

@@ -1,0 +1,19 @@
+// Author: Preston Lee
+
+.clipboard-manager {
+  .form-floating > label {
+    overflow: visible;
+    text-overflow: unset;
+    white-space: nowrap;
+  }
+
+  .clipboard-manager-item {
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.02);
+    }
+  }
+
+  .dropdown-item label {
+    cursor: pointer;
+  }
+}

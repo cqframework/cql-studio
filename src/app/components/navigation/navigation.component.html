@@ -81,6 +81,11 @@
             </li>
             @if (settingsService.settings().experimental) {
             <li>
+              <a id="measure-editor-nav-link" class="dropdown-item" routerLink="/measures" routerLinkActive="active">
+                <i class="bi bi-bar-chart me-2"></i>Measure Editor
+              </a>
+            </li>
+            <li>
               <a id="guidelines-nav-link" class="dropdown-item" routerLink="/guidelines" routerLinkActive="active">
                 <i class="bi bi-diagram-3 me-2"></i>Guidelines
               </a>
@@ -99,6 +104,23 @@
                 <i class="bi bi-upload me-2"></i>FHIR Uploader
               </a>
             </li>
+            @if (settingsService.settings().developer) {
+            <li>
+              <a id="example-loader-nav-link" class="dropdown-item" routerLink="/loader" routerLinkActive="active">
+                <i class="bi bi-collection me-2"></i>Example Loader
+              </a>
+            </li>
+            }
+            @if (settingsService.settings().experimental) {
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li>
+              <a id="clipboard-manager-nav-link" class="dropdown-item" routerLink="/clipboard" routerLinkActive="active">
+                <i class="bi bi-clipboard me-2"></i>Clipboard Manager
+              </a>
+            </li>
+            }
           </ul>
         </li>
       </ul>

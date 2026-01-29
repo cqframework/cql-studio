@@ -1,0 +1,46 @@
+<div class="py-2">
+  @if (measure(); as m) {
+  <div class="mb-3">
+    <button type="button" class="btn btn-sm btn-outline-primary" id="measure-reports-load"
+      (click)="loadReports()" [disabled]="loading() || !hasValidConfiguration()">
+      @if (loading()) {
+      <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+      }
+      Load reports for this measure
+    </button>
+  </div>
+  @if (error()) {
+  <div class="alert alert-danger small py-2 mb-2" role="alert">
+    <i class="bi bi-exclamation-circle me-2"></i>{{ error() }}
+  </div>
+  }
+  <div class="row">
+    <div class="col-md-4">
+      @if (reports().length > 0) {
+      <div class="list-group list-group-flush small">
+        @for (report of reports(); track report.id ?? report.measure ?? $index) {
+        <button type="button" class="list-group-item list-group-item-action py-2 text-start"
+          [class.active]="selectedReport()?.id === report.id"
+          (click)="selectReport(report)">
+          {{ getReportDisplay(report) }}
+          <span class="badge ms-2" [class.bg-success]="report.status === 'complete'"
+            [class.bg-warning]="report.status === 'pending'">{{ report.status }}</span>
+        </button>
+        }
+      </div>
+      } @else if (!loading()) {
+      <p class="small text-muted mb-0">No reports found. Click "Load reports" or run the measure from the Run tab.</p>
+      }
+    </div>
+    <div class="col-md-8">
+      @if (selectedReport()) {
+      <app-measure-report-view [report]="selectedReport()" />
+      } @else {
+      <p class="small text-muted mb-0">Select a report to view.</p>
+      }
+    </div>
+  </div>
+  } @else {
+  <p class="small text-muted mb-0">No measure loaded.</p>
+  }
+</div>

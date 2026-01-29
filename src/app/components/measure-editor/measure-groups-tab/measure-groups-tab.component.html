@@ -1,0 +1,207 @@
+<div class="py-2">
+  @if (measure(); as m) {
+  <div class="mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-2">
+      <h6 class="small fw-semibold mb-0">Groups (0..*)</h6>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-groups-add-group" (click)="addGroup()">
+        <i class="bi bi-plus-lg me-1"></i>Add group
+      </button>
+    </div>
+    @for (group of groups(); track group.id ?? $index; let gi = $index) {
+    <div class="card card-body py-2 mb-2 small">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="fw-medium">{{ group.id ?? ('Group ' + (gi + 1)) }}</span>
+        @if (group.code) {
+        <span class="text-muted small">{{ displayCodeableConcept(group.code) }}</span>
+        <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Add group code to clipboard"
+          (click)="addCodeableConceptToClipboard(group.code)">
+          <i class="bi bi-clipboard-plus"></i>
+        </button>
+        }
+        <input type="text" class="form-control form-control-sm ms-auto" style="max-width: 12rem;"
+          [ngModel]="group.description" (ngModelChange)="patchGroup(gi, { description: $event })"
+          placeholder="Group description">
+        <button type="button" class="btn btn-outline-danger btn-sm" title="Remove group" (click)="removeGroup(gi)">
+          <i class="bi bi-dash-lg"></i>
+        </button>
+      </div>
+      <div class="mb-2">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <span class="small fw-medium">Population (0..*)</span>
+          <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" (click)="addPopulation(gi)">
+            <i class="bi bi-plus-lg"></i> Add
+          </button>
+        </div>
+        @if (group.population?.length) {
+        <table class="table table-sm table-bordered mb-0">
+          <thead>
+            <tr>
+              <th class="small">Population (code)</th>
+              <th class="small">Description</th>
+              <th class="small">Criteria</th>
+              <th class="small" style="width: 4rem;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (pop of group.population; track $index) {
+            <tr>
+              <td class="p-1">
+                <select class="form-select form-select-sm" [ngModel]="getPopulationCodeCode(pop)"
+                  (ngModelChange)="setPopulationCode(gi, $index, $event)">
+                  @for (opt of populationTypeOptions; track opt.value) {
+                  <option [value]="opt.value">{{ opt.label }}</option>
+                  }
+                </select>
+              </td>
+              <td class="p-1">
+                <input type="text" class="form-control form-control-sm" [ngModel]="pop.description"
+                  (ngModelChange)="patchPopulation(gi, $index, { description: $event })" placeholder="Description">
+              </td>
+              <td class="p-1">
+                <input type="text" class="form-control form-control-sm font-monospace" [ngModel]="getCriteriaExpression(pop.criteria)"
+                  (ngModelChange)="setPopulationCriteriaExpression(gi, $index, $event)" placeholder="Expression">
+              </td>
+              <td class="p-1">
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" title="Remove population" (click)="removePopulation(gi, $index)">
+                  <i class="bi bi-dash-lg"></i>
+                </button>
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+        }
+      </div>
+      <div class="mt-2">
+        <div class="d-flex align-items-center justify-content-between mb-1">
+          <span class="small fw-medium">Stratifier (0..*)</span>
+          <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" (click)="addStratifier(gi)">
+            <i class="bi bi-plus-lg"></i> Add
+          </button>
+        </div>
+        @if (group.stratifier?.length) {
+        <table class="table table-sm table-bordered mb-0">
+          <thead>
+            <tr>
+              <th class="small">Code</th>
+              <th class="small">Description</th>
+              <th class="small">Criteria</th>
+              <th class="small" style="width: 4rem;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (strat of group.stratifier; track $index; let si = $index) {
+            <tr>
+              <td class="small">{{ strat.code?.text ?? displayCodeableConcept(strat.code) }}</td>
+              <td class="p-1">
+                <input type="text" class="form-control form-control-sm" [ngModel]="strat.description"
+                  (ngModelChange)="patchStratifier(gi, si, { description: $event })" placeholder="Description">
+              </td>
+              <td class="p-1">
+                <input type="text" class="form-control form-control-sm font-monospace" [ngModel]="getCriteriaExpression(strat.criteria)"
+                  (ngModelChange)="setStratifierCriteriaExpression(gi, si, $event)" placeholder="Expression">
+              </td>
+              <td class="p-1">
+                @if (strat.code?.coding?.length) {
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Add to clipboard"
+                  (click)="addCodeableConceptToClipboard(strat.code)">
+                  <i class="bi bi-clipboard-plus"></i>
+                </button>
+                }
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" title="Remove stratifier" (click)="removeStratifier(gi, si)">
+                  <i class="bi bi-dash-lg"></i>
+                </button>
+              </td>
+            </tr>
+            @if (strat.component?.length) {
+            @for (comp of strat.component; track $index; let ci = $index) {
+            <tr class="table-light">
+              <td class="small ps-3">{{ comp.code?.text ?? displayCodeableConcept(comp.code) }}</td>
+              <td class="p-1">
+                <input type="text" class="form-control form-control-sm" [ngModel]="comp.description"
+                  (ngModelChange)="patchStratifierComponent(gi, si, ci, { description: $event })" placeholder="Description">
+              </td>
+              <td class="p-1">
+                <input type="text" class="form-control form-control-sm font-monospace" [ngModel]="getCriteriaExpression(comp.criteria)"
+                  (ngModelChange)="patchStratifierComponent(gi, si, ci, { criteria: { expression: $event, language: comp.criteria.language } })" placeholder="Expression">
+              </td>
+              <td class="p-1">
+                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" title="Remove component" (click)="removeStratifierComponent(gi, si, ci)">
+                  <i class="bi bi-dash-lg"></i>
+                </button>
+              </td>
+            </tr>
+            }
+            }
+            <tr class="table-light">
+              <td colspan="4" class="p-1">
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" (click)="addStratifierComponent(gi, si)">
+                  <i class="bi bi-plus-lg me-1"></i>Add component
+                </button>
+              </td>
+            </tr>
+            }
+          </tbody>
+        </table>
+        }
+      </div>
+    </div>
+    }
+  </div>
+  <div class="d-flex align-items-center justify-content-between mb-2">
+    <h6 class="small fw-semibold mb-0">Supplemental data (0..*)</h6>
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="measure-groups-add-supplemental" (click)="addSupplementalData()">
+      <i class="bi bi-plus-lg me-1"></i>Add supplemental data
+    </button>
+  </div>
+  @if (supplementalData().length) {
+  <table class="table table-sm table-bordered small">
+    <thead>
+      <tr>
+        <th class="small">Code</th>
+        <th class="small">Usage</th>
+        <th class="small">Description</th>
+        <th class="small">Criteria</th>
+        <th class="small" style="width: 3rem;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (sd of supplementalData(); track $index) {
+      <tr>
+        <td class="p-1">{{ sd.code?.text ?? displayCodeableConcept(sd.code) }}</td>
+        <td class="p-1">
+          <select class="form-select form-select-sm" [ngModel]="getSupplementalDataUsageCode(sd)"
+            (ngModelChange)="setSupplementalDataUsageCode($index, $event)">
+            @for (opt of supplementalDataUsageOptions; track opt.value) {
+            <option [value]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+        </td>
+        <td class="p-1">
+          <input type="text" class="form-control form-control-sm" [ngModel]="sd.description"
+            (ngModelChange)="patchSupplementalData($index, { description: $event })" placeholder="Description">
+        </td>
+        <td class="p-1">
+          <input type="text" class="form-control form-control-sm font-monospace" [ngModel]="getCriteriaExpression(sd.criteria)"
+            (ngModelChange)="setSupplementalDataCriteriaExpression($index, $event)" placeholder="Expression">
+        </td>
+        <td class="p-1">
+          @if (sd.code?.coding?.length) {
+          <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Add to clipboard"
+            (click)="addCodeableConceptToClipboard(sd.code)">
+            <i class="bi bi-clipboard-plus"></i>
+          </button>
+          }
+          <button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" title="Remove supplemental data" (click)="removeSupplementalData($index)">
+            <i class="bi bi-dash-lg"></i>
+          </button>
+        </td>
+      </tr>
+      }
+    </tbody>
+  </table>
+  }
+  } @else {
+  <p class="small text-muted mb-0">No measure loaded.</p>
+  }
+</div>

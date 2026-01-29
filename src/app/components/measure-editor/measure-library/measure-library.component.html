@@ -1,0 +1,132 @@
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h5 class="mb-0">Measure Library</h5>
+    <div class="d-flex gap-2">
+      <a id="measure-library-new" class="btn btn-sm btn-primary" routerLink="/measures/new">
+        <i class="bi bi-plus-lg me-1"></i>New
+      </a>
+      <a id="measure-editor-all-reports-link" class="btn btn-sm btn-outline-secondary" routerLink="/measures/reports">
+        <i class="bi bi-file-earmark-bar-graph me-1"></i>All reports
+      </a>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-12">
+      <div class="input-group input-group-sm mb-3">
+        <div class="form-floating flex-grow-1">
+          <input type="text" class="form-control form-control-sm" id="measureSearch" [(ngModel)]="searchTerm"
+            (keydown.enter)="onSearch()" placeholder="Name or title">
+          <label for="measureSearch">Search measures</label>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="measureSearchButton" (click)="onSearch()"
+          [disabled]="loading() || !hasValidConfiguration()">
+          @if (loading()) {
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          } @else {
+          <i class="bi bi-search"></i>
+          }
+        </button>
+      </div>
+
+      @if (!hasValidConfiguration()) {
+      <div class="alert alert-warning small py-2" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>Configure FHIR base URL in Settings to search measures.
+      </div>
+      }
+
+      @if (error()) {
+      <div class="alert alert-danger small py-2" role="alert">
+        <i class="bi bi-exclamation-circle me-2"></i>{{ error() }}
+      </div>
+      }
+
+      @if (loading()) {
+      <div class="text-center py-4">
+        <div class="spinner-border spinner-border-sm text-primary" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="text-muted small mt-2 mb-0">Loading measures...</p>
+      </div>
+      }
+
+      @if (!loading() && results().length > 0) {
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small text-muted">
+          {{ startIndex() }}-{{ endIndex() }} of {{ totalCount() }}
+        </span>
+        <div class="d-flex align-items-center gap-2">
+          <label for="measurePageSize" class="small text-muted mb-0">Per page:</label>
+          <select class="form-select form-select-sm" id="measurePageSize" [ngModel]="pageSize()"
+            (ngModelChange)="setPageSize(+$event)" style="width: auto;">
+            @for (size of availablePageSizes; track size) {
+            <option [value]="size">{{ size }}</option>
+            }
+          </select>
+        </div>
+      </div>
+      <div class="list-group list-group-flush">
+        @for (measure of results(); track getMeasureTrackId(measure, $index)) {
+        <a [routerLink]="['/measures', measure.id]" id="measure-list-item-{{ measure.id }}"
+          class="list-group-item list-group-item-action py-2">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <span class="fw-medium small">{{ getMeasureTitle(measure) }}</span>
+              @if (measure.version) {
+              <span class="text-muted small ms-2">{{ measure.version }}</span>
+              }
+            </div>
+            @if (measure.status) {
+            <span class="badge small" [class.bg-success]="measure.status === 'active'"
+              [class.bg-warning]="measure.status === 'draft'" [class.bg-secondary]="measure.status !== 'active' && measure.status !== 'draft'">
+              {{ measure.status }}
+            </span>
+            }
+          </div>
+          @if (measure.url) {
+          <small class="text-muted text-break d-block mt-1">{{ measure.url }}</small>
+          }
+        </a>
+        }
+      </div>
+
+      @if (totalPages() > 1) {
+      <nav aria-label="Measure list pagination" class="mt-3">
+        <ul class="pagination pagination-sm justify-content-center mb-0">
+          <li class="page-item" [class.disabled]="currentPage() <= 1">
+            <button type="button" class="page-link" (click)="goToPage(1)" [disabled]="currentPage() <= 1">
+              <i class="bi bi-chevron-double-left"></i>
+            </button>
+          </li>
+          <li class="page-item" [class.disabled]="currentPage() <= 1">
+            <button type="button" class="page-link" (click)="goToPage(currentPage() - 1)" [disabled]="currentPage() <= 1">
+              <i class="bi bi-chevron-left"></i>
+            </button>
+          </li>
+          <li class="page-item disabled">
+            <span class="page-link">{{ currentPage() }} / {{ totalPages() }}</span>
+          </li>
+          <li class="page-item" [class.disabled]="currentPage() >= totalPages()">
+            <button type="button" class="page-link" (click)="goToPage(currentPage() + 1)" [disabled]="currentPage() >= totalPages()">
+              <i class="bi bi-chevron-right"></i>
+            </button>
+          </li>
+          <li class="page-item" [class.disabled]="currentPage() >= totalPages()">
+            <button type="button" class="page-link" (click)="goToPage(totalPages())" [disabled]="currentPage() >= totalPages()">
+              <i class="bi bi-chevron-double-right"></i>
+            </button>
+          </li>
+        </ul>
+      </nav>
+      }
+      }
+
+      @if (!loading() && hasValidConfiguration() && results().length === 0 && totalCount() === 0) {
+      <div class="text-center py-4">
+        <i class="bi bi-bar-chart text-muted" style="font-size: 2rem;"></i>
+        <p class="text-muted small mt-2 mb-0">No measures found. Enter a search term and click Search, or ensure the FHIR server has Measure resources.</p>
+      </div>
+      }
+    </div>
+  </div>
+</div>

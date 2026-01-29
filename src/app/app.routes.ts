@@ -11,6 +11,7 @@ import { SettingsComponent } from './components/settings/settings.component';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { RunnerComponent } from './components/runner/runner.component';
 import { FhirUploaderComponent } from './components/fhir-uploader/fhir-uploader.component';
+import { ExampleLoaderComponent } from './components/example-loader/example-loader.component';
 import { TerminologyLayoutComponent } from './components/terminology/terminology-layout.component';
 import { ValueSetsTabComponent } from './components/terminology/valuesets-tab/valuesets-tab.component';
 import { ConceptMapsTabComponent } from './components/terminology/conceptmaps-tab/conceptmaps-tab.component';
@@ -19,6 +20,11 @@ import { ValidationTabComponent } from './components/terminology/validation-tab/
 import { AboutComponent } from './components/about/about.component';
 import { LandingComponent } from './components/landing/landing.component';
 import { GuidelinesComponent } from './components/guidelines/guidelines.component';
+import { MeasureEditorComponent } from './components/measure-editor/measure-editor.component';
+import { MeasureLibraryComponent } from './components/measure-editor/measure-library/measure-library.component';
+import { MeasureWorkspaceComponent } from './components/measure-editor/measure-workspace/measure-workspace.component';
+import { MeasureReportsListComponent } from './components/measure-editor/measure-reports-list/measure-reports-list.component';
+import { ClipboardManagerComponent } from './components/clipboard-manager/clipboard-manager.component';
 
 export const routes: Routes = [
   // Normal app routes
@@ -32,6 +38,7 @@ export const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent },
   { path: 'runner', component: RunnerComponent },
   { path: 'uploader', component: FhirUploaderComponent },
+  { path: 'loader', component: ExampleLoaderComponent },
   { 
     path: 'terminology', 
     component: TerminologyLayoutComponent,
@@ -43,11 +50,22 @@ export const routes: Routes = [
       { path: 'validation', component: ValidationTabComponent }
     ]
   },
+  {
+    path: 'measures',
+    component: MeasureEditorComponent,
+    children: [
+      { path: '', component: MeasureLibraryComponent },
+      { path: 'reports', component: MeasureReportsListComponent },
+      { path: 'new', component: MeasureWorkspaceComponent },
+      { path: ':id', component: MeasureWorkspaceComponent }
+    ]
+  },
   { path: 'guidelines', component: GuidelinesComponent },
   { path: 'guidelines/:id/testing', component: GuidelinesComponent },
   { path: 'guidelines/:id', component: GuidelinesComponent },
   { path: 'about', component: AboutComponent },
-  
+  { path: 'clipboard', component: ClipboardManagerComponent },
+
   // IDE routes with separate layout
   { 
     path: 'ide', 

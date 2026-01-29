@@ -1,0 +1,21 @@
+// Author: Preston Lee
+
+.form-floating > .form-control,
+.form-floating > .form-select {
+  height: calc(2rem + 2px);
+  min-height: calc(2rem + 2px);
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.form-floating > label {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.875rem;
+}
+
+.form-floating > .form-control:focus ~ label,
+.form-floating > .form-control:not(:placeholder-shown) ~ label,
+.form-floating > .form-select ~ label {
+  opacity: 0.65;
+  transform: scale(0.85) translateY(-0.5rem) translateX(0.15rem);
+}
