@@ -1,9 +1,8 @@
 // Author: Preston Lee
 
 import { Injectable, inject } from '@angular/core';
-import { CqlTestResults } from '../models/cql-test-results.model';
 import { SettingsService } from './settings.service';
-import Ajv from 'ajv';
+import Ajv, { type ErrorObject, type ValidateFunction } from 'ajv';
 import addFormats from 'ajv-formats';
 
 @Injectable({
@@ -12,69 +11,103 @@ import addFormats from 'ajv-formats';
 export class SchemaValidationService {
   private readonly settingsService = inject(SettingsService);
   private ajv: Ajv;
-  private schema: any = null;
+  private resultsSchema: any = null;
+  private configurationSchema: any = null;
 
   constructor() {
-    this.ajv = new Ajv({ 
+    this.ajv = new Ajv({
       allErrors: true,
-      removeAdditional: false      // Don't remove unknown properties
+      removeAdditional: false
     });
-    addFormats(this.ajv);  // Add format validation support
+    addFormats(this.ajv);
   }
 
-  private get schemaUrl(): string {
+  private get resultsSchemaUrl(): string {
     const baseUrl = this.settingsService.getEffectiveRunnerApiBaseUrl();
     return `${baseUrl}/schema/results`;
   }
 
+  private get configurationSchemaUrl(): string {
+    const baseUrl = this.settingsService.getEffectiveRunnerApiBaseUrl();
+    return `${baseUrl}/schema/configuration`;
+  }
+
+  private formatValidationErrors(validate: ValidateFunction): string[] {
+    return validate.errors?.map((error: ErrorObject) => {
+      const path = error.instancePath ? error.instancePath.substring(1) : 'root';
+      return `${path}: ${error.message}`;
+    }) || ['Unknown validation error'];
+  }
+
   async validateResults(data: any): Promise<{ isValid: boolean; errors: string[] }> {
     try {
-      // Load schema if not already loaded
-      if (!this.schema) {
-        await this.loadSchema();
+      if (!this.resultsSchema) {
+        await this.loadResultsSchema();
       }
-
-      // Validate data against schema
-      const validate = this.ajv.compile(this.schema);
+      const validate = this.ajv.compile(this.resultsSchema);
       const isValid = validate(data);
-
       if (isValid) {
         return { isValid: true, errors: [] };
-      } else {
-        // Format Ajv errors into readable messages
-        const errors = validate.errors?.map(error => {
-          const path = error.instancePath ? error.instancePath.substring(1) : 'root';
-          return `${path}: ${error.message}`;
-        }) || ['Unknown validation error'];
-        
-        return { isValid: false, errors };
       }
+      return { isValid: false, errors: this.formatValidationErrors(validate) };
     } catch (error) {
-      console.error('Error during validation:', error);
-      return { 
-        isValid: false, 
-        errors: [`Validation failed: ${(error as Error).message}`] 
+      console.error('Error during results validation:', error);
+      return {
+        isValid: false,
+        errors: [`Validation failed: ${(error as Error).message}`]
       };
     }
   }
 
-  async loadSchema(): Promise<any> {
-    if (this.schema) {
-      return this.schema;
-    }
-
+  async validateConfiguration(data: any): Promise<{ isValid: boolean; errors: string[] }> {
     try {
-      const response = await fetch(this.schemaUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to load schema from server: ${response.statusText}`);
+      if (!this.configurationSchema) {
+        await this.loadConfigurationSchema();
       }
-      
-      this.schema = await response.json();
-      console.log('Schema loaded successfully from server');
-      return this.schema;
+      const validate = this.ajv.compile(this.configurationSchema);
+      const isValid = validate(data);
+      if (isValid) {
+        return { isValid: true, errors: [] };
+      }
+      return { isValid: false, errors: this.formatValidationErrors(validate) };
     } catch (error) {
-      console.error('Error loading schema from server:', error);
-      throw error;
+      console.error('Error during configuration validation:', error);
+      return {
+        isValid: false,
+        errors: [`Validation failed: ${(error as Error).message}`]
+      };
     }
+  }
+
+  async loadResultsSchema(): Promise<any> {
+    if (this.resultsSchema) {
+      return this.resultsSchema;
+    }
+    const response = await fetch(this.resultsSchemaUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to load results schema from server: ${response.statusText}`);
+    }
+    this.resultsSchema = await response.json();
+    return this.resultsSchema;
+  }
+
+  async loadConfigurationSchema(): Promise<any> {
+    if (this.configurationSchema) {
+      return this.configurationSchema;
+    }
+    const response = await fetch(this.configurationSchemaUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to load configuration schema from server: ${response.statusText}`);
+    }
+    this.configurationSchema = await response.json();
+    return this.configurationSchema;
+  }
+
+  getResultsSchema(): any {
+    return this.resultsSchema;
+  }
+
+  getConfigurationSchema(): any {
+    return this.configurationSchema;
   }
 }
