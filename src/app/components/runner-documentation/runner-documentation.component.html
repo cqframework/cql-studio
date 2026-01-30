@@ -116,23 +116,27 @@
                   <tr>
                     <th>Setting</th>
                     <th>Description</th>
+                    <th>Required</th>
                     <th>Example</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td><code>Base URL</code></td>
+                    <td><code>BaseUrl</code></td>
                     <td>FHIR server base URL for CQL operations</td>
+                    <td>Yes</td>
                     <td><code>https://cloud.alphora.com/sandbox/r4/cds/fhir</code></td>
                   </tr>
                   <tr>
-                    <td><code>CQL Operation</code></td>
+                    <td><code>CqlOperation</code></td>
                     <td>FHIR operation for CQL execution</td>
+                    <td>Yes</td>
                     <td><code>$cql</code></td>
                   </tr>
                   <tr>
-                    <td><code>Original Base URL</code></td>
-                    <td>Optional original base URL for reference</td>
+                    <td><code>ogBaseUrl</code></td>
+                    <td>Original base URL for fallback or reference</td>
+                    <td>No</td>
                     <td><code>https://example.com/fhir</code></td>
                   </tr>
                 </tbody>
@@ -144,19 +148,58 @@
                   <tr>
                     <th>Setting</th>
                     <th>Description</th>
+                    <th>Required</th>
                     <th>Example</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
                     <td><code>CQL File Version</code></td>
-                    <td>Version identifier for CQL files</td>
+                    <td>Version identifier for CQL files (semantic versioning)</td>
+                    <td>Yes</td>
                     <td><code>1.0.000</code></td>
                   </tr>
                   <tr>
                     <td><code>CQL Output Path</code></td>
                     <td>Directory path for CQL output files</td>
+                    <td>Yes</td>
                     <td><code>./cql</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>CQL Version</code></td>
+                    <td>CQL engine version for version-based test filtering</td>
+                    <td>No</td>
+                    <td><code>1.5.3</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>testsRunDescription</code></td>
+                    <td>Information about this test run</td>
+                    <td>No</td>
+                    <td><code>Quick Test Run</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>cqlTranslator</code></td>
+                    <td>Which CQL translator is used in this test run</td>
+                    <td>No</td>
+                    <td><code>cql4browsers</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>cqlTranslatorVersion</code></td>
+                    <td>CQL translator version used in this test run</td>
+                    <td>No</td>
+                    <td><code>1.0.0</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>cqlEngine</code></td>
+                    <td>Which CQL engine is used in this test run</td>
+                    <td>No</td>
+                    <td><code>cql4browsers</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>cqlEngineVersion</code></td>
+                    <td>CQL engine version used in this test run</td>
+                    <td>No</td>
+                    <td><code>1.0.0</code></td>
                   </tr>
                 </tbody>
               </table>
@@ -185,14 +228,22 @@
                   <tr>
                     <th>Setting</th>
                     <th>Description</th>
+                    <th>Required</th>
                     <th>Example</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td><code>Results Path</code></td>
-                    <td>Directory path for test results output</td>
+                    <td><code>ResultsPath</code></td>
+                    <td>Directory path where test results are stored</td>
+                    <td>Yes</td>
                     <td><code>./results</code></td>
+                  </tr>
+                  <tr>
+                    <td><code>SkipList</code></td>
+                    <td>Array of test skip entries (testsName, groupName, testName, reason)</td>
+                    <td>Yes (array, may be empty)</td>
+                    <td><code>[]</code></td>
                   </tr>
                 </tbody>
               </table>

@@ -38,7 +38,7 @@
           <!-- <span class="badge bg-secondary ms-2 small">
             {{ getTypeLabel(item) }}
           </span> -->
-          <div class="text-muted small">
+          <div class="text-muted small text-truncate">
             {{ getAddedAtLabel(item) }}
           </div>
         </div>
@@ -63,8 +63,8 @@
           [title]="canInsertIntoCql(item) ? 'Insert CQL declaration into active editor' : 'Open a CQL library and ensure this item has the required URL/system/code to insert'">
           <i class="bi bi-file-earmark-plus"></i>
         </button>
-        <button class="btn  btn-sm" type="button" (click)="onRemoveItem(item, $event)" title="Remove from clipboard">
-          <i class="bi bi-clipboard-x"></i>
+        <button class="btn btn-danger btn-sm" type="button" (click)="onRemoveItem(item, $event)" title="Remove from clipboard">
+          <i class="bi bi-trash"></i>
         </button>
       </div>
     </div>

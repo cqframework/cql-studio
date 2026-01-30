@@ -17,12 +17,6 @@ import { SettingsService } from '../../../../services/settings.service';
   styleUrls: ['./navigation-tab.component.scss']
 })
 export class NavigationTabComponent implements OnInit {
-  // Library search
-  public librarySearchTerm: string = '';
-  public librarySearchResults: Library[] = [];
-  public isSearchingLibraries: boolean = false;
-  public showLibrarySearchResults: boolean = false;
-
   // Paginated Library List
   public paginatedLibraries: Library[] = [];
   public currentPage: number = 1;
@@ -54,96 +48,6 @@ export class NavigationTabComponent implements OnInit {
     this.loadPaginatedLibraries();
   }
 
-  // Library search methods
-  onLibrarySearchInput(event: any): void {
-    const searchTerm = event.target.value;
-    this.librarySearchTerm = searchTerm;
-    
-    if (searchTerm.trim()) {
-      this.isSearchingLibraries = true;
-      this.libraryService.search(searchTerm).subscribe({
-        next: (bundle: Bundle<Library>) => {
-          this.isSearchingLibraries = false;
-          if (bundle.entry && bundle.entry.length > 0) {
-            this.librarySearchResults = bundle.entry.map(entry => entry.resource!);
-            this.showLibrarySearchResults = true;
-          } else {
-            this.librarySearchResults = [];
-            this.showLibrarySearchResults = true;
-          }
-        },
-        error: (error: any) => {
-          this.isSearchingLibraries = false;
-          console.error('Error searching libraries:', error);
-        }
-      });
-    } else {
-      this.isSearchingLibraries = false;
-      this.showLibrarySearchResults = false;
-      this.librarySearchResults = [];
-    }
-  }
-
-  addLibraryFromSearch(library: Library): void {
-    if (library.id) {
-      const existingLibrary = this.ideStateService.libraryResources().find(lib => lib.id === library.id);
-      
-      if (existingLibrary) {
-        // Library is already open, set it as active
-        this.ideStateService.selectLibraryResource(library.id);
-        this.clearLibrarySearch();
-        return;
-      }
-      
-      // Fetch the library directly from the server to get the latest content
-      // This ensures we get any saved changes instead of using cached data
-      this.libraryService.get(library.id).subscribe({
-        next: (freshLibrary) => {
-          // Extract CQL content from the fresh FHIR library
-          let cqlContent = '';
-          if (freshLibrary.content) {
-            for (const content of freshLibrary.content) {
-              if (content.contentType === 'text/cql' && content.data) {
-                try {
-                  cqlContent = atob(content.data);
-                  break;
-                } catch (e) {
-                  console.error('Error decoding CQL content:', e);
-                }
-              }
-            }
-          }
-          
-          if (freshLibrary.id) {
-            const libraryResource = {
-              id: freshLibrary.id,
-              name: freshLibrary.name || freshLibrary.id,
-              title: freshLibrary.title || freshLibrary.name || freshLibrary.id,
-              version: freshLibrary.version || '1.0.0',
-              description: freshLibrary.description || `Library ${freshLibrary.name || freshLibrary.id}`,
-              url: freshLibrary.url || this.libraryService.urlFor(freshLibrary.id),
-              cqlContent: cqlContent,
-              originalContent: cqlContent,
-              isActive: false,
-              isDirty: false,
-              library: freshLibrary
-            };
-            
-            this.ideStateService.addLibraryResource(libraryResource);
-            this.ideStateService.selectLibraryResource(freshLibrary.id);
-          }
-          this.clearLibrarySearch();
-        },
-        error: (error) => {
-          console.error('Error fetching library from server:', error);
-          // Fallback to using the cached library data if server fetch fails
-          this.addLibraryFromCachedData(library);
-          this.clearLibrarySearch();
-        }
-      });
-    }
-  }
-
   createNewLibraryResource(): void {
     const newId = `new-library-${Date.now()}`;
     const effectiveFhirBaseUrl = this.settingsService.getEffectiveFhirBaseUrl();
@@ -165,13 +69,6 @@ export class NavigationTabComponent implements OnInit {
     
     this.ideStateService.addLibraryResource(libraryResource);
     this.ideStateService.selectLibraryResource(newId);
-  }
-
-  clearLibrarySearch(): void {
-    this.librarySearchTerm = '';
-    this.librarySearchResults = [];
-    this.showLibrarySearchResults = false;
-    this.isSearchingLibraries = false;
   }
 
   // Paginated library methods

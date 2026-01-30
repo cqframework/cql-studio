@@ -2,24 +2,7 @@
   <!-- Library Management -->
   <div class="mb-3">
 
-    <!-- Library Search -->
     <div class="px-3 mb-3 mt-3">
-      <input type="text" class="form-control form-control-sm mb-2" placeholder="Search FHIR server CQL libraries..."
-        [(ngModel)]="librarySearchTerm" (input)="onLibrarySearchInput($event)">
-      @if (showLibrarySearchResults) {
-      <div class="border rounded">
-        @for (library of librarySearchResults; track library.id) {
-        <button class="btn rounded-0 w-100 text-start d-flex justify-content-between align-items-center"
-          (click)="addLibraryFromSearch(library)">
-          <div class="flex-fill">
-            <strong class="d-block text-white">{{ library.name || library.id }}</strong>
-            <small class="text-muted">v{{ library.version || 'N/A' }}</small>
-          </div>
-          <i class="bi bi-folder-open"></i>
-        </button>
-        }
-      </div>
-      }
       <button class="btn btn-primary btn-sm w-100" (click)="createNewLibraryResource()" title="Create New Library">
         <i class="bi bi-plus me-1"></i>
         Create New Library

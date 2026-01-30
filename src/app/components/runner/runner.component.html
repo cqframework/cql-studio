@@ -116,14 +116,10 @@
                 <label for="cqlFileVersion">CQL File Version</label>
               </div>
               <!-- <div class="form-floating mb-3">
-                  <input 
-                    type="text" 
-                    class="form-control" 
-                    id="cqlOutputPath"
-                    [(ngModel)]="config().Build.CqlOutputPath"
-                    placeholder="./cql">
-                  <label for="cqlOutputPath">CQL Output Path</label>
-                </div> -->
+                <input type="text" class="form-control" id="cqlOutputPath"
+                  [(ngModel)]="config().Build.CqlOutputPath" placeholder="./cql">
+                <label for="cqlOutputPath">CQL Output Path</label>
+              </div> -->
               <div class="form-floating mb-3">
                 <input type="text" class="form-control" id="cqlVersion" [(ngModel)]="config().Build.CqlVersion"
                   placeholder="1.5.3" pattern="^\d+\.\d+(\.\d+)?$">
@@ -136,6 +132,27 @@
                   [(ngModel)]="config().Build.testsRunDescription" placeholder="Quick Test Run">
                 <label for="testsRunDescription">Test Run Description</label>
               </div>
+              <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="cqlTranslator"
+                  [(ngModel)]="config().Build.cqlTranslator" placeholder="cql4browsers">
+                <label for="cqlTranslator">CQL Translator (Optional)</label>
+              </div>
+              <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="cqlTranslatorVersion"
+                  [(ngModel)]="config().Build.cqlTranslatorVersion" placeholder="1.0.0">
+                <label for="cqlTranslatorVersion">CQL Translator Version (Optional)</label>
+              </div>
+              <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="cqlEngine"
+                  [(ngModel)]="config().Build.cqlEngine" placeholder="cql4browsers">
+                <label for="cqlEngine">CQL Engine (Optional)</label>
+              </div>
+              <div class="form-floating mb-3">
+                <input type="text" class="form-control" id="cqlEngineVersion"
+                  [(ngModel)]="config().Build.cqlEngineVersion" placeholder="1.0.0">
+                <label for="cqlEngineVersion">CQL Engine Version (Optional)</label>
+              </div>
+              <hr>
               <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="quickTest" [(ngModel)]="config().Debug.QuickTest">
                 <label class="form-check-label" for="quickTest">

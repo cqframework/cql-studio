@@ -36,7 +36,11 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
       CqlFileVersion: '1.0.000',
       CqlOutputPath: './cql',
       CqlVersion: '1.5.3',
-      testsRunDescription: 'Quick Test Run'
+      testsRunDescription: 'Quick Test Run',
+      cqlTranslator: '',
+      cqlTranslatorVersion: '',
+      cqlEngine: '',
+      cqlEngineVersion: ''
     },
     Debug: {
       QuickTest: true
@@ -273,7 +277,11 @@ export class RunnerComponent implements OnInit, AfterViewInit, OnDestroy {
         CqlFileVersion: '1.0.000',
         CqlOutputPath: './cql',
         CqlVersion: '1.5.3',
-        testsRunDescription: 'Quick Test Run'
+        testsRunDescription: 'Quick Test Run',
+        cqlTranslator: '',
+        cqlTranslatorVersion: '',
+        cqlEngine: '',
+        cqlEngineVersion: ''
       },
       Debug: {
         QuickTest: true
