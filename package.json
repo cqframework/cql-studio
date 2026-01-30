@@ -78,7 +78,7 @@
     "@angular/build": "^21.1.2",
     "@angular/cli": "^21.1.2",
     "@angular/compiler-cli": "^21.1.2",
-    "@playwright/test": "^1.58.0",
+    "@playwright/test": "^1.58.1",
     "baseline-browser-mapping": "^2.9.19",
     "jsdom": "^27.4.0",
     "typescript": "~5.9.3",
