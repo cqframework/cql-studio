@@ -23,60 +23,64 @@
       <div class="col">
         <div class="card bg-info cql-engine-card">
           <div class="card-header">
-            <div class="d-flex align-items-center justify-content-between">
-              <div class="d-flex align-items-center">
+            <div class="d-flex flex-column flex-md-row flex-md-nowrap align-items-stretch align-items-md-center justify-content-md-between gap-3">
+              <div class="d-flex align-items-center flex-shrink-0">
                 <i class="fas fa-info-circle me-2"></i>
-                <h6 class="mb-0">{{ testResults()?.cqlengine?.cqlEngine ? testResults()?.cqlengine?.cqlEngine : 'Test Run & Engine Information' }}</h6>
+                <h4 class="mb-0">{{ testResults()?.cqlengine?.cqlEngine ? testResults()?.cqlengine?.cqlEngine : 'Test Run & Engine Information' }}</h4>
               </div>
-              <div class="d-flex align-items-center gap-4">
-                <!-- Test Run Info -->
-                <div class="text-end">
+              <div class="row g-2 g-md-3 flex-grow-1 flex-md-grow-0">
+                <div class="col-6 col-md-auto text-end">
                   <small class="d-block text-white-50">Total Tests</small>
                   <span class="badge bg-success">{{ getTotalTests() }}</span>
                 </div>
-                <div class="text-end">
+                <div class="col-6 col-md-auto text-end">
                   <small class="d-block text-white-50">Pass Rate</small>
                   <span class="badge bg-info">{{ getPassRate() | number:'1.1-1' }}%</span>
                 </div>
-                <div class="text-end">
+                <div class="col-6 col-md-auto text-end">
                   <small class="d-block text-white-50">Run Date</small>
                   <small class="text-white">{{ testResults()?.testsRunDateTime | date:'short' }}</small>
                 </div>
-                <!-- CQL Engine Info -->
-                @if (testResults()?.cqlengine?.apiUrl) {
-                  <div class="text-end">
-                    <small class="d-block text-white-50">API URL</small>
-                    <code class="text-white">{{ testResults()?.cqlengine?.apiUrl }}</code>
-                  </div>
-                }
                 @if (testResults()?.cqlengine?.cqlVersion) {
-                  <div class="text-end">
+                  <div class="col-6 col-md-auto text-end">
                     <small class="d-block text-white-50">CQL Version</small>
                     <span class="badge bg-light text-dark">{{ testResults()?.cqlengine?.cqlVersion }}</span>
                   </div>
                 }
                 @if (testResults()?.cqlengine?.cqlTranslator) {
-                  <div class="text-end">
+                  <div class="col-6 col-md-auto text-end">
                     <small class="d-block text-white-50">Translator</small>
-                    <span class="badge bg-light text-dark">{{ testResults()?.cqlengine?.cqlTranslator }} {{ testResults()?.cqlengine?.cqlTranslatorVersion }}</span>
+                    <span class="badge bg-light text-dark">{{ testResults()?.cqlengine?.cqlTranslator }}</span>
+                  </div>
+                }
+                @if (testResults()?.cqlengine?.cqlTranslatorVersion) {
+                  <div class="col-6 col-md-auto text-end">
+                    <small class="d-block text-white-50">Translator Version</small>
+                    <span class="badge bg-light text-dark">{{ testResults()?.cqlengine?.cqlTranslatorVersion }}</span>
                   </div>
                 }
                 @if (testResults()?.cqlengine?.cqlEngineVersion) {
-                  <div class="text-end">
+                  <div class="col-6 col-md-auto text-end">
                     <small class="d-block text-white-50">Engine Version</small>
                     <span class="badge bg-light text-dark">{{ testResults()?.cqlengine?.cqlEngineVersion }}</span>
                   </div>
                 }
               </div>
             </div>
+            @if (testResults()?.cqlengine?.apiUrl) {
+              <div class="mt-2">
+                <small class="d-block text-white-50">API URL</small>
+                <code class="text-white text-break">{{ testResults()?.cqlengine?.apiUrl }}</code>
+              </div>
+            }
             @if (testResults()?.cqlengine?.description) {
               <div class="mt-2">
-                <small class="text-white-75">{{ testResults()?.cqlengine?.description }}</small>
+                <small class="text-white-75"><strong>Engine Description:</strong> {{ testResults()?.cqlengine?.description }}</small>
               </div>
             }
             @if (testResults()?.testsRunDescription) {
               <div class="mt-2">
-                <small class="text-white-75"><strong>Description:</strong> {{ testResults()?.testsRunDescription }}</small>
+                <small class="text-white-75"><strong>Run Description:</strong> {{ testResults()?.testsRunDescription }}</small>
               </div>
             }
           </div>
