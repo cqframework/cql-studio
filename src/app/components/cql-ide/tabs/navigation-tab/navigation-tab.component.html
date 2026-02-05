@@ -62,7 +62,7 @@
         @for (library of paginatedLibraries; track library.id) {
         <div class="d-flex align-items-center justify-content-between p-2 border-bottom library-item"
           (click)="addLibraryFromPaginatedList(library)">
-          <div class="flex-fill">
+          <div class="flex-fill library-item-content">
             <div class="fw-medium text-truncate text-white">{{ getLibraryDisplayName(library) }}</div>
             <div class="d-flex flex-column gap-1 small text-muted">
               <span class="fw-medium text-info">v{{ getLibraryVersion(library) }}</span>

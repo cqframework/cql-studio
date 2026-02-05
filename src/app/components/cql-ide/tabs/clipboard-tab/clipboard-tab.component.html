@@ -19,51 +19,47 @@
         </button>
         <button id="clipboardClear" class="btn btn-outline-danger btn-sm ms-1" (click)="onClearClipboard()"
           [disabled]="items().length === 0" title="Clear clipboard">
-          <i class="bi bi-clipboard-x"></i>
+          <i class="bi bi-trash"></i>
         </button>
       </div>
     </div>
   </div>
 
   <!-- Clipboard Items -->
-  <div class="flex-fill overflow-auto">
+  <div class="flex-fill overflow-auto overflow-x-hidden">
     @for (item of items(); track item.id) {
     <div class="clipboard-item d-flex align-items-center px-2 py-1 border-bottom">
-      <i class="bi bi-{{ getIconForItem(item) }} me-2 text-info" style="font-size: 0.8rem;"></i>
-      <div class="flex-fill">
-        <div class="d-flex justify-content-between align-items-center">
+      <i class="bi bi-{{ getIconForItem(item) }} me-2 text-info flex-shrink-0" style="font-size: 0.8rem;"></i>
+      <div class="clipboard-item-content flex-fill min-w-0">
+        <div class="d-flex justify-content-between align-items-center gap-2 min-w-0">
           <span class="text-light small text-truncate">
             {{ item.name || getTypeLabel(item) }}
           </span>
-          <!-- <span class="badge bg-secondary ms-2 small">
-            {{ getTypeLabel(item) }}
-          </span> -->
-          <div class="text-muted small text-truncate">
+          <div class="text-muted small text-truncate flex-shrink-0">
             {{ getAddedAtLabel(item) }}
           </div>
         </div>
-        <div class="text-muted small">
+        <div class="clipboard-item-meta text-muted small d-flex align-items-center gap-1 min-w-0">
           @if (item.urlOrSystem) {
-          <span class="me-2 text-truncate d-inline-block" style="max-width: 220px;">
+          <span class="clipboard-item-meta-field text-truncate">
             {{ item.urlOrSystem }}
           </span>
           }
           @if (item.code) {
-          <code>{{ item.code }}</code>
+          <code class="clipboard-item-meta-field text-truncate">{{ item.code }}</code>
           }
           @if (item.display) {
-          <span class="ms-1">{{ item.display }}</span>
+          <span class="clipboard-item-meta-field text-truncate">{{ item.display }}</span>
           }
         </div>
-    
       </div>
-      <div class="ms-2 d-flex align-items-center gap-1">
+      <div class="clipboard-item-actions ms-2 d-flex align-items-center gap-1 flex-shrink-0">
         <button id="clipboardInsertButton" class="btn btn-primary btn-sm" type="button"
           [disabled]="!canInsertIntoCql(item)" (click)="onInsertItem(item, $event)"
           [title]="canInsertIntoCql(item) ? 'Insert CQL declaration into active editor' : 'Open a CQL library and ensure this item has the required URL/system/code to insert'">
-          <i class="bi bi-file-earmark-plus"></i>
+          <i class="bi bi-brush"></i>
         </button>
-        <button class="btn btn-danger btn-sm" type="button" (click)="onRemoveItem(item, $event)" title="Remove from clipboard">
+        <button class="btn btn-sm" type="button" (click)="onRemoveItem(item, $event)" title="Remove from clipboard">
           <i class="bi bi-trash"></i>
         </button>
       </div>

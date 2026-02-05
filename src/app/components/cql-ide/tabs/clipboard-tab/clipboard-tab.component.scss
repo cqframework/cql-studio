@@ -4,5 +4,20 @@
 
 .clipboard-item {
   cursor: default;
+  min-width: 0;
+}
+
+.clipboard-item-content {
+  min-width: 0;
+}
+
+.clipboard-item-meta {
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+
+.clipboard-item-meta-field {
+  min-width: 0;
+  max-width: 100%;
 }
 

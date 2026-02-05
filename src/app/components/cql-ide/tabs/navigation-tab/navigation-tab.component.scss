@@ -135,6 +135,10 @@
 .library-item {
   cursor: pointer;
   transition: all 0.2s;
+
+  .library-item-content {
+    min-width: 0;
+  }
   
   &:hover {
     background-color: rgba(255, 255, 255, 0.05);
