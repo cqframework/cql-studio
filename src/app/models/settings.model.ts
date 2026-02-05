@@ -23,7 +23,7 @@ export class Settings {
     public ollamaBaseUrl: string = '';
     public ollamaModel: string = '';
     public serverBaseUrl: string = '';
-    public braveSearchApiKey: string = '';
+    public searxngBaseUrl: string = '';
     public enableAiAssistant: boolean = false;
     public useMCPTools: boolean = false;
     public autoApplyCodeEdits: boolean = false;

@@ -3,7 +3,8 @@
 import { Injectable, inject } from '@angular/core';
 import { BaseService } from './base.service';
 import { Library, Parameters, Bundle } from 'fhir/r4';
-import { Observable } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
+import { map, catchError } from 'rxjs/operators';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { SettingsService } from './settings.service';
 
@@ -77,6 +78,33 @@ export class LibraryService extends BaseService {
 
 	get(id: string) {
 		return this.http.get<Library>(this.urlFor(id), { headers: this.headers() });
+	}
+
+	getCqlContent(library: Library): Observable<{ cqlContent: string; fromUrl: boolean }> {
+		const content = library.content?.find(c => c.contentType === 'text/cql');
+		if (!content) {
+			return of({ cqlContent: '', fromUrl: false });
+		}
+		if (content.data) {
+			try {
+				const cqlContent = atob(content.data);
+				return of({ cqlContent, fromUrl: false });
+			} catch {
+				return of({ cqlContent: '', fromUrl: false });
+			}
+		}
+		if (content.url) {
+			const headers = new HttpHeaders({ 'Accept': 'text/plain, text/cql' });
+			return this.http.get(content.url, { headers, responseType: 'text' }).pipe(
+				map(body => ({ cqlContent: body, fromUrl: true })),
+				catchError(err => {
+					const message = err?.message ?? err?.statusText ?? String(err);
+					const status = err?.status;
+					return throwError(() => new Error(status ? `HTTP ${status}: ${message}` : message));
+				})
+			);
+		}
+		return of({ cqlContent: '', fromUrl: false });
 	}
 
 	getExampleCql(url: string) {

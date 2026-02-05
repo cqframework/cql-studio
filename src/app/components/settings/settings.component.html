@@ -194,11 +194,11 @@
                         </div>
 
                         <div class="form-floating mt-3">
-                            <input type="text" class="form-control" id="braveSearchApiKey" name="braveSearchApiKey"
-                                [(ngModel)]="settingsService.settings().braveSearchApiKey"
-                                [placeholder]="settingsService.getDefaultBraveSearchApiKey()">
-                            <label for="braveSearchApiKey">Brave Search API Key</label>
-                            <small class="form-text">Optional API key for Brave Search integration. Defaults to CQL_STUDIO_BRAVE_SEARCH_API_KEY or {{ settingsService.getDefaultBraveSearchApiKey() || 'blank' }}.</small>
+                            <input type="url" class="form-control" id="searxngBaseUrl" name="searxngBaseUrl"
+                                [(ngModel)]="settingsService.settings().searxngBaseUrl"
+                                [placeholder]="settingsService.getDefaultSearxngBaseUrl()">
+                            <label for="searxngBaseUrl">SearXNG Base URL (Optional)</label>
+                            <small class="form-text">Base URL of a SearXNG instance for anonymous web search (e.g. https://search.example.org). No API key required. Defaults to CQL_STUDIO_SEARXNG_BASE_URL or blank.</small>
                         </div>
 
                         <div class="form-check form-switch mt-3 ms-1">

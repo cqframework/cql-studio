@@ -31,6 +31,8 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   placeholder = input<string>('Enter CQL code here...');
   height = input<string>('500px');
   readonly = input<boolean>(false);
+  contentLoading = input<boolean>(false);
+  contentLoadError = input<string | null>(null);
   isNewLibrary = input<boolean>(false);
   
   contentChange = output<{ cursorPosition: { line: number; column: number }, wordCount: number, content: string }>();
@@ -91,6 +93,22 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
         this.updateCanExecute();
       }
     });
+
+    // When contentLoading or contentLoadError is set, destroy editor; when both clear, init editor if container is present
+    effect(() => {
+      const loading = this.contentLoading();
+      const loadError = this.contentLoadError();
+      if ((loading || loadError) && this.editor) {
+        this.resizeObserver?.disconnect();
+        this.resizeObserver = undefined;
+        this.editor.destroy();
+        this.editor = undefined;
+      }
+      if (!loading && !loadError && this.editorContainer()?.nativeElement && !this.editor && !this.isInitializing) {
+        this.initializeEditor();
+        this.setupResizeObserver();
+      }
+    });
     
     // Watch for reload trigger signal
     effect(() => {
@@ -141,11 +159,11 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
 
   ngAfterViewInit(): void {
     console.log('Editor ngAfterViewInit called');
-    if (!this.isInitializing && !this.editor) {
-      // Try immediate initialization first
+    if (this.contentLoading() || this.contentLoadError()) {
+      return;
+    }
+    if (!this.isInitializing && !this.editor && this.editorContainer()?.nativeElement) {
       this.initializeEditor();
-      
-      // Also set up ResizeObserver as a fallback
       this.setupResizeObserver();
     } else {
       console.log('Skipping initialization - already initializing or editor exists');

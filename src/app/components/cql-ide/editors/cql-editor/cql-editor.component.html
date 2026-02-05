@@ -1,50 +1,70 @@
 <div class="cql-editor-container">
-  <!-- Editor Toolbar -->
-  <div class="editor-toolbar border-bottom d-flex align-items-center justify-content-between px-3 py-2">
-    <div class="d-flex align-items-center gap-2">
-      <button 
-        class="btn btn-success btn-sm" 
-        (click)="onExecuteLibrary()" 
-        [disabled]="isExecuting" 
-        title="Execute Library"
-      >
-        @if (!isExecuting) {
-          <i class="bi bi-play me-1"></i>
-        }
-        @if (isExecuting) {
+  @if (contentLoading()) {
+    <div class="d-flex align-items-center justify-content-center py-5">
+      <span class="me-2">Loading library URL...</span>
+      <div class="spinner-border spinner-border-sm" role="status" aria-label="Loading">
+        <span class="visually-hidden">Loading</span>
+      </div>
+    </div>
+  } @else {
+    <!-- Editor Toolbar (shown whenever not loading, including when URL load failed) -->
+    <div class="editor-toolbar border-bottom d-flex align-items-center justify-content-between px-3 py-2">
+      <div class="d-flex align-items-center gap-2">
+        <button 
+          class="btn btn-success btn-sm" 
+          (click)="onExecuteLibrary()" 
+          [disabled]="isExecuting" 
+          title="Execute Library"
+        >
+          @if (!isExecuting) {
+            <i class="bi bi-play me-1"></i>
+          }
+          @if (isExecuting) {
+            <i class="bi bi-arrow-clockwise me-1"></i>
+          }
+          Execute
+        </button>
+        <button 
+          class="btn btn-secondary btn-sm" 
+          (click)="onReloadLibrary()" 
+          title="Reload from Server"
+        >
           <i class="bi bi-arrow-clockwise me-1"></i>
+          Reload
+        </button>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <button 
+          class="btn btn-link btn-sm" 
+          (click)="onFormatCql()" 
+          title="Format CQL"
+        >
+          <i class="bi bi-code-slash"></i>
+        </button>
+        @if (readonly()) {
+          <span class="badge bg-secondary align-self-center">Read Only</span>
+        } @else {
+          <button 
+            class="btn btn-primary btn-sm" 
+            (click)="onSaveLibrary()" 
+            [disabled]="!isFormValid()" 
+            title="Save Library"
+          >
+            <i class="bi bi-upload me-1"></i>
+            Save
+          </button>
         }
-        Execute
-      </button>
-      <button 
-        class="btn btn-secondary btn-sm" 
-        (click)="onReloadLibrary()" 
-        title="Reload from Server"
-      >
-        <i class="bi bi-arrow-clockwise me-1"></i>
-        Reload
-      </button>
+      </div>
     </div>
-    <div class="d-flex align-items-center gap-2">
-      <button 
-        class="btn btn-link btn-sm" 
-        (click)="onFormatCql()" 
-        title="Format CQL"
-      >
-        <i class="bi bi-code-slash"></i>
-      </button>
-      <button 
-        class="btn btn-primary btn-sm" 
-        (click)="onSaveLibrary()" 
-        [disabled]="!isFormValid()" 
-        title="Save Library"
-      >
-        <i class="bi bi-upload me-1"></i>
-        Save
-      </button>
-    </div>
-  </div>
-  
-  <!-- Editor Container -->
-  <div #editorContainer class="cql-editor"></div>
+
+    @if (contentLoadError()) {
+      <div class="alert alert-warning d-flex align-items-start gap-2 m-3 mb-0" role="alert">
+        <i class="bi bi-exclamation-triangle-fill flex-shrink-0 mt-1" aria-hidden="true"></i>
+        <p class="mb-0">{{ contentLoadError() }}</p>
+      </div>
+    } @else {
+      <!-- Editor Container -->
+      <div #editorContainer class="cql-editor"></div>
+    }
+  }
 </div>

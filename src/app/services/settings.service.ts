@@ -113,8 +113,8 @@ export class SettingsService {
           parsedSettings.serverBaseUrl = '';
           shouldSave = true;
         }
-        if (parsedSettings.braveSearchApiKey == null) {
-          parsedSettings.braveSearchApiKey = '';
+        if (parsedSettings.searxngBaseUrl == null) {
+          parsedSettings.searxngBaseUrl = '';
           shouldSave = true;
         }
         if (parsedSettings.enableAiAssistant == null) {
@@ -218,9 +218,15 @@ export class SettingsService {
     return envValue && envValue.trim() !== '' ? envValue : 'http://localhost:3003';
   }
 
-  getDefaultBraveSearchApiKey(): string {
-    const envValue = (window as any)['CQL_STUDIO_BRAVE_SEARCH_API_KEY'];
+  getDefaultSearxngBaseUrl(): string {
+    const envValue = (window as any)['CQL_STUDIO_SEARXNG_BASE_URL'];
     return envValue && envValue.trim() !== '' ? envValue : '';
+  }
+
+  getEffectiveSearxngBaseUrl(): string {
+    const settingValue = this.settings().searxngBaseUrl;
+    const url = settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultSearxngBaseUrl();
+    return url ? url.replace(/\/+$/, '') : '';
   }
 
   getEffectiveRunnerApiBaseUrl(): string {
@@ -273,11 +279,6 @@ export class SettingsService {
   getEffectiveServerBaseUrl(): string {
     const settingValue = this.settings().serverBaseUrl;
     return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultServerBaseUrl();
-  }
-
-  getEffectiveBraveSearchApiKey(): string {
-    const settingValue = this.settings().braveSearchApiKey;
-    return settingValue && settingValue.trim() !== '' ? settingValue : this.getDefaultBraveSearchApiKey();
   }
 
   updateSettings(updates: Partial<Settings>): void {

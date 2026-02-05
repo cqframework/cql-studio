@@ -11,7 +11,8 @@ import { ConversationManagerService } from './conversation-manager.service';
 import { AiPlanningService } from './ai-planning.service';
 import { Plan, PlanStep } from '../models/plan.model';
 
-// Ollama API types (based on official Ollama API)
+// Ollama API types (structured options per https://github.com/ollama/ollama/blob/main/docs/api.md)
+
 export interface OllamaMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -32,6 +33,17 @@ export interface OllamaResponse {
   created_at: string;
   message: OllamaMessage;
   done: boolean;
+}
+
+/** GET /api/tags response: list of available models */
+export interface OllamaTagsResponse {
+  models: Array<{ name: string; modified_at?: string; size?: number; digest?: string; details?: unknown }>;
+}
+
+/** Streaming chunk: one NDJSON line from POST /api/chat with stream: true */
+export interface OllamaStreamChunk {
+  message?: { role?: string; content?: string };
+  done?: boolean;
 }
 
 export interface MCPTool {
@@ -79,13 +91,13 @@ export class AiService extends BaseService {
       return throwError(() => new Error('Ollama base URL not configured'));
     }
 
-    return this.http.get<{models: any[]}>(`${ollamaUrl}/api/tags`, {
+    return this.http.get<OllamaTagsResponse>(`${ollamaUrl}/api/tags`, {
       headers: this.getOllamaHeaders(),
       timeout: 10000 // 10 second timeout for connection test
     }).pipe(
       map(response => ({
         connected: true,
-        models: response.models.map(m => m.name)
+        models: response.models.map(m => m.name).filter((name): name is string => !!name)
       })),
       catchError(error => {
         console.error('Ollama connection test failed:', error);
@@ -350,7 +362,7 @@ export class AiService extends BaseService {
             for (const line of lines) {
               if (line.trim()) {
                 try {
-                  const data = JSON.parse(line);
+                  const data = JSON.parse(line) as OllamaStreamChunk;
                   if (data.message && data.message.content) {
                     const content = data.message.content;
                     fullResponse += content;
@@ -417,11 +429,11 @@ export class AiService extends BaseService {
       return throwError(() => new Error('MCP base URL not configured'));
     }
 
-    // Add brave_api_key for web_search and fetch_url tools
+    // Inject client-side config for tools that require it
     const params = { ...parameters };
-    if (toolName === 'web_search' || toolName === 'fetch_url') {
-      const braveApiKey = this.settingsService.getEffectiveBraveSearchApiKey();
-      params['brave_api_key'] = braveApiKey || '';
+    if (toolName === 'searxng_search') {
+      const searxngBaseUrl = this.settingsService.getEffectiveSearxngBaseUrl();
+      params['searxng_base_url'] = searxngBaseUrl || '';
     }
 
     const request: MCPRequest = {
@@ -639,7 +651,7 @@ ${cqlContent}
 - **DO NOT invent or make up syntax** - Use only documented CQL keywords, operators, functions, and expressions
 - **DO NOT create fictional language features** - Stick to standard CQL and FHIR concepts
 - **DO NOT fabricate FHIR resource types, properties, or relationships** - Only use officially documented FHIR resources (R4)
-- **When uncertain about syntax or features**, use web_search or fetch_url tools to find official documentation before generating code
+- **When uncertain about syntax or features**, use searxng_search or fetch_url tools to find official documentation before generating code
 - **If you're unsure about a CQL or FHIR concept**, search for official documentation rather than guessing
 
 **VALIDATION RULES:**
@@ -707,7 +719,7 @@ Reading current code, then adding BMI function.
 
 **EXACT FORMAT EXAMPLE:**
 Searching for information.
-{"tool": "web_search", "params": {"query": "CQL function syntax", "maxResults": 5}}
+{"tool": "searxng_search", "params": {"query": "CQL function syntax", "max_results": 5}}
 
 **CRITICAL RULES:**
 1. **NEVER answer without a tool call** - If user asks about ANY topic (CQL, FHIR, code, etc.), you MUST call a tool first
@@ -718,62 +730,67 @@ Searching for information.
 
 ### WEB & INFORMATION TOOLS
 
-1. **web_search** - Search the web anonymously using DuckDuckGo
-   Format: {"tool": "web_search", "params": {"query": "search terms", "maxResults": 10}}
-   Example: {"tool": "web_search", "params": {"query": "CQL library syntax", "maxResults": 5}}
-   Use when: User asks about CQL features, FHIR resources, clinical concepts, or any topic you need current information about
+1. **searxng_search** - Anonymous web search via SearXNG (no API key). Prefer when a SearXNG instance is configured. Optional: categories, language, time_range, safesearch, max_results.
+   Format: {"tool": "searxng_search", "params": {"query": "search terms", "max_results": 10}}
+   Example: {"tool": "searxng_search", "params": {"query": "CQL library syntax", "max_results": 5}}
+   Use when: Web search is needed and SearXNG base URL is configured.
 
-2. **fetch_url** - Download and parse content from a web page
+2. **web_search** - Web search via Brave Search API (requires API key). Use when SearXNG is not configured.
+   Format: {"tool": "web_search", "params": {"query": "search terms", "maxResults": 10}}
+   Example: {"tool": "web_search", "params": {"query": "CQL function syntax", "maxResults": 5}}
+   Use when: Web search is needed and only Brave Search is available.
+
+3. **fetch_url** - Download and parse content from a web page
    Format: {"tool": "fetch_url", "params": {"url": "https://example.com"}}
    Example: {"tool": "fetch_url", "params": {"url": "https://cql.hl7.org/"}}
-   Use when: User provides a URL or you find a relevant URL in search results that you need to read
+   Use when: User provides a URL or you find a relevant URL in search results that you need to read.
 
 ### CODE READING TOOLS
 
-3. **get_code** - Get the current CQL code from the active editor
+4. **get_code** - Get the current CQL code from the active editor
    Format: {"tool": "get_code", "params": {}}
    Format (specific library): {"tool": "get_code", "params": {"libraryId": "library-id"}}
    Example: {"tool": "get_code", "params": {}}
-   Use when: You need to see the current code to understand context, debug, or make suggestions
+   Use when: You need to see the current code to understand context, debug, or make suggestions.
 
-4. **list_libraries** - List all loaded CQL libraries
+5. **list_libraries** - List all loaded CQL libraries
    Format: {"tool": "list_libraries", "params": {}}
    Example: {"tool": "list_libraries", "params": {}}
-   Use when: User mentions multiple libraries or you need to know what libraries are available
+   Use when: User mentions multiple libraries or you need to know what libraries are available.
 
-5. **get_library_content** - Get full content of a specific library
+6. **get_library_content** - Get full content of a specific library
    Format: {"tool": "get_library_content", "params": {"libraryId": "library-id"}}
    Example: {"tool": "get_library_content", "params": {"libraryId": "MyLibrary-1.0.0"}}
-   Use when: You need to read a specific library's complete content
+   Use when: You need to read a specific library's complete content.
 
-6. **search_code** - Search for text patterns across CQL libraries
+7. **search_code** - Search for text patterns across CQL libraries
    Format: {"tool": "search_code", "params": {"query": "search text"}}
    Format (specific library): {"tool": "search_code", "params": {"query": "search text", "libraryId": "library-id"}}
    Example: {"tool": "search_code", "params": {"query": "define function"}}
-   Use when: User asks "where is X defined" or you need to find specific code patterns
+   Use when: User asks "where is X defined" or you need to find specific code patterns.
 
-7. **get_cursor_position** - Get current cursor position in editor
+8. **get_cursor_position** - Get current cursor position in editor
    Format: {"tool": "get_cursor_position", "params": {}}
    Example: {"tool": "get_cursor_position", "params": {}}
-   Use when: User asks about their cursor location or you need to know where to insert code
+   Use when: User asks about their cursor location or you need to know where to insert code.
 
-8. **get_selection** - Get currently selected text in editor
+9. **get_selection** - Get currently selected text in editor
    Format: {"tool": "get_selection", "params": {}}
    Example: {"tool": "get_selection", "params": {}}
-   Use when: User mentions "selected code" or you need to see what they've highlighted
+   Use when: User mentions "selected code" or you need to see what they've highlighted.
 
 ### CODE EDITING TOOLS - ⚠️ THESE TOOLS DIRECTLY MODIFY CODE IN THE EDITOR ⚠️
 
 **CRITICAL: These tools ACTUALLY EDIT the CQL code in the user's editor. When users ask you to fix, improve, add, modify, update, or change code, you MUST use these tools to directly apply the changes.**
 
-9. **insert_code** - **DIRECTLY INSERTS** code at the current cursor position in the editor
+10. **insert_code** - **DIRECTLY INSERTS** code at the current cursor position in the editor
    ⚠️ **REQUIRED PARAMETER: "code"** - You MUST provide the actual code to insert as a string
    Format: {"tool": "insert_code", "params": {"code": "code to insert"}}
    Example: {"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
    **CRITICAL:** The "code" parameter is MANDATORY and must be a non-empty string containing the actual CQL code you want to insert. The tool will FAIL if "code" is missing, empty, or not a string.
    Use when: User asks you to "add", "insert", "create", "write", or "implement" code. **YOU MUST CALL THIS TOOL - DO NOT JUST SHOW THEM THE CODE.**
-   
-10. **replace_code** - **DIRECTLY REPLACES** selected code or code at a specific position in the editor
+
+11. **replace_code** - **DIRECTLY REPLACES** selected code or code at a specific position in the editor
     ⚠️ **REQUIRED PARAMETER: "code"** - You MUST provide the actual replacement code as a string
     Format: {"tool": "replace_code", "params": {"code": "new code"}}
     Format (specific position): {"tool": "replace_code", "params": {"code": "new code", "startLine": 10, "endLine": 15}}
@@ -784,27 +801,33 @@ Searching for information.
     **For replacements:**
     - If user says "fix the function on line 10", use: {"tool": "replace_code", "params": {"code": "corrected code here", "startLine": 10, "endLine": 15}}
     - If user mentions specific lines or code sections, include startLine/endLine
-    - Always read code first with get_code, then replace with the corrected version
+    - Always read code first with get_code, then replace with the corrected version.
 
-11. **navigate_to_line** - Navigate editor to a specific line number
+12. **navigate_to_line** - Navigate editor to a specific line number
     Format: {"tool": "navigate_to_line", "params": {"line": 42}}
     Example: {"tool": "navigate_to_line", "params": {"line": 10}}
-    Use when: User asks to "go to line X" or you're referencing a specific line
+    Use when: User asks to "go to line X" or you're referencing a specific line.
 
-12. **create_library** - Create a new empty CQL library and open it in the editor
+13. **format_code** - Request CQL formatting for the current editor content (applies standard CQL style/indentation).
+    Format: {"tool": "format_code", "params": {}}
+    Example: {"tool": "format_code", "params": {}}
+    Use when: User asks to "format", "indent", or "style" the CQL code.
+
+14. **create_library** - Create a new empty CQL library and open it in the editor
     Format: {"tool": "create_library", "params": {}}
     Format (with options): {"tool": "create_library", "params": {"name": "MyLibrary", "title": "My Library", "version": "1.0.0", "description": "Description"}}
     Example: {"tool": "create_library", "params": {}}
     Example (named): {"tool": "create_library", "params": {"name": "BMICalculation", "title": "BMI Calculation Library", "version": "1.0.0"}}
-    Use when: User asks to "create a new library", "start a new CQL file", "create a new library for...", or wants to begin working on a new CQL library from scratch
+    Use when: User asks to "create a new library", "start a new CQL file", "create a new library for...", or wants to begin working on a new CQL library from scratch.
 
 ### MANDATORY EXAMPLES - COPY THIS FORMAT EXACTLY
 
 **Example 1 - Web search (REQUIRED FORMAT):**
 User: "What's the CQL syntax for functions?"
-Your response MUST BE:
+Your response MUST BE (prefer searxng_search when configured; otherwise web_search):
 Searching for current CQL function syntax.
-{"tool": "web_search", "params": {"query": "CQL function syntax", "maxResults": 5}}
+{"tool": "searxng_search", "params": {"query": "CQL function syntax", "max_results": 5}}
+OR if only Brave is available: {"tool": "web_search", "params": {"query": "CQL function syntax", "maxResults": 5}}
 **DO NOT write a long explanation. DO NOT answer directly. Copy this format exactly.**
 
 **Example 2 - Reading code (REQUIRED FORMAT):**
@@ -857,15 +880,22 @@ Creating a new CQL library for BMI calculations.
 {"tool": "create_library", "params": {"name": "BMICalculation", "title": "BMI Calculation Library", "version": "1.0.0"}}
 **CRITICAL: This tool creates an empty library and opens it in the editor, exactly as if the user clicked "Create New Library" in the Navigation tab.**
 
+**Example 8 - Format code (REQUIRED FORMAT):**
+User: "Format this code" or "Indent my CQL"
+Your response MUST BE:
+Formatting CQL code in the editor.
+{"tool": "format_code", "params": {}}
+
 ### TOOL SELECTION RULES
 
-- User asks about ANY topic → Call **web_search** first
+- User asks about ANY topic → Call **searxng_search** (when configured) or **web_search** (Brave) first
+- User provides URL or you need page content → Call **fetch_url**
 - User asks about code → Call **get_code** first
 - User asks "where is X" → Call **search_code** first
 - User asks to **add/create/write/implement** code → Call **get_code** then **insert_code** (YOU MUST ACTUALLY INSERT IT)
 - User asks to **fix/improve/update/modify/replace/change** code → Call **get_code** then **replace_code** (YOU MUST ACTUALLY REPLACE IT)
+- User asks to **format** or **indent** code → Call **format_code**
 - User asks to **create a new library**, **start a new CQL file**, or **create library for X** → Call **create_library** (opens empty library in editor)
-- User provides URL → Call **fetch_url**
 
 **CRITICAL FOR CODE EDITING:**
 - When user asks for code changes, you MUST use insert_code or replace_code tools

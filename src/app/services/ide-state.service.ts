@@ -125,6 +125,8 @@ export class IdeStateService {
   public dragOverPanel = computed(() => this._dragOverPanel());
   public navigateToLineRequest = computed(() => this._navigateToLineRequest());
   public formatCodeRequest = computed(() => this._formatCodeRequest());
+  public activeLibraryIsReadOnly = computed(() => this.getActiveLibraryResource()?.isReadOnly ?? false);
+  public activeLibraryContentLoadError = computed(() => this.getActiveLibraryResource()?.contentLoadError ?? null);
 
   // Panel management
   updatePanelState(updates: Partial<IdePanelState>): void {

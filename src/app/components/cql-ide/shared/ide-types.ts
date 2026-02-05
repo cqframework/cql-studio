@@ -22,6 +22,9 @@ export interface LibraryResource {
   isActive: boolean;
   isDirty: boolean;
   library: Library | null;
+  contentLoading?: boolean;
+  isReadOnly?: boolean;
+  contentLoadError?: string;
 }
 
 export interface OutlineItem {

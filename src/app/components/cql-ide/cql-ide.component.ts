@@ -627,91 +627,77 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     }
 
     console.log('Reloading library:', activeLibraryId);
-    
-    // Show loading state
     this.ideStateService.setExecutionStatus('Reloading library...');
-    
-    // Fetch the library from the server
+
     this.libraryService.get(activeLibraryId).subscribe({
       next: (library: any) => {
         console.log('Library reloaded from server:', library);
-        
-        // Extract CQL content from the FHIR library
-        let cqlContent = '';
-        if (library.content) {
-          for (const content of library.content) {
-            if (content.contentType === 'text/cql' && content.data) {
-              try {
-                cqlContent = atob(content.data);
-                break;
-              } catch (e) {
-                console.error('Error decoding CQL content:', e);
-              }
-            }
-          }
-        }
-        
-        // Update the library resource with fresh content
         const libraryResource = this.ideStateService.getActiveLibraryResource();
-        if (libraryResource) {
-          console.log('Before update - library resource:', {
-            id: libraryResource.id,
-            currentContent: libraryResource.cqlContent.substring(0, 100) + '...',
-            newContent: cqlContent.substring(0, 100) + '...'
-          });
-          
-          this.ideStateService.updateLibraryResource(activeLibraryId, {
-            cqlContent: cqlContent,
-            originalContent: cqlContent,
-            isDirty: false,
-            library: library
-          });
-          
-          // Trigger reload signal to notify editor
-          this.ideStateService.triggerReload(activeLibraryId);
-          
-          console.log('After update - library content updated:', {
-            contentLength: cqlContent.length,
-            content: cqlContent.substring(0, 100) + '...'
-          });
-          
-          // Add message to Console pane
-          const libraryName = libraryResource.name || libraryResource.id || 'Library';
-          this.ideStateService.addTextOutput(
-            `Library Reloaded: ${libraryName}`,
-            `Successfully reloaded library "${libraryName}" from server.\n\nContent length: ${cqlContent.length} characters`,
-            'success'
-          );
-        } else {
+        if (!libraryResource) {
           console.error('No active library resource found for reload');
-        }
-        
-        this.ideStateService.setExecutionStatus('Library reloaded successfully');
-        
-        // Clear status after a short delay
-        setTimeout(() => {
           this.ideStateService.setExecutionStatus('');
-        }, 2000);
+          return;
+        }
+
+        const cqlAttachment = library.content?.find((c: any) => c.contentType === 'text/cql');
+        const fromUrl = !!(cqlAttachment?.url && !cqlAttachment?.data);
+        if (fromUrl) {
+          this.ideStateService.updateLibraryResource(activeLibraryId, {
+            contentLoading: true,
+            contentLoadError: undefined
+          });
+        }
+
+        this.libraryService.getCqlContent(library).subscribe({
+          next: ({ cqlContent }) => {
+            this.ideStateService.updateLibraryResource(activeLibraryId, {
+              cqlContent,
+              originalContent: cqlContent,
+              isDirty: false,
+              library,
+              contentLoading: false,
+              contentLoadError: undefined
+            });
+            this.ideStateService.triggerReload(activeLibraryId);
+            const libraryName = libraryResource.name || libraryResource.id || 'Library';
+            this.ideStateService.addTextOutput(
+              `Library Reloaded: ${libraryName}`,
+              `Successfully reloaded library "${libraryName}" from server.\n\nContent length: ${cqlContent.length} characters`,
+              'success'
+            );
+            this.ideStateService.setExecutionStatus('Library reloaded successfully');
+            setTimeout(() => this.ideStateService.setExecutionStatus(''), 2000);
+          },
+          error: (err) => {
+            const libraryName = libraryResource.name || libraryResource.id || 'Library';
+            const message = err?.message ?? String(err);
+            const errorMessage = `Could not load CQL from URL for library "${libraryName}". ${message}`;
+            this.ideStateService.updateLibraryResource(activeLibraryId, {
+              contentLoading: false,
+              contentLoadError: errorMessage
+            });
+            this.ideStateService.addTextOutput(
+              `Library Reload Failed: ${libraryName}`,
+              errorMessage,
+              'error'
+            );
+            this.ideStateService.setExecutionStatus('Failed to reload library');
+            setTimeout(() => this.ideStateService.setExecutionStatus(''), 3000);
+          }
+        });
       },
       error: (error) => {
         console.error('Failed to reload library:', error);
         this.ideStateService.setExecutionStatus('Failed to reload library');
-        
-        // Add error message to Console pane
-        const libraryName = this.ideStateService.getActiveLibraryResource()?.name || 
-                           this.ideStateService.getActiveLibraryResource()?.id || 
-                           'Library';
+        const libraryName = this.ideStateService.getActiveLibraryResource()?.name ||
+          this.ideStateService.getActiveLibraryResource()?.id || 'Library';
         const errorMessage = error instanceof Error ? error.message : String(error);
         this.ideStateService.addTextOutput(
           `Library Reload Failed: ${libraryName}`,
           `Failed to reload library "${libraryName}" from server.\n\nError: ${errorMessage}`,
           'error'
         );
-        
-        // Clear error status after a short delay
-        setTimeout(() => {
-          this.ideStateService.setExecutionStatus('');
-        }, 3000);
+        setTimeout(() => this.ideStateService.setExecutionStatus(''), 3000);
       }
     });
   }

@@ -636,6 +636,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
       'get_selection': 'Getting selection...',
       'navigate_to_line': 'Navigating...',
       'web_search': 'Searching web...',
+      'searxng_search': 'Searching web (SearXNG)...',
       'fetch_url': 'Fetching URL...'
     };
     

@@ -15,6 +15,7 @@ const PLAN_MODE_ALLOWED_TOOLS = new Set([
   'get_cursor_position',
   'get_selection',
   'web_search',
+  'searxng_search',
   'fetch_url'
 ]);
 
@@ -75,7 +76,7 @@ export class AiPlanningService {
 **CRITICAL RESTRICTIONS:**
 - You MUST NOT modify any files
 - You MUST NOT call tools that modify code: insert_code, replace_code, delete_file, write_file, edit_file, create_library
-- You CAN ONLY use investigation tools: get_code, list_libraries, get_library_content, search_code, read_file, list_files, web_search, fetch_url
+- You CAN ONLY use investigation tools: get_code, list_libraries, get_library_content, search_code, read_file, list_files, web_search, searxng_search, fetch_url
 
 **YOUR ROLE:**
 - Analyze the codebase and understand the current state
