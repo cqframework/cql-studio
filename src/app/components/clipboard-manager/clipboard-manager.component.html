@@ -2,12 +2,8 @@
   <div class="row g-3">
     <!-- Left: FHIR Search -->
     <div class="col-lg-6">
-      <div class="card h-100">
-        <div class="card-header">
-          <h5 class="card-title mb-0">FHIR Search</h5>
-        </div>
-        <div class="card-body">
-          @if (capabilityLoading()) {
+      <h5 class="mb-3">FHIR Search</h5>
+      @if (capabilityLoading()) {
           <div class="text-center py-3">
             <div class="spinner-border spinner-border-sm text-primary" role="status">
               <span class="visually-hidden">Loading...</span>
@@ -156,12 +152,10 @@
             </nav>
             }
           </div>
-          } @else if (searchHasRun() && !searchLoading() && searchResults().length === 0) {
+          }           @else if (searchHasRun() && !searchLoading() && searchResults().length === 0) {
           <p class="text-muted small mb-0">No results. Try different search criteria.</p>
           }
           }
-        </div>
-      </div>
     </div>
 
     <!-- Right: Clipboard -->
@@ -231,7 +225,7 @@
               </button>
               <button id="clipboard-manager-clipboard-clear" type="button" class="btn btn-danger btn-sm"
                 (click)="onClearClipboard()" [disabled]="clipboardItems().length === 0" title="Clear clipboard">
-                <i class="bi bi-clipboard-x"></i>
+                <i class="bi bi-trash"></i>
               </button>
             </div>
           </div>
@@ -257,7 +251,7 @@
                       <span class="small text-muted">{{ getAddedAtLabel(item) }}</span>
                       <button type="button" class="btn btn-sm btn-danger" (click)="onRemoveClipboardItem(item, $event)"
                         title="Remove from clipboard">
-                        <i class="bi bi-x-lg"></i>
+                        <i class="bi bi-trash"></i>
                       </button>
                     </div>
                   </div>
