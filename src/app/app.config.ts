@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, Injectable, provideBrowserGlobalErrorListeners } from '@angular/core';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideMarkdown } from 'ngx-markdown';
@@ -25,6 +25,7 @@ const timeagoShortStrings = {
   wordSeparator: ' '
 };
 
+@Injectable()
 class TimeagoShortIntl extends TimeagoIntl {
   constructor() {
     super();

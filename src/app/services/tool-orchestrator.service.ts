@@ -6,6 +6,7 @@ import { map, catchError } from 'rxjs/operators';
 import { AiService, MCPTool, MCPResponse } from './ai.service';
 import { IdeStateService } from './ide-state.service';
 import { SettingsService } from './settings.service';
+import { BROWSER_TOOL_DEFINITIONS } from './browser-tool-definitions';
 
 export interface ToolCall {
   tool: string;
@@ -23,20 +24,7 @@ export interface ToolResult {
   providedIn: 'root'
 })
 export class ToolOrchestratorService {
-  // Browser-native tool registry
-  private readonly BROWSER_NATIVE_TOOLS = new Set([
-    'insert_code',
-    'replace_code',
-    'get_code',
-    'format_code',
-    'list_libraries',
-    'get_library_content',
-    'search_code',
-    'get_cursor_position',
-    'get_selection',
-    'navigate_to_line',
-    'create_library'
-  ]);
+  private readonly BROWSER_NATIVE_TOOLS = new Set(BROWSER_TOOL_DEFINITIONS.map(t => t.name));
 
   constructor(
     private aiService: AiService,
@@ -55,17 +43,11 @@ export class ToolOrchestratorService {
    * Get all available tools (browser-native + server tools)
    */
   getAvailableTools(): Observable<MCPTool[]> {
-    // Get server tools from MCP server
     return this.aiService.getMCPTools().pipe(
-      map(serverTools => {
-        // Combine with browser-native tools
-        const browserTools = this.getBrowserNativeToolDefinitions();
-        return [...browserTools, ...serverTools];
-      }),
+      map(serverTools => [...BROWSER_TOOL_DEFINITIONS, ...serverTools]),
       catchError(error => {
         console.warn('Failed to fetch server tools, using browser tools only:', error);
-        // Return only browser tools if server is unavailable
-        return of(this.getBrowserNativeToolDefinitions());
+        return of([...BROWSER_TOOL_DEFINITIONS]);
       })
     );
   }
@@ -167,129 +149,6 @@ export class ToolOrchestratorService {
         });
       })
     );
-  }
-
-  /**
-   * Get browser-native tool definitions
-   */
-  private getBrowserNativeToolDefinitions(): MCPTool[] {
-    return [
-      {
-        name: 'insert_code',
-        description: 'Insert code at the current cursor position in the editor',
-        parameters: {
-          type: 'object',
-          properties: {
-            code: { type: 'string', description: 'Code to insert' }
-          },
-          required: ['code']
-        }
-      },
-      {
-        name: 'replace_code',
-        description: 'Replace selected code or code at specified position',
-        parameters: {
-          type: 'object',
-          properties: {
-            code: { type: 'string', description: 'Code to insert' },
-            startLine: { type: 'number', description: 'Start line number (optional)' },
-            startCol: { type: 'number', description: 'Start column number (optional)' },
-            endLine: { type: 'number', description: 'End line number (optional)' },
-            endCol: { type: 'number', description: 'End column number (optional)' }
-          },
-          required: ['code']
-        }
-      },
-      {
-        name: 'get_code',
-        description: 'Get current code content from the active editor',
-        parameters: {
-          type: 'object',
-          properties: {
-            libraryId: { type: 'string', description: 'Library ID (optional, uses active if not provided)' }
-          }
-        }
-      },
-      {
-        name: 'format_code',
-        description: 'Format the current CQL code in the editor',
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      },
-      {
-        name: 'list_libraries',
-        description: 'List all loaded CQL libraries',
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      },
-      {
-        name: 'get_library_content',
-        description: 'Get the full content of a specific library',
-        parameters: {
-          type: 'object',
-          properties: {
-            libraryId: { type: 'string', description: 'Library ID' }
-          },
-          required: ['libraryId']
-        }
-      },
-      {
-        name: 'search_code',
-        description: 'Search for patterns in loaded CQL libraries',
-        parameters: {
-          type: 'object',
-          properties: {
-            query: { type: 'string', description: 'Search query (text pattern)' },
-            libraryId: { type: 'string', description: 'Library ID (optional, searches all if not provided)' }
-          },
-          required: ['query']
-        }
-      },
-      {
-        name: 'get_cursor_position',
-        description: 'Get the current cursor position in the editor',
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      },
-      {
-        name: 'get_selection',
-        description: 'Get the currently selected code in the editor',
-        parameters: {
-          type: 'object',
-          properties: {}
-        }
-      },
-      {
-        name: 'navigate_to_line',
-        description: 'Navigate the editor to a specific line number',
-        parameters: {
-          type: 'object',
-          properties: {
-            line: { type: 'number', description: 'Line number to navigate to' }
-          },
-          required: ['line']
-        }
-      },
-      {
-        name: 'create_library',
-        description: 'Create a new empty CQL library and open it in the editor (same as clicking "Create New Library" button)',
-        parameters: {
-          type: 'object',
-          properties: {
-            name: { type: 'string', description: 'Library name (optional, defaults to "NewLibrary")' },
-            title: { type: 'string', description: 'Library title (optional, defaults to "New Library")' },
-            version: { type: 'string', description: 'Library version (optional, defaults to "1.0.0")' },
-            description: { type: 'string', description: 'Library description (optional, defaults to "New library")' }
-          }
-        }
-      }
-    ];
   }
 
   // Browser-native tool implementations

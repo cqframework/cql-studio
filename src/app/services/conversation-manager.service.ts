@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable, signal, computed, inject, effect } from '@angular/core';
+import { Injectable, signal, computed, inject } from '@angular/core';
 import { OllamaMessage } from './ai.service';
 import { ParsedToolCall, ToolCallParserService } from './tool-call-parser.service';
 import { ToolResult } from './tool-orchestrator.service';
@@ -83,44 +83,17 @@ export class ConversationManagerService {
   private toolCallParser = inject(ToolCallParserService);
   
   constructor() {
-    // Automatically detect current editor context
     this.detectAndLoadActiveEditor();
-    
-    // Watch for editor changes and automatically switch conversations (Cline pattern)
-    // Use effect to reactively update active conversation when editor changes
-    effect(() => {
-      // Get current editor context (library takes precedence, then file, then general)
-      const libraryId = this.ideStateService.activeLibraryId();
-      const fileId = this.ideStateService.activeFileId();
-      
-      let editorId: string | null = null;
-      
-      if (libraryId) {
-        editorId = `library_${libraryId}`;
-      } else if (fileId) {
-        editorId = `file_${fileId}`;
-      } else {
-        // General context as fallback
-        editorId = 'no-editor-context';
-      }
-      
-      // Only switch if editor actually changed (prevent unnecessary updates)
-      const currentEditorId = this._activeEditorId();
-      if (currentEditorId !== editorId) {
-        const context = this.getEditorContextFromId(editorId);
-        if (context) {
-          const conversation = this.loadOrCreateConversation(context);
-          this._activeEditorId.set(editorId);
-          this._activeConversation.set(conversation);
-        }
-      }
-    });
   }
   
+  /** Editor ID used when no library or file is open so the AI tab remains usable. */
+  static readonly NO_EDITOR_CONTEXT_ID = 'no-editor-context';
+
   /**
-   * Get the current editor context from IDE state
+   * Get the current editor context from IDE state.
+   * Returns a fallback general context when no library or file is active so the AI tab stays usable.
    */
-  getCurrentEditorContext(): EditorContext | null {
+  getCurrentEditorContext(): EditorContext {
     const activeLibrary = this.ideStateService.getActiveLibraryResource();
     const activeFileId = this.ideStateService.activeFileId();
     
@@ -141,7 +114,10 @@ export class ConversationManagerService {
       };
     }
     
-    return null;
+    return {
+      editorId: ConversationManagerService.NO_EDITOR_CONTEXT_ID,
+      editorType: 'general'
+    };
   }
   
   /**
@@ -169,15 +145,40 @@ export class ConversationManagerService {
   }
   
   /**
-   * Switch to a specific editor's conversation
-   * Automatically loads conversation when editor changes
+   * Set the active conversation by id (e.g. when user selects from dropdown).
+   * Loads the conversation from storage so the dialog area gets the latest data and view updates.
+   */
+  setActiveConversationById(conversationId: string): void {
+    const conversation = this.loadConversation(conversationId);
+    if (conversation) {
+      this._activeConversation.set(conversation);
+      this._activeEditorId.set(conversation.editorId);
+    }
+  }
+
+  /**
+   * Get or create the active conversation. If none is selected, creates one for current editor context.
+   * Used when sending messages so they go to the user-selected conversation.
+   */
+  getOrCreateActiveConversation(): Conversation {
+    if (this._activeConversation()) {
+      return this._activeConversation()!;
+    }
+    const context = this.getCurrentEditorContext();
+    const conversation = this.loadOrCreateConversation(context);
+    this._activeEditorId.set(context.editorId);
+    this._activeConversation.set(conversation);
+    return conversation;
+  }
+
+  /**
+   * Switch to a specific editor's conversation (e.g. when user selects by editor from list).
    */
   switchToEditor(editorId: string): Conversation | null {
     const context = this.getEditorContextFromId(editorId);
     if (!context) {
       return null;
     }
-    
     const conversation = this.loadOrCreateConversation(context);
     this._activeEditorId.set(editorId);
     this._activeConversation.set(conversation);
@@ -512,15 +513,13 @@ export class ConversationManagerService {
   }
 
   /**
-   * Detect current editor and load its conversation
+   * Detect current editor and load its conversation (or general context when no editor is open).
    */
   private detectAndLoadActiveEditor(): void {
     const context = this.getCurrentEditorContext();
-    if (context) {
-      const conversation = this.loadOrCreateConversation(context);
-      this._activeEditorId.set(context.editorId);
-      this._activeConversation.set(conversation);
-    }
+    const conversation = this.loadOrCreateConversation(context);
+    this._activeEditorId.set(context.editorId);
+    this._activeConversation.set(conversation);
   }
   
   

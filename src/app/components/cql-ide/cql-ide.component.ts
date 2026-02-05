@@ -416,14 +416,27 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   }
 
   onDeleteLibrary(libraryId: string): void {
-    // If this was the active library, clear the active library first
-    // This will destroy the editor component and discard any unsaved changes
-    if (this.ideStateService.activeLibraryId() === libraryId) {
+    const resources = this.ideStateService.libraryResources();
+    const wasActive = this.ideStateService.activeLibraryId() === libraryId;
+    let adjacentId: string | null = null;
+
+    if (wasActive && resources.length > 1) {
+      const idx = resources.findIndex(r => r.id === libraryId);
+      if (idx >= 0) {
+        if (idx > 0) {
+          adjacentId = resources[idx - 1].id;
+        } else {
+          adjacentId = resources[idx + 1].id;
+        }
+      }
+    }
+
+    if (wasActive && adjacentId) {
+      this.ideStateService.selectLibraryResource(adjacentId);
+    } else if (wasActive) {
       this.ideStateService.selectLibraryResource('');
     }
-    
-    // Remove library from the state service
-    // This discards any dirty content and removes the library from memory
+
     this.ideStateService.removeLibraryResource(libraryId);
   }
 
@@ -514,13 +527,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
   onReplaceCqlCode(code: string): void {
     if (this.cqlEditor()) {
-      // If there's a selection, replace it; otherwise insert at cursor
-      const selection = this.cqlEditor()!.getSelection();
-      if (selection && selection.trim().length > 0) {
-        this.cqlEditor()!.replaceSelection(code);
-      } else {
-        this.cqlEditor()!.insertText(code);
-      }
+      this.cqlEditor()!.setValue(code);
     } else {
       console.warn('CQL editor not available for code replacement');
     }

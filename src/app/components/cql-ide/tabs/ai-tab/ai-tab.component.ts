@@ -186,10 +186,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   }
 
   public onSelectConversation(conversationId: string): void {
-    const conversation = this.conversations().find(c => c.id === conversationId);
-    if (conversation) {
-      this.conversationManager.switchToEditor(conversation.editorId);
-    }
+    this.conversationManager.setActiveConversationById(conversationId);
     this._error.set(null);
   }
 
@@ -208,10 +205,8 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   }
 
   public onClearAllConversations(): void {
-    if (confirm('Are you sure you want to clear all conversations? This action cannot be undone.')) {
-      this.conversationManager.clearAllConversations();
-      this.conversationState.resetState();
-    }
+    this.conversationManager.clearAllConversations();
+    this.conversationState.resetState();
   }
 
   public onResetMCPTools(): void {
@@ -265,11 +260,8 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
 
   public getContextHistory(): Conversation[] {
     const editorContext = this.conversationManager.getCurrentEditorContext();
-    if (editorContext) {
-      const allConversations = this.conversationManager.getAllConversations();
-      return allConversations.filter(c => c.editorId === editorContext.editorId);
-    }
-    return [];
+    const allConversations = this.conversationManager.conversations();
+    return allConversations.filter(c => c.editorId === editorContext.editorId);
   }
 
   public getContextDisplayName(conversation: Conversation): string {
@@ -514,10 +506,6 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   }
 
   private loadSuggestedCommands(): void {
-    if (!this.cqlContent()?.trim()) {
-      this._suggestedCommands.set([]);
-      return;
-    }
     const conv = this.activeConversation();
     if (conv && conv.uiMessages.length > 0) {
       this._suggestedCommands.set([]);
@@ -527,7 +515,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     this._isLoadingSuggestions.set(true);
     this._suggestedCommands.set([]);
 
-    this.aiService.generateSuggestedCommands(this.cqlContent()).subscribe({
+    this.aiService.generateSuggestedCommands(this.cqlContent() ?? '').subscribe({
       next: (commands) => {
         this._suggestedCommands.set(commands);
         this._isLoadingSuggestions.set(false);

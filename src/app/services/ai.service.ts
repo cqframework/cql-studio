@@ -10,6 +10,7 @@ import { IdeStateService } from './ide-state.service';
 import { ConversationManagerService } from './conversation-manager.service';
 import { AiPlanningService } from './ai-planning.service';
 import { Plan, PlanStep } from '../models/plan.model';
+import { BROWSER_TOOL_DEFINITIONS } from './browser-tool-definitions';
 
 // Ollama API types (structured options per https://github.com/ollama/ollama/blob/main/docs/api.md)
 
@@ -81,14 +82,14 @@ export class AiService extends BaseService {
    * Check if AI assistant is available (Ollama configured and enabled)
    */
   isAiAssistantAvailable(): boolean {
-    return !!(this.settingsService.getEffectiveOllamaBaseUrl() && 
-              this.settingsService.settings().enableAiAssistant);
+    return !!(this.settingsService.getEffectiveOllamaBaseUrl() &&
+      this.settingsService.settings().enableAiAssistant);
   }
 
   /**
    * Test Ollama connection and model availability
    */
-  testOllamaConnection(): Observable<{connected: boolean, models: string[], error?: string}> {
+  testOllamaConnection(): Observable<{ connected: boolean, models: string[], error?: string }> {
     const ollamaUrl = this.settingsService.getEffectiveOllamaBaseUrl();
     if (!ollamaUrl) {
       return throwError(() => new Error('Ollama base URL not configured'));
@@ -128,7 +129,7 @@ export class AiService extends BaseService {
    * Uses ConversationManagerService for conversation management
    */
   sendMessage(
-    message: string, 
+    message: string,
     editorId?: string,
     useMCPTools: boolean = true,
     cqlContent?: string
@@ -139,35 +140,24 @@ export class AiService extends BaseService {
     }
 
     const model = this.settingsService.getEffectiveOllamaModel();
-    
+
     // Get or create conversation for editor
-    const editorContext = editorId 
+    const editorContext = editorId
       ? this.conversationManager.getEditorContextFromId(editorId)
       : this.conversationManager.getCurrentEditorContext();
-    
+
     if (!editorContext) {
       return throwError(() => new Error('No editor context available'));
     }
-    
-    let conversation = this.conversationManager.getActiveConversation(editorContext.editorId);
-    if (!conversation) {
-      conversation = this.conversationManager.createConversationForEditor(
-        editorContext.editorId,
-        editorContext.editorType,
-        message,
-        editorContext.libraryName,
-        editorContext.fileName
-      );
-    } else {
-      // Add user message to existing conversation
-      this.conversationManager.addUserMessage(conversation.id, message);
-    }
+
+    const conversation = this.conversationManager.getOrCreateActiveConversation();
+    this.conversationManager.addUserMessage(conversation.id, message);
 
     // Get API messages for LLM request
     const apiMessages = this.conversationManager.getApiMessages(conversation.id);
 
-    // Prepare system message with context
-    const systemMessage = this.buildSystemMessage(conversation.editorType, useMCPTools, cqlContent);
+    const hasEditorContext = editorContext.editorId !== ConversationManagerService.NO_EDITOR_CONTEXT_ID;
+    const systemMessage = this.buildSystemMessage(editorContext.editorType, useMCPTools, cqlContent, 'act', false, hasEditorContext);
 
     const request: OllamaRequest = {
       model: model,
@@ -200,7 +190,7 @@ export class AiService extends BaseService {
     message: string,
     useMCPTools: boolean = true,
     cqlContent?: string
-  ): Observable<{type: 'start' | 'chunk' | 'end', content?: string, fullResponse?: string}> {
+  ): Observable<{ type: 'start' | 'chunk' | 'end', content?: string, fullResponse?: string }> {
     const editorContext = this.conversationManager.getCurrentEditorContext();
     const editorId = editorContext?.editorId;
     return this.sendStreamingMessage(message, editorId, useMCPTools, cqlContent);
@@ -212,68 +202,45 @@ export class AiService extends BaseService {
    * @param toolResultsSummary Optional tool results to append to last message for AI context (never saved)
    */
   sendStreamingMessage(
-    message: string, 
+    message: string,
     editorId?: string,
     useMCPTools: boolean = true,
     cqlContent?: string,
     toolResultsSummary?: string,
     mode?: 'plan' | 'act'
-  ): Observable<{type: 'start' | 'chunk' | 'end', content?: string, fullResponse?: string}> {
+  ): Observable<{ type: 'start' | 'chunk' | 'end', content?: string, fullResponse?: string }> {
     const ollamaUrl = this.settingsService.getEffectiveOllamaBaseUrl();
-    
+
     if (!ollamaUrl || !this.settingsService.settings().enableAiAssistant) {
       return throwError(() => new Error('AI Assistant is not enabled or Ollama base URL not configured'));
     }
 
     const model = this.settingsService.getEffectiveOllamaModel();
-    
+
     // Get or create conversation for editor
-    const editorContext = editorId 
+    const editorContext = editorId
       ? this.conversationManager.getEditorContextFromId(editorId)
       : this.conversationManager.getCurrentEditorContext();
-    
+
     if (!editorContext) {
       return throwError(() => new Error('No editor context available'));
     }
-    
-    let conversation = this.conversationManager.getActiveConversation(editorContext.editorId);
-    if (!conversation) {
-      // Can't create a new conversation with empty message
-      if (!message || message.trim().length === 0) {
-        return throwError(() => new Error('Cannot create new conversation with empty message'));
-      }
-      // Get mode from parameter or default (will be set on conversation creation)
-      const conversationMode = mode || 'act';
-      conversation = this.conversationManager.createConversationForEditor(
-        editorContext.editorId,
-        editorContext.editorType,
-        message,
-        editorContext.libraryName,
-        editorContext.fileName,
-        conversationMode
-      );
-    } else {
-      // Add user message to existing conversation (only if message is not empty)
-      // Empty message indicates continuation mode (Cline pattern: after tool execution)
-      if (message && message.trim().length > 0) {
-        this.conversationManager.addUserMessage(conversation.id, message);
-      }
-      
-      // Ensure conversation mode matches the provided mode parameter if explicitly provided
-      // This fixes cases where the conversation mode might have been lost or incorrectly set
-      if (mode && conversation.mode !== mode) {
-        this.conversationManager.updateConversationMode(conversation.id, mode);
-        // Reload conversation to get updated mode
-        conversation = this.conversationManager.getActiveConversation(editorContext.editorId);
-        if (!conversation) {
-          return throwError(() => new Error('Failed to reload conversation after mode update'));
-        }
+
+    let conversation = this.conversationManager.getOrCreateActiveConversation();
+    if (message && message.trim().length > 0) {
+      this.conversationManager.addUserMessage(conversation.id, message);
+    }
+    if (mode && conversation.mode !== mode) {
+      this.conversationManager.updateConversationMode(conversation.id, mode);
+      const updated = this.conversationManager.activeConversation();
+      if (updated?.id === conversation.id) {
+        conversation = updated;
       }
     }
 
     // Get API messages for LLM request
     let apiMessages = this.conversationManager.getApiMessages(conversation.id);
-    
+
     // Append tool results to last assistant message if provided (in-memory only, never saved)
     if (toolResultsSummary) {
       const lastMessage = apiMessages[apiMessages.length - 1];
@@ -281,14 +248,14 @@ export class AiService extends BaseService {
         // Clone messages array and append tool results to last message (in-memory only)
         apiMessages = [...apiMessages];
         const conversationMode = mode || conversation.mode || 'act';
-        
+
         // In plan mode, explicitly instruct to create a plan after tool execution
         let toolResultsText = `\n\n**Tool Execution Results:**\n${toolResultsSummary}`;
         if (conversationMode === 'plan' && !message) {
           // Continuation mode in plan - explicitly request plan creation
           toolResultsText += `\n\nBased on these tool execution results, create a structured plan in JSON format. The plan should outline the steps needed to accomplish the user's request. Include the plan JSON in your response.`;
         }
-        
+
         apiMessages[apiMessages.length - 1] = {
           ...lastMessage,
           content: lastMessage.content + toolResultsText
@@ -298,15 +265,15 @@ export class AiService extends BaseService {
 
     // Get mode from conversation or parameter
     const conversationMode = mode || conversation.mode || 'act';
-    
+
     // Check if there are plan messages in conversation (for Act Mode reference)
     // A plan exists if we're in Act Mode and there are assistant messages from when we were in Plan Mode
-    const hasPlanMessages = conversationMode === 'act' && conversation.apiMessages.some(msg => 
+    const hasPlanMessages = conversationMode === 'act' && conversation.apiMessages.some(msg =>
       msg.role === 'assistant' && msg.content && msg.content.length > 0
     );
-    
-    // Prepare system message with context
-    const systemMessage = this.buildSystemMessage(editorContext.editorType, useMCPTools, cqlContent, conversationMode, hasPlanMessages);
+
+    const hasEditorContext = editorContext.editorId !== ConversationManagerService.NO_EDITOR_CONTEXT_ID;
+    const systemMessage = this.buildSystemMessage(editorContext.editorType, useMCPTools, cqlContent, conversationMode, hasPlanMessages, hasEditorContext);
 
     const request: OllamaRequest = {
       model: model,
@@ -321,7 +288,7 @@ export class AiService extends BaseService {
     return new Observable(observer => {
       let fullResponse = '';
       const conversationId = conversation.id;
-      
+
       // Emit start event
       observer.next({ type: 'start' });
 
@@ -336,7 +303,7 @@ export class AiService extends BaseService {
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
+
         const reader = response.body?.getReader();
         if (!reader) {
           throw new Error('No response body reader available');
@@ -358,7 +325,7 @@ export class AiService extends BaseService {
 
             // Decode the chunk
             buffer += decoder.decode(value, { stream: true });
-            
+
             // Process complete lines
             const lines = buffer.split('\n');
             buffer = lines.pop() || ''; // Keep incomplete line in buffer
@@ -370,11 +337,11 @@ export class AiService extends BaseService {
                   if (data.message && data.message.content) {
                     const content = data.message.content;
                     fullResponse += content;
-                    
+
                     // Don't update conversation message during streaming - only update when complete
                     // This prevents duplicate display (conversation message vs streaming response)
                     // Component will handle updating the conversation when streaming ends
-                    
+
                     observer.next({ type: 'chunk', content });
                   }
                 } catch (e) {
@@ -390,7 +357,7 @@ export class AiService extends BaseService {
         return readChunk();
       }).catch(error => {
         let errorMessage = 'Failed to connect to Ollama server';
-        
+
         if (error instanceof TypeError && error.message === 'Failed to fetch') {
           errorMessage = 'Unable to connect to Ollama server. Please check:\n' +
             '- The Ollama server URL is correct\n' +
@@ -402,7 +369,7 @@ export class AiService extends BaseService {
         } else if (error.message) {
           errorMessage = error.message;
         }
-        
+
         observer.error(new Error(errorMessage));
       });
     });
@@ -506,13 +473,13 @@ export class AiService extends BaseService {
    */
   generateSuggestedCommands(cqlContent: string): Observable<string[]> {
     const ollamaUrl = this.settingsService.getEffectiveOllamaBaseUrl();
-    
+
     if (!ollamaUrl || !this.settingsService.settings().enableAiAssistant) {
       return throwError(() => new Error('AI Assistant is not enabled or Ollama base URL not configured'));
     }
 
     const model = this.settingsService.getEffectiveOllamaModel();
-    
+
     const systemMessage: OllamaMessage = {
       role: 'system',
       content: `You are an AI assistant that generates helpful suggestions and code for CQL developers. Based on the provided CQL content, generate 3-5 specific, actionable commands that a developer might want to ask an AI assistant about their CQL code.
@@ -552,13 +519,13 @@ ${cqlContent}
         try {
           // Clean the response content by removing markdown code blocks
           let content = response.message.content;
-          
+
           // Remove markdown code block formatting
           content = content.replace(/```json\s*/g, '').replace(/```\s*/g, '');
-          
+
           // Trim whitespace
           content = content.trim();
-          
+
           // Parse the JSON response
           const commands = JSON.parse(content);
           if (Array.isArray(commands) && commands.length > 0) {
@@ -615,11 +582,10 @@ ${cqlContent}
   }
 
   /**
-   * Get the most relevant conversation for current context
-   * For backwards compatibility - now returns conversation ID from active editor
+   * Get the most relevant conversation (the one the user has selected).
    */
   getRelevantConversation(): string | null {
-    const conversation = this.conversationManager.getActiveConversation();
+    const conversation = this.conversationManager.activeConversation();
     return conversation?.id || null;
   }
 
@@ -634,14 +600,14 @@ ${cqlContent}
 
     // Remove JSON plan blocks
     let sanitized = content.replace(/```(?:json)?\s*\{[\s\S]*?"plan"[\s\S]*?\}\s*```/g, '');
-    
+
     // Remove standalone plan JSON
     sanitized = sanitized.replace(/\{\s*"plan"\s*:\s*\{[\s\S]*?\}\s*\}/g, '');
-    
+
     // Delegate to ConversationManagerService for consistent sanitization
     // This ensures tool results are removed from all displayed messages
     sanitized = this.conversationManager.sanitizeContentForDisplay(sanitized);
-    
+
     return sanitized;
   }
 
@@ -664,294 +630,57 @@ ${cqlContent}
     return true;
   }
 
-  private buildSystemMessage(editorType: 'cql' | 'fhir' | 'general', useMCPTools: boolean, cqlContent?: string, mode: 'plan' | 'act' = 'act', hasPlan: boolean = false): OllamaMessage {
-    let systemContent = `You are an AI assistant specialized in helping with CQL (Clinical Quality Language) development. You can help with:
+  private buildSystemMessage(editorType: 'cql' | 'fhir' | 'general', useMCPTools: boolean, cqlContent?: string, mode: 'plan' | 'act' = 'act', hasPlan: boolean = false, hasEditorContext: boolean = true): OllamaMessage {
+    let systemContent = `You are an AI assistant specialized in CQL (Clinical Quality Language) development. You can help with writing/debugging CQL, FHIR resources, syntax, best practices, and library structure.
 
-1. Writing and debugging CQL expressions
-2. Understanding FHIR resources and their relationships
-3. Explaining CQL syntax and best practices
-4. Reviewing and improving existing CQL code
-5. Helping with CQL library structure and organization
-6. CQL formatting. Always format the CQL code using the MCP tool.
+**VALID CQL AND FHIR ONLY:** Use only official CQL (HL7) and FHIR R4 syntax and resources. Do not invent syntax or fabricate resource types. When uncertain, use web/search tools (if available) to find official documentation.`;
 
-## CRITICAL: VALID CQL AND FHIR ONLY. Do not generate code in any other programming language.
+    if (hasEditorContext) {
+      systemContent += `\n\n**Current context:** The user has a CQL library or file open. Use get_code, insert_code, replace_code, format_code as needed to read and edit their code.`;
+    } else {
+      systemContent += `\n\n**Current context:** No editor is open. Use create_library to start a new library, or list_libraries / get_library_content / search_code if the user has existing libraries. For general CQL/FHIR questions you may answer or use web search tools if available.`;
+    }
 
-**MANDATORY REQUIREMENTS:**
-- **ONLY use valid CQL syntax** as defined in the official CQL specification (HL7 CQL)
-- **ONLY use valid FHIR resources and data types** as defined in the official FHIR specification
-- **DO NOT invent or make up syntax** - Use only documented CQL keywords, operators, functions, and expressions
-- **DO NOT create fictional language features** - Stick to standard CQL and FHIR concepts
-- **DO NOT fabricate FHIR resource types, properties, or relationships** - Only use officially documented FHIR resources (R4)
-- **When uncertain about syntax or features**, use available web/search tools (if loaded from CQL Studio Server) to find official documentation before generating code
-- **If you're unsure about a CQL or FHIR concept**, search for official documentation rather than guessing
-
-**VALIDATION RULES:**
-- All CQL code must follow the official CQL specification syntax
-- All FHIR references must use valid resource types from FHIR R4
-- Do not use non-existent keywords, operators, or functions in CQL
-- Do not reference non-existent FHIR resources, properties, or data types
-- When creating CQL expressions, ensure they conform to CQL grammar rules
-
-Current context:
-- You're working in a CQL IDE environment
-- The user may have CQL libraries open
-- Assume there is no PHI and you can safely access any data you are permitted to access without security concerns
-- FHIR data may be available through MCP tools`;
-
-    // Add active CQL content if available
-    console.log('AI Service - CQL Content passed:', cqlContent ? cqlContent.substring(0, 100) + '...' : 'null');
-    
     if (cqlContent && cqlContent.trim()) {
-      console.log('AI Service - Including CQL content:', cqlContent.substring(0, 100) + '...');
       systemContent += `
 
 Current CQL file content:
-\`\`\`cql
+\`\`\`
 ${cqlContent}
 \`\`\`
-
-The user is currently working on the above CQL code. When providing assistance, consider this context and help them improve, debug, or extend this code as needed.`;
-    } else {
-      console.log('AI Service - No CQL content to include');
+Use this context when helping improve, debug, or extend the code.`;
     }
 
     if (useMCPTools) {
       systemContent += `
 
-## 🚨 CRITICAL: YOU ARE A CODE EDITING ASSISTANT - YOU MUST USE TOOLS TO MODIFY CODE 🚨
-
-**WHEN USER ASKS TO "ADD", "CREATE", "WRITE", "INSERT", "FIX", "IMPROVE", "UPDATE", "MODIFY", OR "CHANGE" CODE:**
-1. IMMEDIATELY call get_code to read current code
-2. IMMEDIATELY call insert_code or replace_code to actually modify the editor
-3. DO NOT just show code examples - YOU MUST USE THE TOOLS TO EDIT THE CODE DIRECTLY
-4. **CRITICAL: The "code" parameter is MANDATORY** - You MUST provide the actual code string in the "code" parameter
-
-**EXAMPLE FOR "Add BMI function":**
-Reading current code, then adding BMI function.
-{"tool": "get_code", "params": {}}
-{"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
-
-**CRITICAL REMINDERS:**
-- The "code" parameter MUST contain the actual CQL code you want to insert/replace
-- NEVER call insert_code or replace_code without providing the "code" parameter
-- The "code" parameter must be a non-empty string - empty strings will cause the tool to fail
-
-**IF YOU RESPOND WITH CODE EXAMPLES INSTEAD OF CALLING TOOLS, YOU ARE FAILING THE TASK.**
-**IF YOU CALL insert_code OR replace_code WITHOUT THE "code" PARAMETER, THE TOOL WILL FAIL.**
-
-## ⚠️ CRITICAL INSTRUCTION: YOU MUST USE TOOLS FOR ALL QUESTIONS ⚠️
-
-**DO NOT ANSWER QUESTIONS DIRECTLY. ALWAYS CALL A TOOL FIRST.**
-
-**YOUR RESPONSE FORMAT MUST BE:**
-1. Brief 1-sentence acknowledgment
-2. Tool call JSON on a new line
-3. Nothing else until tool results arrive
-
-**EXACT FORMAT EXAMPLE:**
+**Response format:** One brief sentence, then a newline, then tool call JSON on its own line. Example:
 Reading current code.
 {"tool": "get_code", "params": {}}
+Always call a tool first; do not answer directly until you have results. Put each tool call on its own line.`;
 
-**CRITICAL RULES:**
-1. **NEVER answer without a tool call** - If user asks about ANY topic (CQL, FHIR, code, etc.), you MUST call a tool first
-2. **ALWAYS include the JSON** - The tool call JSON must be on its own line, exactly as shown
-3. **Be extremely brief** - Your initial response should be 1 sentence max + the tool call JSON
-4. **Tool results come next** - After the tool executes, you'll receive results in a follow-up message
-5. **FOR CODE EDITS: If user asks to add/fix/modify code, you MUST call get_code THEN insert_code/replace_code. Showing code is NOT enough.**
-6. **If server MCP tools are listed below** (e.g. searxng_search, web_search, fetch_url), use them for web search or URL lookups when needed.
+      if (hasEditorContext) {
+        systemContent += `
 
-**SEARCH RATE LIMITING:** Web and search tools (searxng_search, web_search, fetch_url) are often rate-limited. To avoid being blocked or throttled:
-- **One search per turn when possible** – Prefer a single, well-formed search with a focused query and reasonable max_results (e.g. 5–10) instead of multiple searches in one response.
-- **Use results before searching again** – If you need more information, use the first search results in your next message and only then call another search if still needed. Do not chain several search/fetch calls in one reply.
-- **Avoid duplicate or near-identical queries** – Do not issue rapid or repeated searches with the same or very similar terms.
-- **Prefer get_code / search_code for in-editor content** – Use browser tools (get_code, search_code, get_library_content) for code and library lookups; reserve web/search tools for external documentation or URLs when necessary.
+**Code editing (editor is open):** For add/fix/improve/modify code, call get_code first, then insert_code or replace_code with the actual code in the "code" parameter (required, non-empty string). Do not just show code—use the tools to edit the editor. replace_code can take startLine/endLine.`;
+      }
 
-### BROWSER TOOLS (internal – always available)
+      systemContent += `
 
-1. **get_code** - Get the current CQL code from the active editor
-   Format: {"tool": "get_code", "params": {}}
-   Format (specific library): {"tool": "get_code", "params": {"libraryId": "library-id"}}
-   Example: {"tool": "get_code", "params": {}}
-   Use when: You need to see the current code to understand context, debug, or make suggestions.
+**Search rate limiting:** If server tools (searxng_search, web_search, fetch_url) exist, use one search per turn when possible; prefer get_code/search_code for in-editor content.`
+        + this.formatBrowserToolsForSystemPrompt(BROWSER_TOOL_DEFINITIONS)
+        + `
 
-2. **list_libraries** - List all loaded CQL libraries
-   Format: {"tool": "list_libraries", "params": {}}
-   Example: {"tool": "list_libraries", "params": {}}
-   Use when: User mentions multiple libraries or you need to know what libraries are available.
-
-3. **get_library_content** - Get full content of a specific library
-   Format: {"tool": "get_library_content", "params": {"libraryId": "library-id"}}
-   Example: {"tool": "get_library_content", "params": {"libraryId": "MyLibrary-1.0.0"}}
-   Use when: You need to read a specific library's complete content.
-
-4. **search_code** - Search for text patterns across CQL libraries
-   Format: {"tool": "search_code", "params": {"query": "search text"}}
-   Format (specific library): {"tool": "search_code", "params": {"query": "search text", "libraryId": "library-id"}}
-   Example: {"tool": "search_code", "params": {"query": "define function"}}
-   Use when: User asks "where is X defined" or you need to find specific code patterns.
-
-5. **get_cursor_position** - Get current cursor position in editor
-   Format: {"tool": "get_cursor_position", "params": {}}
-   Example: {"tool": "get_cursor_position", "params": {}}
-   Use when: User asks about their cursor location or you need to know where to insert code.
-
-6. **get_selection** - Get currently selected text in editor
-   Format: {"tool": "get_selection", "params": {}}
-   Example: {"tool": "get_selection", "params": {}}
-   Use when: User mentions "selected code" or you need to see what they've highlighted.
-
-### CODE EDITING TOOLS - ⚠️ THESE TOOLS DIRECTLY MODIFY CODE IN THE EDITOR ⚠️
-
-**CRITICAL: These tools ACTUALLY EDIT the CQL code in the user's editor. When users ask you to fix, improve, add, modify, update, or change code, you MUST use these tools to directly apply the changes.**
-
-7. **insert_code** - **DIRECTLY INSERTS** code at the current cursor position in the editor
-   ⚠️ **REQUIRED PARAMETER: "code"** - You MUST provide the actual code to insert as a string
-   Format: {"tool": "insert_code", "params": {"code": "code to insert"}}
-   Example: {"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
-   **CRITICAL:** The "code" parameter is MANDATORY and must be a non-empty string containing the actual CQL code you want to insert. The tool will FAIL if "code" is missing, empty, or not a string.
-   Use when: User asks you to "add", "insert", "create", "write", or "implement" code. **YOU MUST CALL THIS TOOL - DO NOT JUST SHOW THEM THE CODE.**
-
-8. **replace_code** - **DIRECTLY REPLACES** selected code or code at a specific position in the editor
-    ⚠️ **REQUIRED PARAMETER: "code"** - You MUST provide the actual replacement code as a string
-    Format: {"tool": "replace_code", "params": {"code": "new code"}}
-    Format (specific position): {"tool": "replace_code", "params": {"code": "new code", "startLine": 10, "endLine": 15}}
-    Example: {"tool": "replace_code", "params": {"code": "define function ImprovedFunction(x Integer): Boolean\n  return x > 0\n"}}
-    **CRITICAL:** The "code" parameter is MANDATORY and must be a non-empty string containing the actual CQL code you want to use as replacement. The tool will FAIL if "code" is missing, empty, or not a string.
-    Use when: User asks you to "fix", "replace", "update", "modify", "change", "improve", or "correct" existing code. **YOU MUST CALL THIS TOOL - DO NOT JUST EXPLAIN WHAT TO CHANGE.**
-    
-    **For replacements:**
-    - If user says "fix the function on line 10", use: {"tool": "replace_code", "params": {"code": "corrected code here", "startLine": 10, "endLine": 15}}
-    - If user mentions specific lines or code sections, include startLine/endLine
-    - Always read code first with get_code, then replace with the corrected version.
-
-9. **navigate_to_line** - Navigate editor to a specific line number
-    Format: {"tool": "navigate_to_line", "params": {"line": 42}}
-    Example: {"tool": "navigate_to_line", "params": {"line": 10}}
-    Use when: User asks to "go to line X" or you're referencing a specific line.
-
-10. **format_code** - Request CQL formatting for the current editor content (applies standard CQL style/indentation).
-    Format: {"tool": "format_code", "params": {}}
-    Example: {"tool": "format_code", "params": {}}
-    Use when: User asks to "format", "indent", or "style" the CQL code.
-
-11. **create_library** - Create a new empty CQL library and open it in the editor
-    Format: {"tool": "create_library", "params": {}}
-    Format (with options): {"tool": "create_library", "params": {"name": "MyLibrary", "title": "My Library", "version": "1.0.0", "description": "Description"}}
-    Example: {"tool": "create_library", "params": {}}
-    Example (named): {"tool": "create_library", "params": {"name": "BMICalculation", "title": "BMI Calculation Library", "version": "1.0.0"}}
-    Use when: User asks to "create a new library", "start a new CQL file", "create a new library for...", or wants to begin working on a new CQL library from scratch.
-
-### MANDATORY EXAMPLES - COPY THIS FORMAT EXACTLY
-
-**Example 1 - Reading code (REQUIRED FORMAT):**
-User: "Fix my code"
-Your response MUST BE:
-Reading your code to identify issues.
-{"tool": "get_code", "params": {}}
-**DO NOT try to answer without the code. Always call get_code first.**
-
-**Example 2 - Code search (REQUIRED FORMAT):**
-User: "Where is Age used?"
-Your response MUST BE:
-Searching for Age usage in code.
-{"tool": "search_code", "params": {"query": "Age"}}
-**DO NOT guess. Always search first.**
-
-**Example 3 - Direct code editing (REQUIRED FORMAT):**
-User: "Add BMI function"
-Your response MUST BE:
-Reading current code, then adding BMI function.
-{"tool": "get_code", "params": {}}
-{"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
-**CRITICAL: Each tool call must be on its own line. You MUST call insert_code or replace_code tools. DO NOT just show the code - directly insert it into the editor.**
-**CRITICAL: The "code" parameter in insert_code/replace_code MUST contain the actual code string. NEVER omit the "code" parameter or leave it empty.**
-
-**Example 4 - Direct code fixing (REQUIRED FORMAT):**
-User: "Fix the syntax error on line 5"
-Your response MUST BE:
-Reading code to identify and fix the syntax error.
-{"tool": "get_code", "params": {}}
-{"tool": "replace_code", "params": {"code": "corrected code block here\nspanning multiple lines if needed\n", "startLine": 5, "endLine": 7}}
-**CRITICAL: You MUST call replace_code to actually fix the code. DO NOT just explain the fix - apply it directly.**
-**CRITICAL: The "code" parameter MUST contain the actual corrected code. NEVER call replace_code without providing the "code" parameter.**
-
-**Example 5 - Code improvement (REQUIRED FORMAT):**
-User: "Improve this function" or "Make this more efficient"
-Your response MUST BE:
-Reading code to identify improvements.
-{"tool": "get_code", "params": {}}
-{"tool": "replace_code", "params": {"code": "improved code here\nwith better implementation\n"}}
-**CRITICAL: When users ask to improve, fix, or modify code, you MUST use replace_code to directly apply changes. DO NOT just suggest - actually edit the code.**
-
-**Example 6 - Creating a new library (REQUIRED FORMAT):**
-User: "Create a new library" or "Start a new CQL file" or "Create a library for BMI calculations"
-Your response MUST BE:
-Creating a new CQL library.
-{"tool": "create_library", "params": {}}
-OR if user specifies details:
-Creating a new CQL library for BMI calculations.
-{"tool": "create_library", "params": {"name": "BMICalculation", "title": "BMI Calculation Library", "version": "1.0.0"}}
-**CRITICAL: This tool creates an empty library and opens it in the editor, exactly as if the user clicked "Create New Library" in the Navigation tab.**
-
-**Example 7 - Format code (REQUIRED FORMAT):**
-User: "Format this code" or "Indent my CQL"
-Your response MUST BE:
-Formatting CQL code in the editor.
-{"tool": "format_code", "params": {}}
-
-### TOOL SELECTION RULES
-
-- If you have server tools for web search (e.g. searxng_search, web_search) or **fetch_url**, use them for documentation lookups and URLs when needed. **Respect rate limits and avoid multiple web searches in a single response.**
-- User asks about code → Call **get_code** first
-- User asks "where is X" → Call **search_code** first
-- User asks to **add/create/write/implement** code → Call **get_code** then **insert_code** (YOU MUST ACTUALLY INSERT IT)
-- User asks to **fix/improve/update/modify/replace/change** code → Call **get_code** then **replace_code** (YOU MUST ACTUALLY REPLACE IT)
-- User asks to **format** or **indent** code → Call **format_code**
-- User asks to **create a new library**, **start a new CQL file**, or **create library for X** → Call **create_library** (opens empty library in editor)
-
-**CRITICAL FOR CODE EDITING:**
-- When user asks for code changes, you MUST use insert_code or replace_code tools
-- DO NOT just show code examples or explain what to change
-- The tools directly modify the editor - use them!
-- Always read code first with get_code, then apply changes with insert_code or replace_code
-- **REQUIRED PARAMETER:** Both insert_code and replace_code REQUIRE a "code" parameter that contains the actual code string
-- **NEVER call insert_code or replace_code without the "code" parameter - the tool will fail**
-- The "code" parameter must be a non-empty string containing the CQL code you want to insert or use as replacement
-
-**NEVER SKIP TOOLS. ALWAYS CALL A TOOL BEFORE ANSWERING. FOR CODE EDITS, YOU MUST CALL THE EDITING TOOLS - DO NOT JUST DESCRIBE THE CHANGES.**`
-      + this.formatServerToolsForSystemPrompt(this.getCachedServerMCPTools());
+**Tool selection:** Code question → get_code. "Where is X" → search_code. Add/create code → get_code then insert_code. Fix/improve code → get_code then replace_code. Format → format_code. New library → create_library. Documentation/URLs → server web/search tools if listed below.`
+        + this.formatServerToolsForSystemPrompt(this.getCachedServerMCPTools());
     }
-
-    systemContent += `
-
-**RESPONSE GUIDELINES (STRICTLY ENFORCED):**
-- **1 sentence max** before tool calls - no exceptions
-- **Tool call JSON must be on a separate line** - exactly as shown in examples
-- **CRITICAL: Each tool call must be on its own line, separated by newlines**
-- **Tool calls can span multiple lines if params are large** - the parser handles this
-- **Never explain without tools** - if user asks about ANYTHING, call a tool first
-- **For code editing**: When users ask to add/fix/improve code, you MUST use insert_code or replace_code tools. DO NOT just show code examples - directly modify the editor.
-- **Format:** One sentence + newline + JSON tool call(s) on separate lines + stop
-- **Multiple tool calls:** Put each {"tool": "...", "params": {...}} on its own line, separated by newlines
-
-**REMEMBER:** Your job is to call tools, not to provide direct answers. Direct answers come AFTER tool results are received.
-
-**FOR CODE EDITS:** When users request code changes, you MUST use insert_code or replace_code to actually apply the changes to their editor. Showing code examples is NOT enough - you must directly edit the code using tools.
-
-**When the user asks ANY question, your response format MUST BE:**
-[One brief sentence]
-{"tool": "tool_name", "params": {...}}
-
-**DO NOT WRITE LONG EXPLANATIONS. DO NOT ANSWER DIRECTLY. ALWAYS CALL A TOOL FIRST.**
-
-**FOR CODE EDITS: DO NOT JUST SHOW CODE - USE insert_code OR replace_code TOOLS TO DIRECTLY MODIFY THE EDITOR.**`;
 
     // Add mode-specific prompts
     if (mode === 'plan') {
       systemContent += '\n\n' + this.planningService.getPlanModeSystemPrompt();
     } else {
       systemContent += '\n\n' + this.planningService.getActModeSystemPrompt(hasPlan);
-      
+
       // In Act Mode, if there was a plan, emphasize following it
       if (hasPlan) {
         systemContent += '\n\n**IMPORTANT:** Review the plan from previous messages and execute the agreed-upon steps.';
@@ -964,6 +693,41 @@ Formatting CQL code in the editor.
     };
   }
 
+
+  private formatBrowserToolsForSystemPrompt(tools: MCPTool[]): string {
+    if (!tools.length) return '';
+    let out = '\n\n### BROWSER TOOLS (internal – always available)\n\n';
+    tools.forEach((t, i) => {
+      const exampleParams = this.buildExampleParamsForTool(t);
+      const paramsJson = JSON.stringify(exampleParams);
+      out += `${i + 1}. **${t.name}** - ${t.description || 'No description'}\n`;
+      out += `   Format: {"tool": "${t.name}", "params": ${paramsJson}}\n`;
+      out += `   Example: {"tool": "${t.name}", "params": ${paramsJson}}\n`;
+      out += '\n';
+    });
+    return out;
+  }
+
+  private buildExampleParamsForTool(tool: MCPTool): Record<string, unknown> {
+    const params: Record<string, unknown> = {};
+    const schema = tool.parameters;
+    if (!schema || typeof schema !== 'object') return params;
+    const props = schema.properties ?? {};
+    const required: string[] = Array.isArray(schema.required) ? schema.required : [];
+    const keys = required.length ? required : Object.keys(props);
+    for (const k of keys) {
+      const prop = props[k];
+      const type = prop?.type;
+      if (type === 'number') params[k] = k === 'line' ? 10 : 0;
+      else if (type === 'string') {
+        if (k === 'code') params[k] = 'define function Example()\n  return true';
+        else if (k === 'query') params[k] = 'search text';
+        else if (k === 'libraryId') params[k] = 'library-id';
+        else params[k] = 'value';
+      } else params[k] = 'value';
+    }
+    return params;
+  }
 
   private formatServerToolsForSystemPrompt(tools: MCPTool[]): string {
     if (!tools.length) return '';
@@ -1017,7 +781,7 @@ Formatting CQL code in the editor.
     // Try to find JSON plan in markdown code blocks
     const jsonBlockRegex = /```(?:json)?\s*(\{[\s\S]*?"plan"[\s\S]*?\})\s*```/g;
     let match = jsonBlockRegex.exec(responseText);
-    
+
     if (match) {
       try {
         const jsonStr = match[1];
@@ -1052,10 +816,10 @@ Formatting CQL code in the editor.
    */
   private createPlanFromParsed(planData: any): Plan {
     const steps: PlanStep[] = [];
-    
+
     // Limit to 12 steps as required
     const limitedSteps = planData.steps.slice(0, 12);
-    
+
     limitedSteps.forEach((stepData: any, index: number) => {
       steps.push({
         id: `step_${Date.now()}_${index}`,
@@ -1077,7 +841,7 @@ Formatting CQL code in the editor.
   private handleError = (error: any): Observable<never> => {
     console.error('AI Service Error:', error);
     let errorMessage = 'An unknown error occurred';
-    
+
     if (error.error instanceof ErrorEvent) {
       errorMessage = `Client Error: ${error.error.message}`;
     } else if (error.name === 'TimeoutError' || error.message?.includes('timeout')) {
@@ -1093,7 +857,7 @@ Formatting CQL code in the editor.
     } else if (error.error && error.error.message) {
       errorMessage = error.error.message;
     }
-    
+
     return throwError(() => new Error(errorMessage));
   };
 }
