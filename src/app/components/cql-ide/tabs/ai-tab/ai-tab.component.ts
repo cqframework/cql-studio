@@ -1,7 +1,7 @@
 // Author: Preston Lee
 
 import { Component, input, output, computed, signal, viewChild, ElementRef, AfterViewChecked, AfterViewInit, OnInit, OnDestroy } from '@angular/core';
-import { Subscription } from 'rxjs';
+import { Subscription, BehaviorSubject } from 'rxjs';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -17,11 +17,12 @@ import { AiConversationStateService } from '../../../../services/ai-conversation
 import { AiToolExecutionManagerService } from '../../../../services/ai-tool-execution-manager.service';
 import { Plan, PlanStep } from '../../../../models/plan.model';
 import { PlanDisplayComponent } from './plan-display.component';
+import { TimeagoPipe } from 'ngx-timeago';
 
 @Component({
   selector: 'app-ai-tab',
   standalone: true,
-  imports: [CommonModule, FormsModule, MarkdownComponent, CodeDiffPreviewComponent, PlanDisplayComponent],
+  imports: [CommonModule, FormsModule, MarkdownComponent, CodeDiffPreviewComponent, PlanDisplayComponent, TimeagoPipe],
   templateUrl: './ai-tab.component.html',
   styleUrls: ['./ai-tab.component.scss']
 })
@@ -37,18 +38,22 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   private _currentMessage = signal('');
   private _error = signal<string | null>(null);
   
-  // Connection state signals
-  private _connectionStatus = signal<'unknown' | 'testing' | 'connected' | 'error'>('unknown');
-  private _availableModels = signal<string[]>([]);
-  private _connectionError = signal<string>('');
+  /** Connection test state: driven by Observable so template updates don't trigger ExpressionChangedAfterItHasBeenCheckedError */
+  private _connectionTestResult = new BehaviorSubject<{ status: 'unknown' | 'testing' | 'connected' | 'error'; error: string; models: string[] }>({
+    status: 'unknown',
+    error: '',
+    models: []
+  });
+  public connectionTestResult$ = this._connectionTestResult.asObservable();
   private _suggestedCommands = signal<string[]>([]);
   private _isLoadingSuggestions = signal<boolean>(false);
   private _codeDiffPreview = signal<CodeDiff | null>(null);
   private _showDiffPreview = signal<boolean>(false);
+  private _resettingMCPTools = signal<boolean>(false);
   
   public currentMode = computed(() => {
     const conversation = this.activeConversation();
-    return conversation?.mode || this.settingsService.settings().defaultMode || 'plan';
+    return conversation?.mode || 'act';
   });
   
   private _currentSubscription: Subscription | null = null;
@@ -65,7 +70,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   public activeConversation = computed(() => this.conversationManager.activeConversation());
   
   public activeConversationId = computed(() => this.activeConversation()?.id || null);
-  public conversations = computed(() => this.conversationManager.getAllConversations());
+  public conversations = computed(() => this.conversationManager.conversations());
   public hasActiveConversation = computed(() => !!this.activeConversation());
   
   public canSendMessage = computed(() => 
@@ -78,9 +83,6 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     !this._isLoading() && !this.conversationState.isStreaming()
   );
   public isAiAvailable = computed(() => this.aiService.isAiAssistantAvailable());
-  public connectionStatus = computed(() => this._connectionStatus());
-  public availableModels = computed(() => this._availableModels());
-  public connectionError = computed(() => this._connectionError());
   public streamingResponse = computed(() => this.conversationState.streamingResponse());
   public isStreaming = computed(() => this.conversationState.isStreaming());
   public suggestedCommands = computed(() => this._suggestedCommands());
@@ -90,6 +92,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   public toolExecutionResults = computed(() => this.conversationState.toolExecutionResults());
   public codeDiffPreview = computed(() => this._codeDiffPreview());
   public showDiffPreview = computed(() => this._showDiffPreview());
+  public resettingMCPTools = computed(() => this._resettingMCPTools());
   public activePlan = computed(() => this.activeConversation()?.plan);
   public isPlanExecuting = computed(() => {
     const plan = this.activePlan();
@@ -191,6 +194,11 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   }
 
   public onNewConversation(): void {
+    const active = this.activeConversation();
+    if (active) {
+      this.conversationManager.deleteConversation(active.id);
+    }
+    this.conversationState.resetState();
     this._currentMessage.set('');
     this._error.set(null);
   }
@@ -206,40 +214,53 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     }
   }
 
+  public onResetMCPTools(): void {
+    this._resettingMCPTools.set(true);
+    this.ideStateService.addInfoOutput('AI MCP tools', 'Reinitializing server MCP tools...');
+    this.aiService.reinitializeServerMCPTools().subscribe({
+      next: result => {
+        this._resettingMCPTools.set(false);
+        if (result.success) {
+          this.ideStateService.addInfoOutput(
+            'AI MCP tools',
+            result.count !== undefined
+              ? `Reinitialized server MCP tools. ${result.count} tool(s) loaded from CQL Studio Server.`
+              : 'Reinitialized server MCP tools.'
+          );
+        } else {
+          this.ideStateService.addWarningOutput('AI MCP tools', result.error ?? 'Reinitialization failed.');
+        }
+      },
+      error: err => {
+        this._resettingMCPTools.set(false);
+        this.ideStateService.addErrorOutput('AI MCP tools', err?.message ?? 'Reinitialization failed.');
+      }
+    });
+  }
+
   public onNavigateToSettings(): void {
     this.router.navigate(['/settings']);
   }
 
   public testConnection(): void {
-    this._connectionStatus.set('testing');
-    this._connectionError.set('');
-    
+    this._connectionTestResult.next({ status: 'testing', error: '', models: [] });
     this.aiService.testOllamaConnection().subscribe({
       next: (result) => {
-        const status: 'connected' | 'error' | 'testing' | 'unknown' = result.connected ? 'connected' : (result.error ? 'error' : 'unknown');
-        this._connectionStatus.set(status);
-        this._connectionError.set(result.error || '');
-        this._availableModels.set(result.models || []);
+        const status: 'connected' | 'error' | 'unknown' = result.connected ? 'connected' : (result.error ? 'error' : 'unknown');
+        this._connectionTestResult.next({
+          status,
+          error: result.error || '',
+          models: result.models || []
+        });
       },
       error: (error) => {
-        this._connectionStatus.set('error');
-        this._connectionError.set(error.message);
-        this._availableModels.set([]);
+        this._connectionTestResult.next({
+          status: 'error',
+          error: error.message,
+          models: []
+        });
       }
     });
-  }
-
-  public testContextSwitching(): void {
-    console.log('Manual context switching test');
-    console.log('Current library ID:', this.ideStateService.activeLibraryId());
-    console.log('Current panel state:', this.ideStateService.panelState());
-    console.log('Active conversation:', this.activeConversation());
-    console.log('Active conversation ID:', this.activeConversationId());
-    
-    const editorContext = this.conversationManager.getCurrentEditorContext();
-    if (editorContext) {
-      this.conversationManager.switchToEditor(editorContext.editorId);
-    }
   }
 
   public getContextHistory(): Conversation[] {
@@ -493,7 +514,12 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   }
 
   private loadSuggestedCommands(): void {
-    if (this.hasActiveConversation() || !this.cqlContent()?.trim()) {
+    if (!this.cqlContent()?.trim()) {
+      this._suggestedCommands.set([]);
+      return;
+    }
+    const conv = this.activeConversation();
+    if (conv && conv.uiMessages.length > 0) {
       this._suggestedCommands.set([]);
       return;
     }

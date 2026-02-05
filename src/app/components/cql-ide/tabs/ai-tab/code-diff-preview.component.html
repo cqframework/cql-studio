@@ -1,4 +1,4 @@
-<div class="code-diff-preview">
+<div class="code-diff-preview border rounded p-2">
   @if (diff.title) {
   <div class="diff-header">
     <h6 class="mb-0">{{ diff.title }}</h6>
@@ -66,10 +66,10 @@
   </div>
 
   <div class="diff-actions mt-3">
-    <button class="btn btn-success" (click)="onApprove()">
+    <button class="btn btn-sm btn-success" (click)="onApprove()">
       <i class="bi bi-check-circle me-2"></i>Apply Changes
     </button>
-    <button class="btn btn-outline-secondary" (click)="onReject()">
+    <button class="btn btn-sm btn-outline-secondary" (click)="onReject()">
       <i class="bi bi-x-circle me-2"></i>Reject
     </button>
   </div>

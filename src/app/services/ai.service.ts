@@ -2,7 +2,7 @@
 
 import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable, throwError } from 'rxjs';
+import { Observable, of, throwError } from 'rxjs';
 import { catchError, map } from 'rxjs/operators';
 import { BaseService } from './base.service';
 import { SettingsService } from './settings.service';
@@ -73,6 +73,9 @@ export class AiService extends BaseService {
   private ideStateService = inject(IdeStateService);
   private conversationManager = inject(ConversationManagerService);
   private planningService = inject(AiPlanningService);
+
+  /** Cached server MCP tools; populated by reinitializeServerMCPTools() when Server MCP is enabled. */
+  private serverMCPToolsCache: MCPTool[] | null = null;
 
   /**
    * Check if AI assistant is available (Ollama configured and enabled)
@@ -183,6 +186,7 @@ export class AiService extends BaseService {
       map(response => {
         // Add assistant response to conversation
         this.conversationManager.addAssistantMessage(conversation!.id, response.message.content);
+        this.conversationManager.updateConversationTitleFromUserMessage(conversation!.id, message);
         return response;
       }),
       catchError(this.handleError)
@@ -239,7 +243,7 @@ export class AiService extends BaseService {
         return throwError(() => new Error('Cannot create new conversation with empty message'));
       }
       // Get mode from parameter or default (will be set on conversation creation)
-      const conversationMode = mode || this.settingsService.settings().defaultMode || 'plan';
+      const conversationMode = mode || 'act';
       conversation = this.conversationManager.createConversationForEditor(
         editorContext.editorId,
         editorContext.editorType,
@@ -276,7 +280,7 @@ export class AiService extends BaseService {
       if (lastMessage && lastMessage.role === 'assistant') {
         // Clone messages array and append tool results to last message (in-memory only)
         apiMessages = [...apiMessages];
-        const conversationMode = mode || conversation.mode || 'plan';
+        const conversationMode = mode || conversation.mode || 'act';
         
         // In plan mode, explicitly instruct to create a plan after tool execution
         let toolResultsText = `\n\n**Tool Execution Results:**\n${toolResultsSummary}`;
@@ -293,7 +297,7 @@ export class AiService extends BaseService {
     }
 
     // Get mode from conversation or parameter
-    const conversationMode = mode || conversation.mode || 'plan';
+    const conversationMode = mode || conversation.mode || 'act';
     
     // Check if there are plan messages in conversation (for Act Mode reference)
     // A plan exists if we're in Act Mode and there are assistant messages from when we were in Plan Mode
@@ -346,7 +350,7 @@ export class AiService extends BaseService {
             if (done) {
               // Mark streaming as complete (component will add the final cleaned message)
               this.conversationManager.completeStreaming(conversationId);
-              
+              this.conversationManager.updateConversationTitleFromUserMessage(conversationId, message);
               observer.next({ type: 'end', fullResponse });
               observer.complete();
               return;
@@ -405,19 +409,46 @@ export class AiService extends BaseService {
   }
 
   /**
-   * Get available MCP tools
+   * Get cached server MCP tools (populated by reinitializeServerMCPTools when Server MCP is enabled).
    */
-  getMCPTools(): Observable<MCPTool[]> {
-    const mcpUrl = this.settingsService.getEffectiveServerBaseUrl();
-    if (!mcpUrl) {
-      return throwError(() => new Error('MCP base URL not configured'));
-    }
+  getCachedServerMCPTools(): MCPTool[] {
+    return this.serverMCPToolsCache ?? [];
+  }
 
+  /**
+   * Reinitialize server MCP tools by querying the CQL Studio Server. Call when Server MCP is enabled
+   * and server URL is configured. Populates the cache used by getMCPTools() and buildSystemMessage.
+   */
+  reinitializeServerMCPTools(): Observable<{ success: boolean; count?: number; error?: string }> {
+    const mcpUrl = this.settingsService.getEffectiveServerBaseUrl();
+    const useMCP = this.settingsService.settings().useMCPTools;
+    if (!mcpUrl || !useMCP) {
+      this.serverMCPToolsCache = null;
+      return of({
+        success: false,
+        error: !mcpUrl ? 'CQL Studio Server URL not configured.' : 'Server MCP tools are disabled in settings.'
+      });
+    }
     return this.http.get<MCPTool[]>(`${mcpUrl}/tools`, {
       headers: this.getMCPHeaders()
     }).pipe(
-      catchError(this.handleError)
+      map(tools => {
+        this.serverMCPToolsCache = Array.isArray(tools) ? tools : [];
+        return { success: true, count: this.serverMCPToolsCache.length };
+      }),
+      catchError(err => {
+        this.serverMCPToolsCache = null;
+        const message = err?.error?.message ?? err?.message ?? 'Request failed';
+        return of({ success: false, error: message });
+      })
     );
+  }
+
+  /**
+   * Get available MCP tools (cached server tools only; browser tools are defined in the app).
+   */
+  getMCPTools(): Observable<MCPTool[]> {
+    return of(this.getCachedServerMCPTools());
   }
 
   /**
@@ -633,7 +664,7 @@ ${cqlContent}
     return true;
   }
 
-  private buildSystemMessage(editorType: 'cql' | 'fhir' | 'general', useMCPTools: boolean, cqlContent?: string, mode: 'plan' | 'act' = 'plan', hasPlan: boolean = false): OllamaMessage {
+  private buildSystemMessage(editorType: 'cql' | 'fhir' | 'general', useMCPTools: boolean, cqlContent?: string, mode: 'plan' | 'act' = 'act', hasPlan: boolean = false): OllamaMessage {
     let systemContent = `You are an AI assistant specialized in helping with CQL (Clinical Quality Language) development. You can help with:
 
 1. Writing and debugging CQL expressions
@@ -641,9 +672,9 @@ ${cqlContent}
 3. Explaining CQL syntax and best practices
 4. Reviewing and improving existing CQL code
 5. Helping with CQL library structure and organization
-6. CQL formatting. Always format the CQL code using the CQL formatting and indentation rules
+6. CQL formatting. Always format the CQL code using the MCP tool.
 
-## 🚨 CRITICAL: VALID CQL AND FHIR ONLY 🚨
+## CRITICAL: VALID CQL AND FHIR ONLY. Do not generate code in any other programming language.
 
 **MANDATORY REQUIREMENTS:**
 - **ONLY use valid CQL syntax** as defined in the official CQL specification (HL7 CQL)
@@ -651,7 +682,7 @@ ${cqlContent}
 - **DO NOT invent or make up syntax** - Use only documented CQL keywords, operators, functions, and expressions
 - **DO NOT create fictional language features** - Stick to standard CQL and FHIR concepts
 - **DO NOT fabricate FHIR resource types, properties, or relationships** - Only use officially documented FHIR resources (R4)
-- **When uncertain about syntax or features**, use searxng_search or fetch_url tools to find official documentation before generating code
+- **When uncertain about syntax or features**, use available web/search tools (if loaded from CQL Studio Server) to find official documentation before generating code
 - **If you're unsure about a CQL or FHIR concept**, search for official documentation rather than guessing
 
 **VALIDATION RULES:**
@@ -718,8 +749,8 @@ Reading current code, then adding BMI function.
 3. Nothing else until tool results arrive
 
 **EXACT FORMAT EXAMPLE:**
-Searching for information.
-{"tool": "searxng_search", "params": {"query": "CQL function syntax", "max_results": 5}}
+Reading current code.
+{"tool": "get_code", "params": {}}
 
 **CRITICAL RULES:**
 1. **NEVER answer without a tool call** - If user asks about ANY topic (CQL, FHIR, code, etc.), you MUST call a tool first
@@ -727,54 +758,44 @@ Searching for information.
 3. **Be extremely brief** - Your initial response should be 1 sentence max + the tool call JSON
 4. **Tool results come next** - After the tool executes, you'll receive results in a follow-up message
 5. **FOR CODE EDITS: If user asks to add/fix/modify code, you MUST call get_code THEN insert_code/replace_code. Showing code is NOT enough.**
+6. **If server MCP tools are listed below** (e.g. searxng_search, web_search, fetch_url), use them for web search or URL lookups when needed.
 
-### WEB & INFORMATION TOOLS
+**SEARCH RATE LIMITING:** Web and search tools (searxng_search, web_search, fetch_url) are often rate-limited. To avoid being blocked or throttled:
+- **One search per turn when possible** – Prefer a single, well-formed search with a focused query and reasonable max_results (e.g. 5–10) instead of multiple searches in one response.
+- **Use results before searching again** – If you need more information, use the first search results in your next message and only then call another search if still needed. Do not chain several search/fetch calls in one reply.
+- **Avoid duplicate or near-identical queries** – Do not issue rapid or repeated searches with the same or very similar terms.
+- **Prefer get_code / search_code for in-editor content** – Use browser tools (get_code, search_code, get_library_content) for code and library lookups; reserve web/search tools for external documentation or URLs when necessary.
 
-1. **searxng_search** - Anonymous web search via SearXNG (no API key). Prefer when a SearXNG instance is configured. Optional: categories, language, time_range, safesearch, max_results.
-   Format: {"tool": "searxng_search", "params": {"query": "search terms", "max_results": 10}}
-   Example: {"tool": "searxng_search", "params": {"query": "CQL library syntax", "max_results": 5}}
-   Use when: Web search is needed and SearXNG base URL is configured.
+### BROWSER TOOLS (internal – always available)
 
-2. **web_search** - Web search via Brave Search API (requires API key). Use when SearXNG is not configured.
-   Format: {"tool": "web_search", "params": {"query": "search terms", "maxResults": 10}}
-   Example: {"tool": "web_search", "params": {"query": "CQL function syntax", "maxResults": 5}}
-   Use when: Web search is needed and only Brave Search is available.
-
-3. **fetch_url** - Download and parse content from a web page
-   Format: {"tool": "fetch_url", "params": {"url": "https://example.com"}}
-   Example: {"tool": "fetch_url", "params": {"url": "https://cql.hl7.org/"}}
-   Use when: User provides a URL or you find a relevant URL in search results that you need to read.
-
-### CODE READING TOOLS
-
-4. **get_code** - Get the current CQL code from the active editor
+1. **get_code** - Get the current CQL code from the active editor
    Format: {"tool": "get_code", "params": {}}
    Format (specific library): {"tool": "get_code", "params": {"libraryId": "library-id"}}
    Example: {"tool": "get_code", "params": {}}
    Use when: You need to see the current code to understand context, debug, or make suggestions.
 
-5. **list_libraries** - List all loaded CQL libraries
+2. **list_libraries** - List all loaded CQL libraries
    Format: {"tool": "list_libraries", "params": {}}
    Example: {"tool": "list_libraries", "params": {}}
    Use when: User mentions multiple libraries or you need to know what libraries are available.
 
-6. **get_library_content** - Get full content of a specific library
+3. **get_library_content** - Get full content of a specific library
    Format: {"tool": "get_library_content", "params": {"libraryId": "library-id"}}
    Example: {"tool": "get_library_content", "params": {"libraryId": "MyLibrary-1.0.0"}}
    Use when: You need to read a specific library's complete content.
 
-7. **search_code** - Search for text patterns across CQL libraries
+4. **search_code** - Search for text patterns across CQL libraries
    Format: {"tool": "search_code", "params": {"query": "search text"}}
    Format (specific library): {"tool": "search_code", "params": {"query": "search text", "libraryId": "library-id"}}
    Example: {"tool": "search_code", "params": {"query": "define function"}}
    Use when: User asks "where is X defined" or you need to find specific code patterns.
 
-8. **get_cursor_position** - Get current cursor position in editor
+5. **get_cursor_position** - Get current cursor position in editor
    Format: {"tool": "get_cursor_position", "params": {}}
    Example: {"tool": "get_cursor_position", "params": {}}
    Use when: User asks about their cursor location or you need to know where to insert code.
 
-9. **get_selection** - Get currently selected text in editor
+6. **get_selection** - Get currently selected text in editor
    Format: {"tool": "get_selection", "params": {}}
    Example: {"tool": "get_selection", "params": {}}
    Use when: User mentions "selected code" or you need to see what they've highlighted.
@@ -783,14 +804,14 @@ Searching for information.
 
 **CRITICAL: These tools ACTUALLY EDIT the CQL code in the user's editor. When users ask you to fix, improve, add, modify, update, or change code, you MUST use these tools to directly apply the changes.**
 
-10. **insert_code** - **DIRECTLY INSERTS** code at the current cursor position in the editor
+7. **insert_code** - **DIRECTLY INSERTS** code at the current cursor position in the editor
    ⚠️ **REQUIRED PARAMETER: "code"** - You MUST provide the actual code to insert as a string
    Format: {"tool": "insert_code", "params": {"code": "code to insert"}}
    Example: {"tool": "insert_code", "params": {"code": "define function CalculateBMI(weight Decimal, height Decimal): Decimal\n  return (weight / (height * height))\n"}}
    **CRITICAL:** The "code" parameter is MANDATORY and must be a non-empty string containing the actual CQL code you want to insert. The tool will FAIL if "code" is missing, empty, or not a string.
    Use when: User asks you to "add", "insert", "create", "write", or "implement" code. **YOU MUST CALL THIS TOOL - DO NOT JUST SHOW THEM THE CODE.**
 
-11. **replace_code** - **DIRECTLY REPLACES** selected code or code at a specific position in the editor
+8. **replace_code** - **DIRECTLY REPLACES** selected code or code at a specific position in the editor
     ⚠️ **REQUIRED PARAMETER: "code"** - You MUST provide the actual replacement code as a string
     Format: {"tool": "replace_code", "params": {"code": "new code"}}
     Format (specific position): {"tool": "replace_code", "params": {"code": "new code", "startLine": 10, "endLine": 15}}
@@ -803,17 +824,17 @@ Searching for information.
     - If user mentions specific lines or code sections, include startLine/endLine
     - Always read code first with get_code, then replace with the corrected version.
 
-12. **navigate_to_line** - Navigate editor to a specific line number
+9. **navigate_to_line** - Navigate editor to a specific line number
     Format: {"tool": "navigate_to_line", "params": {"line": 42}}
     Example: {"tool": "navigate_to_line", "params": {"line": 10}}
     Use when: User asks to "go to line X" or you're referencing a specific line.
 
-13. **format_code** - Request CQL formatting for the current editor content (applies standard CQL style/indentation).
+10. **format_code** - Request CQL formatting for the current editor content (applies standard CQL style/indentation).
     Format: {"tool": "format_code", "params": {}}
     Example: {"tool": "format_code", "params": {}}
     Use when: User asks to "format", "indent", or "style" the CQL code.
 
-14. **create_library** - Create a new empty CQL library and open it in the editor
+11. **create_library** - Create a new empty CQL library and open it in the editor
     Format: {"tool": "create_library", "params": {}}
     Format (with options): {"tool": "create_library", "params": {"name": "MyLibrary", "title": "My Library", "version": "1.0.0", "description": "Description"}}
     Example: {"tool": "create_library", "params": {}}
@@ -822,29 +843,21 @@ Searching for information.
 
 ### MANDATORY EXAMPLES - COPY THIS FORMAT EXACTLY
 
-**Example 1 - Web search (REQUIRED FORMAT):**
-User: "What's the CQL syntax for functions?"
-Your response MUST BE (prefer searxng_search when configured; otherwise web_search):
-Searching for current CQL function syntax.
-{"tool": "searxng_search", "params": {"query": "CQL function syntax", "max_results": 5}}
-OR if only Brave is available: {"tool": "web_search", "params": {"query": "CQL function syntax", "maxResults": 5}}
-**DO NOT write a long explanation. DO NOT answer directly. Copy this format exactly.**
-
-**Example 2 - Reading code (REQUIRED FORMAT):**
+**Example 1 - Reading code (REQUIRED FORMAT):**
 User: "Fix my code"
 Your response MUST BE:
 Reading your code to identify issues.
 {"tool": "get_code", "params": {}}
 **DO NOT try to answer without the code. Always call get_code first.**
 
-**Example 3 - Code search (REQUIRED FORMAT):**
+**Example 2 - Code search (REQUIRED FORMAT):**
 User: "Where is Age used?"
 Your response MUST BE:
 Searching for Age usage in code.
 {"tool": "search_code", "params": {"query": "Age"}}
 **DO NOT guess. Always search first.**
 
-**Example 4 - Direct code editing (REQUIRED FORMAT):**
+**Example 3 - Direct code editing (REQUIRED FORMAT):**
 User: "Add BMI function"
 Your response MUST BE:
 Reading current code, then adding BMI function.
@@ -853,7 +866,7 @@ Reading current code, then adding BMI function.
 **CRITICAL: Each tool call must be on its own line. You MUST call insert_code or replace_code tools. DO NOT just show the code - directly insert it into the editor.**
 **CRITICAL: The "code" parameter in insert_code/replace_code MUST contain the actual code string. NEVER omit the "code" parameter or leave it empty.**
 
-**Example 5 - Direct code fixing (REQUIRED FORMAT):**
+**Example 4 - Direct code fixing (REQUIRED FORMAT):**
 User: "Fix the syntax error on line 5"
 Your response MUST BE:
 Reading code to identify and fix the syntax error.
@@ -862,7 +875,7 @@ Reading code to identify and fix the syntax error.
 **CRITICAL: You MUST call replace_code to actually fix the code. DO NOT just explain the fix - apply it directly.**
 **CRITICAL: The "code" parameter MUST contain the actual corrected code. NEVER call replace_code without providing the "code" parameter.**
 
-**Example 6 - Code improvement (REQUIRED FORMAT):**
+**Example 5 - Code improvement (REQUIRED FORMAT):**
 User: "Improve this function" or "Make this more efficient"
 Your response MUST BE:
 Reading code to identify improvements.
@@ -870,7 +883,7 @@ Reading code to identify improvements.
 {"tool": "replace_code", "params": {"code": "improved code here\nwith better implementation\n"}}
 **CRITICAL: When users ask to improve, fix, or modify code, you MUST use replace_code to directly apply changes. DO NOT just suggest - actually edit the code.**
 
-**Example 7 - Creating a new library (REQUIRED FORMAT):**
+**Example 6 - Creating a new library (REQUIRED FORMAT):**
 User: "Create a new library" or "Start a new CQL file" or "Create a library for BMI calculations"
 Your response MUST BE:
 Creating a new CQL library.
@@ -880,7 +893,7 @@ Creating a new CQL library for BMI calculations.
 {"tool": "create_library", "params": {"name": "BMICalculation", "title": "BMI Calculation Library", "version": "1.0.0"}}
 **CRITICAL: This tool creates an empty library and opens it in the editor, exactly as if the user clicked "Create New Library" in the Navigation tab.**
 
-**Example 8 - Format code (REQUIRED FORMAT):**
+**Example 7 - Format code (REQUIRED FORMAT):**
 User: "Format this code" or "Indent my CQL"
 Your response MUST BE:
 Formatting CQL code in the editor.
@@ -888,8 +901,7 @@ Formatting CQL code in the editor.
 
 ### TOOL SELECTION RULES
 
-- User asks about ANY topic → Call **searxng_search** (when configured) or **web_search** (Brave) first
-- User provides URL or you need page content → Call **fetch_url**
+- If you have server tools for web search (e.g. searxng_search, web_search) or **fetch_url**, use them for documentation lookups and URLs when needed. **Respect rate limits and avoid multiple web searches in a single response.**
 - User asks about code → Call **get_code** first
 - User asks "where is X" → Call **search_code** first
 - User asks to **add/create/write/implement** code → Call **get_code** then **insert_code** (YOU MUST ACTUALLY INSERT IT)
@@ -906,7 +918,8 @@ Formatting CQL code in the editor.
 - **NEVER call insert_code or replace_code without the "code" parameter - the tool will fail**
 - The "code" parameter must be a non-empty string containing the CQL code you want to insert or use as replacement
 
-**NEVER SKIP TOOLS. ALWAYS CALL A TOOL BEFORE ANSWERING. FOR CODE EDITS, YOU MUST CALL THE EDITING TOOLS - DO NOT JUST DESCRIBE THE CHANGES.**`;
+**NEVER SKIP TOOLS. ALWAYS CALL A TOOL BEFORE ANSWERING. FOR CODE EDITS, YOU MUST CALL THE EDITING TOOLS - DO NOT JUST DESCRIBE THE CHANGES.**`
+      + this.formatServerToolsForSystemPrompt(this.getCachedServerMCPTools());
     }
 
     systemContent += `
@@ -951,6 +964,23 @@ Formatting CQL code in the editor.
     };
   }
 
+
+  private formatServerToolsForSystemPrompt(tools: MCPTool[]): string {
+    if (!tools.length) return '';
+    let out = '\n\n### SERVER MCP TOOLS (from CQL Studio Server)\n\n';
+    tools.forEach((t, i) => {
+      out += `${i + 1}. **${t.name}** - ${t.description || 'No description'}\n`;
+      if (t.parameters && typeof t.parameters === 'object') {
+        const params = t.parameters.properties ?? t.parameters;
+        const keys = Object.keys(params);
+        if (keys.length) {
+          out += `   Format: {"tool": "${t.name}", "params": {${keys.map(k => `"${k}": <value>`).join(', ')}}}\n`;
+        }
+      }
+      out += '\n';
+    });
+    return out;
+  }
 
   private getOllamaHeaders(): HttpHeaders {
     return new HttpHeaders({

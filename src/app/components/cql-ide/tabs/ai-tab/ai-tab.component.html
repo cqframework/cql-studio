@@ -6,47 +6,42 @@
       <i class="bi bi-robot mb-3" style="font-size: 3rem; color: #6c757d;"></i>
       <h5 class="text-muted">AI Assistant Not Available</h5>
       <p class="text-muted">Configure Ollama server and enable AI Assistant in Settings to use this feature.</p>
-      <div class="mt-3">
-        <button class="btn btn-primary" (click)="onNavigateToSettings()">
-          <i class="bi bi-gear me-2"></i>Open Settings
-        </button>
-      </div>
 
       <!-- Connection Test Section -->
-      <div class="mt-4 p-3 rounded">
+      <div class="mt-4 p-3 rounded" *ngIf="connectionTestResult$ | async as connectionTest">
         <h6 class="mb-3">Connection Test</h6>
         <div class="d-flex align-items-center gap-2 mb-2">
           <button class="btn btn-sm btn-outline-primary" (click)="testConnection()"
-            [disabled]="connectionStatus() === 'testing'">
-            @if (connectionStatus() === 'testing') {
+            [disabled]="connectionTest.status === 'testing'">
+            @if (connectionTest.status === 'testing') {
             <span class="spinner-border spinner-border-sm me-2" role="status"></span>
             } @else {
             <i class="bi bi-wifi me-2"></i>
             }
             Test Connection
           </button>
-          @if (connectionStatus() === 'connected') {
+          @if (connectionTest.status === 'connected') {
           <span class="badge bg-success">
             <i class="bi bi-check-circle me-1"></i>Connected
           </span>
-          } @else if (connectionStatus() === 'error') {
+          } @else if (connectionTest.status === 'error') {
           <span class="badge bg-danger">
             <i class="bi bi-x-circle me-1"></i>Error
           </span>
           }
         </div>
 
-        @if (connectionError()) {
+        @if (connectionTest.error) {
         <div class="alert alert-danger alert-sm mb-2">
-          <small>{{ connectionError() }}</small>
+          <small>{{ connectionTest.error }}</small>
         </div>
         }
 
-        @if (availableModels().length > 0) {
+        @if (connectionTest.models.length > 0) {
         <div class="mt-2">
           <small class="text-muted">Available models:</small>
           <div class="mt-1">
-            @for (model of availableModels(); track model) {
+            @for (model of connectionTest.models; track model) {
             <span class="badge bg-secondary me-1 mb-1">{{ model }}</span>
             }
           </div>
@@ -62,92 +57,57 @@
     <div class="ai-toolbar border-bottom p-2 sticky-top">
       <div class="d-flex justify-content-between align-items-center">
         <div class="d-flex gap-2 align-items-center">
-          
-          <!-- Conversations & Context Dropdown -->
+
+          <!-- Conversations Dropdown -->
           <div class="dropdown">
             <button class="btn btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-              <i class="bi bi-chat-dots me-1"></i>Conversations
+              Conversations
               @if (conversations().length > 0) {
               <span class="badge ms-1">{{ conversations().length }}</span>
               }
             </button>
             <ul class="dropdown-menu">
-              <li>
-                <button class="dropdown-item" (click)="onNewConversation()">
-                  <i class="bi bi-plus-circle me-2"></i>New Conversation
-                </button>
-              </li>
-              
-              <!-- Context History Section -->
-              @if (getContextHistory().length > 0) {
-              <li><hr class="dropdown-divider"></li>
-              <li>
-                <div class="dropdown-header">
-                  <i class="bi bi-clock-history me-1"></i>Context History
-                </div>
-              </li>
-              @for (conversation of getContextHistory(); track conversation.id) {
-              <li>
-                <button class="dropdown-item d-flex justify-content-between align-items-center"
-                        (click)="onSwitchToEditorContext(conversation.editorId)"
-                        [title]="conversation.title">
-                  <div class="flex-fill">
-                    <div class="fw-bold">{{ getContextDisplayName(conversation) }}</div>
-                    <small class="text-muted">{{ conversation.lastAccessed | date:'short' }}</small>
-                  </div>
-                  @if (conversation.id === activeConversationId()) {
-                  <i class="bi bi-check-circle text-success"></i>
-                  }
-                </button>
-              </li>
-              }
-              }
-              
-              <!-- Conversations Section -->
               @if (conversations().length > 0) {
-              <li><hr class="dropdown-divider"></li>
-              <li>
-                <div class="dropdown-header">
-                  <i class="bi bi-chat-dots me-1"></i>All Conversations
-                </div>
-              </li>
               @for (conversation of conversations(); track conversation.id) {
-              <li>
-                <button class="dropdown-item d-flex justify-content-between align-items-center"
+              <li class="d-flex align-items-stretch">
+                <button type="button" class="dropdown-item flex-grow-1 text-start d-flex justify-content-between align-items-center"
                         [class.active]="conversation.id === activeConversationId()"
                         (click)="onSelectConversation(conversation.id)">
-                  <div class="flex-fill">
-                    <div class="fw-bold">{{ conversation.title }}</div>
-                    <small class="text-white">{{ conversation.updatedAt | date:'short' }}</small>
+                  <div class="flex-fill min-w-0">
+                    <div class="fw-bold text-truncate">{{ getContextDisplayName(conversation) }}</div>
+                    <small class="text-white">{{ conversation.updatedAt | timeago }}</small>
                   </div>
-                  <button class="btn btn-sm btn-outline-danger ms-2" 
-                          (click)="onDeleteConversation(conversation.id)"
-                          title="Delete conversation">
-                    <i class="bi bi-trash"></i>
-                  </button>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-danger align-self-center"
+                        (click)="onDeleteConversation(conversation.id)"
+                        title="Delete conversation">
+                  <i class="bi bi-trash"></i>
                 </button>
               </li>
               }
               }
-              
               <li><hr class="dropdown-divider"></li>
               <li>
-                <button class="dropdown-item text-white" (click)="onClearAllConversations()">
+                <button type="button" class="dropdown-item text-white" (click)="onClearAllConversations()">
                   <i class="bi bi-trash me-2"></i>Clear All Conversations
                 </button>
               </li>
             </ul>
           </div>
+          <button type="button" id="new-conversation-btn" class="btn btn-sm btn-outline-primary" (click)="onNewConversation()"
+            title="Start a new conversation">
+            <i class="bi bi-plus-circle me-1"></i>New
+          </button>
+          @if (useMCPTools()) {
+          <button id="reset-mcp-tools-btn" class="btn btn-sm" (click)="onResetMCPTools()"
+            [disabled]="resettingMCPTools()" title="Reinitialize server MCP tools and log result to Console">
+            @if (resettingMCPTools()) {
+            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+            }
+            <i class="bi bi-arrow-clockwise me-1"></i>Reload
+          </button>
+          }
           
-        </div>
-        
-        <div class="d-flex gap-2">
-          <button class="btn btn-sm btn-warning" (click)="testContextSwitching()" title="Test Context Switching">
-            <i class="bi bi-bug"></i>
-          </button>
-          <button class="btn btn-sm" (click)="onNavigateToSettings()" title="Settings">
-            <i class="bi bi-gear"></i>
-          </button>
         </div>
       </div>
     </div>

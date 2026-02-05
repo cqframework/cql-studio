@@ -66,10 +66,17 @@ export class ConversationManagerService {
   // Active conversation signal - automatically updates when editor changes
   private _activeConversation = signal<Conversation | null>(null);
   private _activeEditorId = signal<string | null>(null);
-  
+  /** Bumped whenever the list of conversations (localStorage) changes so consumers re-read. */
+  private _conversationsInvalidation = signal(0);
+
   // Public computed signals
   public activeConversation = computed(() => this._activeConversation());
   public activeEditorId = computed(() => this._activeEditorId());
+  /** Reactive list of all conversations; updates when save/delete/clear runs. */
+  public conversations = computed(() => {
+    this._conversationsInvalidation();
+    return this.getAllConversations();
+  });
   
   private ideStateService = inject(IdeStateService);
   private settingsService = inject(SettingsService);
@@ -94,7 +101,7 @@ export class ConversationManagerService {
         editorId = `file_${fileId}`;
       } else {
         // General context as fallback
-        editorId = 'general_context';
+        editorId = 'no-editor-context';
       }
       
       // Only switch if editor actually changed (prevent unnecessary updates)
@@ -198,7 +205,7 @@ export class ConversationManagerService {
       title: this.generateTitle(firstMessage || editorId),
       apiMessages: [], // API format (full context including tool calls/results)
       uiMessages: [], // UI format (sanitized, no tool JSON)
-      mode: mode || this.settingsService.settings().defaultMode || 'plan', // Use provided mode or default from settings
+      mode: mode || 'act',
       createdAt: new Date(),
       updatedAt: new Date(),
       lastAccessed: new Date()
@@ -384,6 +391,26 @@ export class ConversationManagerService {
   }
   
   /**
+   * Update conversation title from the last user message (e.g. first few words of the command).
+   * No-op if userMessage is empty or conversation not found.
+   */
+  updateConversationTitleFromUserMessage(conversationId: string, userMessage: string): void {
+    if (!userMessage?.trim()) {
+      return;
+    }
+    const conversation = this.loadConversation(conversationId);
+    if (!conversation) {
+      return;
+    }
+    conversation.title = this.generateTitle(userMessage.trim());
+    conversation.updatedAt = new Date();
+    this.saveConversation(conversation);
+    if (this._activeConversation()?.id === conversationId) {
+      this._activeConversation.set({ ...conversation });
+    }
+  }
+
+  /**
    * Mark streaming as complete
    */
   completeStreaming(conversationId: string): void {
@@ -416,14 +443,14 @@ export class ConversationManagerService {
     
     const storageKey = this.getStorageKey(conversation.editorId);
     localStorage.removeItem(storageKey);
-    
+    this._conversationsInvalidation.update(v => v + 1);
     // Clear active conversation if it was deleted
     if (this._activeConversation()?.id === conversationId) {
       this._activeConversation.set(null);
       this._activeEditorId.set(null);
     }
   }
-  
+
   /**
    * Get all conversations (across all editors)
    */
@@ -452,7 +479,7 @@ export class ConversationManagerService {
               createdAt: new Date(conv.createdAt),
               updatedAt: new Date(conv.updatedAt),
               lastAccessed: new Date(conv.lastAccessed),
-              mode: (conv.mode === 'plan' || conv.mode === 'act') ? conv.mode : (this.settingsService?.settings()?.defaultMode || 'plan'), // Backward compatibility - only accept valid mode values
+              mode: (conv.mode === 'plan' || conv.mode === 'act') ? conv.mode : 'act',
               apiMessages: apiMessages, // Ensure apiMessages array exists
               uiMessages: (conv.uiMessages || []).map((msg: any) => ({
                 ...msg,
@@ -479,11 +506,11 @@ export class ConversationManagerService {
         localStorage.removeItem(key);
       }
     }
-    
+    this._conversationsInvalidation.update(v => v + 1);
     this._activeConversation.set(null);
     this._activeEditorId.set(null);
   }
-  
+
   /**
    * Detect current editor and load its conversation
    */
@@ -558,7 +585,7 @@ export class ConversationManagerService {
       const conv = JSON.parse(data);
       return {
         ...conv,
-        mode: (conv.mode === 'plan' || conv.mode === 'act') ? conv.mode : (this.settingsService?.settings()?.defaultMode || 'plan'), // Backward compatibility - only accept valid mode values
+        mode: (conv.mode === 'plan' || conv.mode === 'act') ? conv.mode : 'act',
         createdAt: new Date(conv.createdAt),
         updatedAt: new Date(conv.updatedAt),
         lastAccessed: new Date(conv.lastAccessed),
@@ -641,6 +668,7 @@ export class ConversationManagerService {
   private saveConversation(conversation: Conversation): void {
     const storageKey = this.getStorageKey(conversation.editorId);
     localStorage.setItem(storageKey, JSON.stringify(conversation));
+    this._conversationsInvalidation.update(v => v + 1);
   }
   
   /**
