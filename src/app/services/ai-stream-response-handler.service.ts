@@ -36,7 +36,7 @@ export class AiStreamResponseHandlerService {
     private conversationState: AiConversationStateService,
     private toolExecutionManager: AiToolExecutionManagerService,
     private ideStateService: IdeStateService
-  ) {}
+  ) { }
 
   private hashString(str: string): string {
     let hash = 0;
@@ -110,8 +110,8 @@ export class AiStreamResponseHandlerService {
     const newCalls =
       toolCalls.length > 0
         ? this.conversationState.addToolCalls(toolCalls, (c) =>
-            this.toolExecutionManager.getCallKey(c)
-          )
+          this.toolExecutionManager.getCallKey(c)
+        )
         : [];
 
     if (context.isMainStream && this.conversationState.isStreaming()) {
@@ -167,9 +167,6 @@ export class AiStreamResponseHandlerService {
         const summary =
           this.toolExecutionManager.getToolResultsSummary(newCalls) ||
           `Tools executed: ${newCalls.map((c) => c.tool).join(', ')}. Continue with your response.`;
-        if (context.isMainStream && summary) {
-          this.ideStateService.addJsonOutput('Tool Execution Summary', summary, 'success');
-        }
         return { startContinuation: { editorId: conv.editorId, summary } };
       }
     }
