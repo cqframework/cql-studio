@@ -10,7 +10,7 @@ import { IdeStateService } from './ide-state.service';
 import { ConversationManagerService } from './conversation-manager.service';
 import { AiPlanningService } from './ai-planning.service';
 import { Plan, PlanStep } from '../models/plan.model';
-import { BROWSER_TOOL_DEFINITIONS } from './browser-tool-definitions';
+import { BrowserToolsRegistry } from './tools';
 
 // Ollama API types (structured options per https://github.com/ollama/ollama/blob/main/docs/api.md)
 
@@ -668,7 +668,7 @@ Always call a tool first; do not answer directly until you have results. Put eac
       systemContent += `
 
 **Search rate limiting:** If server tools (searxng_search, web_search, fetch_url) exist, use one search per turn when possible; prefer get_code/search_code for in-editor content.`
-        + this.formatBrowserToolsForSystemPrompt(BROWSER_TOOL_DEFINITIONS)
+        + this.formatBrowserToolsForSystemPrompt(BrowserToolsRegistry.getDefinitions() as MCPTool[])
         + `
 
 **Tool selection:** Code question → get_code. "Where is X" → search_code. Add/create code → get_code then insert_code. Fix/improve code → get_code then replace_code. Format → format_code. New library → create_library. Documentation/URLs → server web/search tools if listed below.`

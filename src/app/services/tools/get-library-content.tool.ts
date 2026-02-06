@@ -1,0 +1,33 @@
+// Author: Preston Lee
+
+import { BaseBrowserTool } from './base-browser-tool';
+
+export class GetLibraryContentTool extends BaseBrowserTool {
+  readonly name = 'get_library_content';
+  readonly description = 'Get the full content of a specific library';
+  readonly parameters = {
+    type: 'object',
+    properties: {
+      libraryId: { type: 'string', description: 'Library ID' }
+    },
+    required: ['libraryId']
+  };
+
+  execute(params: Record<string, unknown>): unknown {
+    const libraryId = params['libraryId'] as string;
+    if (!libraryId) {
+      throw new Error('Library ID is required');
+    }
+
+    const library = this.ctx.ideStateService.libraryResources().find(l => l.id === libraryId);
+    if (!library) {
+      throw new Error(`Library not found: ${libraryId}`);
+    }
+
+    return {
+      libraryId,
+      libraryName: library.library?.name || 'Unknown',
+      content: library.cqlContent || ''
+    };
+  }
+}
