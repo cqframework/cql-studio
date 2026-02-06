@@ -190,6 +190,29 @@ export class ToolCallParserService {
   }
 
   /**
+   * Remove parsed tool call JSON from response text for display
+   */
+  removeToolCallJsonFromResponse(response: string, toolCalls: ParsedToolCall[]): string {
+    let cleaned = response;
+    for (const toolCall of toolCalls) {
+      if (toolCall.raw && cleaned.includes(toolCall.raw)) {
+        cleaned = cleaned.replace(toolCall.raw, '').trim();
+      }
+    }
+    const standaloneToolCallPattern = /\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[\s\S]*?\}\s*\}/g;
+    cleaned = cleaned.replace(standaloneToolCallPattern, '').trim();
+    const lines = cleaned.split('\n');
+    const filteredLines = lines.filter(line => {
+      const trimmed = line.trim();
+      if (trimmed.startsWith('{') && trimmed.includes('"tool"') && trimmed.includes('"params"')) {
+        return false;
+      }
+      return true;
+    });
+    return filteredLines.join('\n').trim();
+  }
+
+  /**
    * Check if response text likely contains complete tool calls
    * This checks for complete JSON structures, not partial ones
    */

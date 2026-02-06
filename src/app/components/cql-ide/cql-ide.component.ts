@@ -10,6 +10,7 @@ import { PatientService } from '../../services/patient.service';
 import { TranslationService } from '../../services/translation.service';
 import { CqlExecutionService } from '../../services/cql-execution.service';
 import { SettingsService } from '../../services/settings.service';
+import { AiService } from '../../services/ai.service';
 import { Library } from 'fhir/r4';
 import { KeyboardShortcut } from './shared/ide-types';
 
@@ -53,6 +54,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   private translationService = inject(TranslationService);
   private cqlExecutionService = inject(CqlExecutionService);
   public settingsService = inject(SettingsService);
+  private aiService = inject(AiService);
 
   constructor() {
     // Watch for editor action requests from tool orchestrator (effect must be in constructor)
@@ -188,8 +190,8 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.addTabToPanel('right', elmTab);
     this.ideStateService.addTabToPanel('right', clipboardTab);
     
-    // Only add AI tab if Ollama is configured
-    const aiTabAdded = this.settingsService.getEffectiveOllamaBaseUrl() && this.settingsService.settings().enableAiAssistant;
+    // Only add AI tab if server proxy and Ollama are configured and AI is enabled
+    const aiTabAdded = this.aiService.isAiAssistantAvailable();
     if (aiTabAdded) {
       this.ideStateService.addTabToPanel('right', aiTab);
     }
@@ -228,8 +230,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     if (!rightPanel) return;
 
     const hasAiTab = rightPanel.tabs.some(tab => tab.type === 'ai');
-    const shouldHaveAiTab = this.settingsService.getEffectiveOllamaBaseUrl() && 
-                           this.settingsService.settings().enableAiAssistant;
+    const shouldHaveAiTab = this.aiService.isAiAssistantAvailable();
 
     if (shouldHaveAiTab && !hasAiTab) {
       // Add AI tab

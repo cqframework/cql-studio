@@ -1,13 +1,15 @@
 // Author: Preston Lee
 
 import { Injectable } from '@angular/core';
-import { Observable, of, throwError, Subject } from 'rxjs';
-import { catchError, tap } from 'rxjs/operators';
+import { Observable, of, throwError, Subject, firstValueFrom } from 'rxjs';
+import { catchError, tap, timeout } from 'rxjs/operators';
 import { ToolOrchestratorService, ToolResult } from './tool-orchestrator.service';
 import { ParsedToolCall } from './tool-call-parser.service';
 import { AiConversationStateService } from './ai-conversation-state.service';
 import { AiPlanningService } from './ai-planning.service';
 import { ConversationManagerService } from './conversation-manager.service';
+import { IdeStateService } from './ide-state.service';
+import { PlanStep } from '../models/plan.model';
 
 export interface ToolExecutionEvent {
   type: 'started' | 'completed' | 'failed';
@@ -15,6 +17,13 @@ export interface ToolExecutionEvent {
   toolCall: ParsedToolCall;
   result?: ToolResult;
   error?: string;
+}
+
+export interface ExecuteToolCallsOptions {
+  conversationId?: string;
+  planSteps?: PlanStep[];
+  onResult?: (toolCall: ParsedToolCall, result: ToolResult) => void;
+  timeoutMs?: number;
 }
 
 /**
@@ -32,14 +41,25 @@ export class AiToolExecutionManagerService {
     private toolOrchestrator: ToolOrchestratorService,
     private stateService: AiConversationStateService,
     private planningService: AiPlanningService,
-    private conversationManager: ConversationManagerService
+    private conversationManager: ConversationManagerService,
+    private ideStateService: IdeStateService
   ) {}
   
   /**
-   * Generate unique key for a tool call
+   * Generate unique key for a tool call (stable regardless of param key order)
    */
   getCallKey(toolCall: ParsedToolCall): string {
-    return `${toolCall.tool}:${JSON.stringify(toolCall.params)}`;
+    const params = toolCall.params && typeof toolCall.params === 'object' ? toolCall.params : {};
+    const stableParams = this.stableStringify(params);
+    return `${toolCall.tool}:${stableParams}`;
+  }
+
+  private stableStringify(obj: unknown): string {
+    if (obj === null || typeof obj !== 'object') return JSON.stringify(obj);
+    if (Array.isArray(obj)) return JSON.stringify(obj);
+    const keys = Object.keys(obj as object).sort();
+    const pairs = keys.map(k => `${JSON.stringify(k)}:${this.stableStringify((obj as Record<string, unknown>)[k])}`);
+    return `{${pairs.join(',')}}`;
   }
   
   /**
@@ -195,6 +215,82 @@ export class AiToolExecutionManagerService {
       
       executeNext();
     });
+  }
+
+  /**
+   * Execute tool calls serially and return a Promise. Supports plan step updates and IDE logging.
+   */
+  async executeToolCallsAsPromise(
+    toolCalls: ParsedToolCall[],
+    options: ExecuteToolCallsOptions = {}
+  ): Promise<ToolResult[]> {
+    if (toolCalls.length === 0) return [];
+    const { conversationId, planSteps, onResult, timeoutMs = 5000 } = options;
+    const results: ToolResult[] = [];
+
+    for (let index = 0; index < toolCalls.length; index++) {
+      const toolCall = toolCalls[index];
+      if (conversationId && planSteps && planSteps[index]) {
+        const callKey = this.getCallKey(toolCall);
+        this.conversationManager.updatePlanStepStatus(
+          conversationId,
+          planSteps[index].id,
+          'in-progress',
+          callKey
+        );
+      }
+
+      try {
+        const result = await firstValueFrom(
+          this.executeToolCall(toolCall).pipe(timeout(timeoutMs))
+        );
+        results.push(result);
+        onResult?.(toolCall, result);
+        const resultJson = JSON.stringify(
+          { tool: toolCall.tool, success: result.success, result: result.result, error: result.error },
+          null,
+          2
+        );
+        this.ideStateService.addJsonOutput(
+          `Tool Execution Result: ${toolCall.tool}`,
+          resultJson,
+          result.success ? 'success' : 'error'
+        );
+        if (conversationId && planSteps && planSteps[index]) {
+          this.conversationManager.updatePlanStepStatus(
+            conversationId,
+            planSteps[index].id,
+            result.success ? 'completed' : 'failed'
+          );
+        }
+      } catch (error: unknown) {
+        const err = error as { message?: string; isValidationError?: boolean };
+        if (!err?.isValidationError) {
+          console.error(`[ToolManager] Tool execution error for ${toolCall.tool}:`, error);
+        }
+        const errorResult: ToolResult = {
+          tool: toolCall.tool,
+          success: false,
+          error: err?.message ?? 'Tool execution failed'
+        };
+        results.push(errorResult);
+        onResult?.(toolCall, errorResult);
+        const errorJson = JSON.stringify(
+          { tool: toolCall.tool, success: false, error: errorResult.error },
+          null,
+          2
+        );
+        this.ideStateService.addJsonOutput(`Tool Execution Error: ${toolCall.tool}`, errorJson, 'error');
+        if (conversationId && planSteps && planSteps[index]) {
+          this.conversationManager.updatePlanStepStatus(
+            conversationId,
+            planSteps[index].id,
+            'failed'
+          );
+        }
+      }
+    }
+    return results;
   }
   
   /**

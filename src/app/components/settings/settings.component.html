@@ -16,277 +16,214 @@
                 </button>
             </div>
         </div>
-        <div class="col-sm-6 p-4">
-            <h4><span class="bi bi-code-slash"></span> Advanced</h4>
-            <div class="form-check form-switch mt-3 ms-1 ">
-                <input id="experimental_switch" class="form-check-input" type="checkbox" name="experimental_switch"
-                    [(ngModel)]="settingsService.settings().experimental" />
-                <label class="form-check-label" for="experimental_switch"><span
-                        class="bi bi-exclamation-diamond"></span> Experimental
-                    Features</label>
-                <br />
-
-                <small class="form-text">This is used for testing upcoming features and may break existing
-                    functionality. You probably don't want to use this!</small>
-
-            </div>
-            <div class="form-check form-switch mt-3 ms-1 ">
-                <input id="developer_switch" class="form-check-input" type="checkbox" name="developer_switch"
-                    [(ngModel)]="settingsService.settings().developer" />
-                <label class="form-check-label" for="developer_switch"><span class="bi bi-code"></span> Developer
-                    Mode</label>
-                <br />
-                <small class="form-text">Enable more advanced technical settings and messages. This is mostly for
-                    development.</small>
-
-            </div>
-        </div>
-
-
-        <div class="col-sm-6 p-4">
-            <h4><span class="bi bi-person"></span> Preferences</h4>
-            <div class="form-floating">
-                <select class="form-select" name="theme" [(ngModel)]="settingsService.settings().theme_preferred"
-                    (ngModelChange)="themePreferenceChanged($event)">
-                    <option [value]="themeTypes().AUTOMATIC"
-                        [selected]="settingsService.settings().theme_preferred == themeTypes().AUTOMATIC">
-                        Automatic
-                    </option>
-                    <option [value]="themeTypes().LIGHT"
-                        [selected]="settingsService.settings().theme_preferred == themeTypes().LIGHT">
-                        Light
-                    </option>
-                    <option [value]="themeTypes().DARK"
-                        [selected]="settingsService.settings().theme_preferred == themeTypes().DARK">
-                        Dark
-                    </option>
-                </select>
-                <label for="theme">Theme</label>
-            </div>
-
-            <div class="form-check form-switch mt-3 ms-1 ">
-                <input id="validate_schema_switch" class="form-check-input" type="checkbox"
-                    name="validate_schema_switch" [(ngModel)]="settingsService.settings().validateSchema"
-                    (ngModelChange)="onValidateSchemaChange()" />
-                <label class="form-check-label" for="validate_schema_switch"><span class="bi bi-check-circle"></span>
-                    Validate Against Schema</label>
-                <br />
-                <small class="form-text">Enable validation of data files against the JSON schema prior to
-                    loading.</small>
-
-            </div>
-
-        </div>
-        <div class="row">
-
-
-            <div class="col-sm-6 p-4">
-
-                <h4 class="mt-4"><span class="bi bi-cloud"></span> Integrations</h4>
-
-                <div class="card mb-4">
+        <div class="row p-4">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
                     <div class="card-header">
-                        <h6 class="card-title mb-0"><span class="bi bi-play-circle me-2"></span>CQL Tests Runner &
-                            Results</h6>
+                        <h6 class="card-title mb-0"><span class="bi bi-sliders me-2"></span>Advanced &amp; Preferences</h6>
                     </div>
                     <div class="card-body">
-                        <div class="form-floating">
+                        <div class="form-check form-switch ms-1">
+                            <input id="experimental_switch" class="form-check-input" type="checkbox" name="experimental_switch"
+                                [(ngModel)]="settingsService.settings().experimental" />
+                            <label class="form-check-label" for="experimental_switch"><span class="bi bi-exclamation-diamond"></span> Experimental Features</label>
+                            <br />
+                            <small class="form-text text-muted d-block mt-1 small">This is used for testing upcoming features and may break existing functionality. You probably don't want to use this!</small>
+                        </div>
+                        <div class="form-check form-switch mt-3 ms-1">
+                            <input id="developer_switch" class="form-check-input" type="checkbox" name="developer_switch"
+                                [(ngModel)]="settingsService.settings().developer" />
+                            <label class="form-check-label" for="developer_switch"><span class="bi bi-code"></span> Developer Mode</label>
+                            <br />
+                            <small class="form-text text-muted d-block mt-1 small">Enable more advanced technical settings and messages. This is mostly for development.</small>
+                        </div>
+                        <div class="mb-3 mt-3">
+                            <label for="theme" class="form-label">Theme</label>
+                            <select class="form-select" name="theme" [(ngModel)]="settingsService.settings().theme_preferred"
+                                (ngModelChange)="themePreferenceChanged($event)">
+                                <option [value]="themeTypes().AUTOMATIC" [selected]="settingsService.settings().theme_preferred == themeTypes().AUTOMATIC">Automatic</option>
+                                <option [value]="themeTypes().LIGHT" [selected]="settingsService.settings().theme_preferred == themeTypes().LIGHT">Light</option>
+                                <option [value]="themeTypes().DARK" [selected]="settingsService.settings().theme_preferred == themeTypes().DARK">Dark</option>
+                            </select>
+                        </div>
+                        <div class="form-check form-switch mt-3 ms-1">
+                            <input id="validate_schema_switch" class="form-check-input" type="checkbox"
+                                name="validate_schema_switch" [(ngModel)]="settingsService.settings().validateSchema"
+                                (ngModelChange)="onValidateSchemaChange()" />
+                            <label class="form-check-label" for="validate_schema_switch"><span class="bi bi-check-circle"></span> Validate Against Schema</label>
+                            <br />
+                            <small class="form-text text-muted d-block mt-1 small">Enable validation of data files against the JSON schema prior to loading.</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h6 class="card-title mb-0"><span class="bi bi-play-circle me-2"></span>CQL Tests Runner &amp; Results</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="runnerApiBaseUrl" class="form-label">Runner API Base URL</label>
                             <input type="url" class="form-control" id="runnerApiBaseUrl" name="runnerApiBaseUrl"
                                 [(ngModel)]="settingsService.settings().runnerApiBaseUrl"
                                 [placeholder]="settingsService.getDefaultRunnerApiBaseUrl()">
-                            <label for="runnerApiBaseUrl">Runner API Base URL</label>
-                            <small class="form-text">Base URL for the CQL Tests Runner API. Defaults to
-                                CQL_STUDIO_RUNNER_BASE_URL
-                                or {{ settingsService.getDefaultRunnerApiBaseUrl() }}</small>
+                            <small class="form-text text-muted d-block mt-1 small">Base URL for the CQL Tests Runner API.</small>
                         </div>
-
-                        <div class="form-floating mt-3">
+                        <div class="mb-3">
+                            <label for="runnerFhirBaseUrl" class="form-label">Runner FHIR Base URL</label>
                             <input type="url" class="form-control" id="runnerFhirBaseUrl" name="runnerFhirBaseUrl"
                                 [(ngModel)]="settingsService.settings().runnerFhirBaseUrl"
                                 [placeholder]="settingsService.getDefaultRunnerFhirBaseUrl()">
-                            <label for="runnerFhirBaseUrl">Runner FHIR Base URL</label>
-                            <small class="form-text">Base FHIR URL to pass to the CQL Tests Runner, which must be
-                                network-accessible from the runner service. Defaults to CQL_STUDIO_RUNNER_FHIR_BASE_URL
-                                or {{
-                                settingsService.getDefaultRunnerFhirBaseUrl() }}</small>
+                            <small class="form-text text-muted d-block mt-1 small">Base FHIR URL to pass to the CQL Tests Runner; must be network-accessible from the runner.</small>
                         </div>
-
-                        <div class="form-floating mt-3">
+                        <div class="mb-3">
+                            <label for="defaultTestResultsIndexUrl" class="form-label">Default Test Results Index URL</label>
                             <input type="url" class="form-control" id="defaultTestResultsIndexUrl"
                                 name="defaultTestResultsIndexUrl"
                                 [(ngModel)]="settingsService.settings().defaultTestResultsIndexUrl"
                                 [placeholder]="settingsService.getDefaultTestResultsIndexUrl()">
-                            <label for="defaultTestResultsIndexUrl">Default Test Results Index URL</label>
-                            <small class="form-text">Default URL for loading test results index files. Defaults to
-                                CQL_STUDIO_DEFAULT_TEST_RESULTS_INDEX_URL or {{
-                                settingsService.getDefaultTestResultsIndexUrl()
-                                }}</small>
+                            <small class="form-text text-muted d-block mt-1 small">Default URL for loading test results index files.</small>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div class="card mb-4">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
                     <div class="card-header">
                         <h6 class="card-title mb-0"><span class="bi bi-server me-2"></span>FHIR Server</h6>
                     </div>
                     <div class="card-body">
-                        <div class="form-floating">
+                        <div class="mb-3">
+                            <label for="fhirBaseUrl" class="form-label">FHIR Base URL</label>
                             <input type="url" class="form-control" id="fhirBaseUrl" name="fhirBaseUrl"
                                 [(ngModel)]="settingsService.settings().fhirBaseUrl"
                                 [placeholder]="settingsService.getDefaultFhirBaseUrl()">
-                            <label for="fhirBaseUrl">FHIR Base URL</label>
-                            <small class="form-text">Base URL for the FHIR server. Defaults to CQL_STUDIO_FHIR_BASE_URL
-                                or {{
-                                settingsService.getDefaultFhirBaseUrl() }}</small>
+                            <small class="form-text text-muted d-block mt-1 small">Base URL for the FHIR server.</small>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div class="card mb-4">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
                     <div class="card-header">
                         <h6 class="card-title mb-0"><span class="bi bi-book me-2"></span>Terminology Services</h6>
                     </div>
                     <div class="card-body">
-                        <div class="form-floating">
+                        <div class="mb-3">
+                            <label for="terminologyBaseUrl" class="form-label">Terminology Base URL</label>
                             <input type="url" class="form-control" id="terminologyBaseUrl" name="terminologyBaseUrl"
                                 [(ngModel)]="settingsService.settings().terminologyBaseUrl"
                                 [placeholder]="settingsService.getDefaultTerminologyBaseUrl()">
-                            <label for="terminologyBaseUrl">Terminology Base URL</label>
-                            <small class="form-text">Base URL for terminology services. Defaults to
-                                CQL_STUDIO_TERMINOLOGY_BASE_URL or {{
-                                settingsService.getDefaultTerminologyBaseUrl() }}</small>
+                            <small class="form-text text-muted d-block mt-1 small">Base URL for terminology services.</small>
                         </div>
-
-                        <div class="form-floating mt-3">
+                        <div class="mb-3">
+                            <label for="terminologyBasicAuthUsername" class="form-label">Basic Auth Username (Optional)</label>
                             <input type="text" class="form-control" id="terminologyBasicAuthUsername"
                                 name="terminologyBasicAuthUsername"
                                 [(ngModel)]="settingsService.settings().terminologyBasicAuthUsername"
                                 [placeholder]="settingsService.getDefaultTerminologyBasicAuthUsername()">
-                            <label for="terminologyBasicAuthUsername">Basic Auth Username (Optional)</label>
-                            <small class="form-text">Username for Basic Authentication. Defaults to
-                                CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_USERNAME or blank.</small>
+                            <small class="form-text text-muted d-block mt-1 small">Username for Basic Authentication.</small>
                         </div>
-
-                        <div class="form-floating mt-3">
+                        <div class="mb-3">
+                            <label for="terminologyBasicAuthPassword" class="form-label">Basic Auth Password (Optional)</label>
                             <input type="password" class="form-control" id="terminologyBasicAuthPassword"
                                 name="terminologyBasicAuthPassword"
                                 [(ngModel)]="settingsService.settings().terminologyBasicAuthPassword"
                                 [placeholder]="settingsService.getDefaultTerminologyBasicAuthPassword()">
-                            <label for="terminologyBasicAuthPassword">Basic Auth Password (Optional)</label>
-                            <small class="form-text">Password for Basic Authentication. Defaults to
-                                CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_PASSWORD or blank.</small>
+                            <small class="form-text text-muted d-block mt-1 small">Password for Basic Authentication.</small>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div class="card mb-4">
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
                     <div class="card-header">
                         <h6 class="card-title mb-0"><span class="bi bi-server me-2"></span>CQL Studio Server</h6>
                     </div>
                     <div class="card-body">
-                        <div class="form-floating">
+                        <div class="mb-3">
+                            <label for="serverBaseUrl" class="form-label">Server Base URL (Optional)</label>
                             <input type="url" class="form-control" id="serverBaseUrl" name="serverBaseUrl"
                                 [(ngModel)]="settingsService.settings().serverBaseUrl"
                                 [placeholder]="settingsService.getDefaultServerBaseUrl()">
-                            <label for="serverBaseUrl">Server Base URL (Optional)</label>
-                            <small class="form-text">Base URL for the CQL Studio Server API. Defaults to CQL_STUDIO_SERVER_BASE_URL or {{
-                                settingsService.getDefaultServerBaseUrl() }}</small>
+                            <small class="form-text text-muted d-block mt-1 small">Base URL for the CQL Studio Server API.</small>
                         </div>
-
-                        <div class="form-floating mt-3">
+                        <div class="mb-3">
+                            <label for="searxngBaseUrl" class="form-label">SearXNG Base URL (Optional)</label>
                             <input type="url" class="form-control" id="searxngBaseUrl" name="searxngBaseUrl"
                                 [(ngModel)]="settingsService.settings().searxngBaseUrl"
                                 [placeholder]="settingsService.getDefaultSearxngBaseUrl()">
-                            <label for="searxngBaseUrl">SearXNG Base URL (Optional)</label>
-                            <small class="form-text">Base URL of a SearXNG instance for anonymous web search (e.g. https://search.example.org). Defaults to CQL_STUDIO_SEARXNG_BASE_URL or blank. See https://searx.space/ for public instances. Be cautious!</small>
+                            <small class="form-text text-muted d-block mt-1 small">Base URL of a SearXNG instance for anonymous web search (e.g. https://search.example.org). See https://searx.space/ for public instances. Be cautious!</small>
                         </div>
-
-                        <div class="form-check form-switch mt-3 ms-1">
-                            <input id="useMCPTools" class="form-check-input" type="checkbox" name="useMCPTools"
-                                [(ngModel)]="settingsService.settings().useMCPTools" />
-                            <label class="form-check-label" for="useMCPTools"><span class="bi bi-tools"></span> Enable MCP
-                                Tools</label>
-                            <br />
-                            <small class="form-text">Enable MCP (Model Context Protocol) tools for FHIR data access in AI
-                                conversations.</small>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-            <div class="col-sm-6 p-4">
-
-                <h4 class="mt-4"><span class="bi bi-robot"></span> AI Assistant</h4>
-
-                <div class="card mb-4">
-                    <div class="card-header">
-                        <h6 class="card-title mb-0"><span class="bi bi-robot me-2"></span>AI Assistant</h6>
-                    </div>
-                    <div class="card-body">
+                        <h6 class="mt-4 mb-2"><span class="bi bi-robot me-2"></span>AI Assistant</h6>
                         <div class="form-check form-switch ms-1">
                             <input id="enableAiAssistant" class="form-check-input" type="checkbox" name="enableAiAssistant"
                                 [(ngModel)]="settingsService.settings().enableAiAssistant" />
-                            <label class="form-check-label" for="enableAiAssistant"><span class="bi bi-robot"></span> Enable AI
-                                Assistant</label>
+                            <label class="form-check-label" for="enableAiAssistant"><span class="bi bi-robot"></span> Enable AI Assistant</label>
                             <br />
-                            <small class="form-text">Enable the AI assistant tab for CQL development help.</small>
+                            <small class="form-text text-muted d-block mt-1 small">Enable the AI assistant tab for CQL development help. Requests are proxied through CQL Studio Server.</small>
                         </div>
-
                         @if (settingsService.settings().enableAiAssistant) {
-                            <div class="form-floating mt-3">
+                            <div class="form-check form-switch mt-3 ms-1">
+                                <input id="useMCPTools" class="form-check-input" type="checkbox" name="useMCPTools"
+                                    [(ngModel)]="settingsService.settings().useMCPTools" />
+                                <label class="form-check-label" for="useMCPTools"><span class="bi bi-tools"></span> Enable MCP Tools</label>
+                                <br />
+                                <small class="form-text text-muted d-block mt-1 small">Enable MCP (Model Context Protocol) tools for FHIR data access in AI conversations.</small>
+                            </div>
+                            <div class="mb-3">
+                                <label for="ollamaBaseUrl" class="form-label">Ollama Base URL</label>
                                 <input type="url" class="form-control" id="ollamaBaseUrl" name="ollamaBaseUrl"
                                     [(ngModel)]="settingsService.settings().ollamaBaseUrl"
                                     [placeholder]="settingsService.getDefaultOllamaBaseUrl()">
-                                <label for="ollamaBaseUrl">Ollama Base URL</label>
-                                <small class="form-text">Base URL for the Ollama server. Defaults to CQL_STUDIO_OLLAMA_BASE_URL or
-                                    {{
-                                    settingsService.getDefaultOllamaBaseUrl() }}</small>
+                                <small class="form-text text-muted d-block mt-1 small">Base URL for the Ollama server (passed to CQL Studio Server on each request).</small>
                             </div>
-
-                            <div class="form-floating mt-3">
+                            <div class="mb-3">
+                                <label for="ollamaModel" class="form-label">Ollama Model</label>
                                 <input type="text" class="form-control" id="ollamaModel" name="ollamaModel"
                                     [(ngModel)]="settingsService.settings().ollamaModel"
                                     [placeholder]="settingsService.getDefaultOllamaModel()">
-                                <label for="ollamaModel">Ollama Model</label>
-                                <small class="form-text">Model name to use with Ollama. Defaults to CQL_STUDIO_OLLAMA_MODEL or {{
-                                    settingsService.getDefaultOllamaModel() }}</small>
+                                <small class="form-text text-muted d-block mt-1 small">Model name to use with Ollama.</small>
                             </div>
-
                             <div class="form-check form-switch mt-3 ms-1">
                                 <input id="autoApplyCodeEdits" class="form-check-input" type="checkbox" name="autoApplyCodeEdits"
                                     [(ngModel)]="settingsService.settings().autoApplyCodeEdits" />
                                 <label class="form-check-label" for="autoApplyCodeEdits"><span class="bi bi-lightning-charge"></span> Auto-Apply Code Edits</label>
                                 <br />
-                                <small class="form-text">Automatically apply code edits suggested by AI without manual approval.</small>
+                                <small class="form-text text-muted d-block mt-1 small">Automatically apply code edits suggested by AI without manual approval.</small>
                             </div>
-
                             <div class="form-check form-switch mt-3 ms-1">
                                 <input id="requireDiffPreview" class="form-check-input" type="checkbox" name="requireDiffPreview"
                                     [(ngModel)]="settingsService.settings().requireDiffPreview" />
                                 <label class="form-check-label" for="requireDiffPreview"><span class="bi bi-eye"></span> Always Show Diff Preview</label>
                                 <br />
-                                <small class="form-text">Always show a diff preview before applying code edits, even when auto-apply is enabled.</small>
+                                <small class="form-text text-muted d-block mt-1 small">Always show a diff preview before applying code edits, even when auto-apply is enabled.</small>
                             </div>
-
                         }
                     </div>
                 </div>
             </div>
         </div>
-        <div class="col-sm-12 p-4 d-flex justify-content-between align-items-center">
-            <div>
-                <button id="save-settings-btn-bottom" class="btn btn-primary" (click)="save()">
-                    <span class="bi bi-file-check"></span> Save to Browser
-                </button>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <button id="reset-clipboard-btn-bottom" class="btn btn-outline-secondary btn-sm" (click)="onResetClipboard()">
-                    <span class="bi bi-clipboard-x"></span> Reset Clipboard
-                </button>
-                <button id="reset-settings-btn-bottom" class="btn" (click)="restore()">
-                    <span class="bi bi-arrow-counterclockwise"></span> Reset to Defaults
-                </button>
+        <div class="row">
+            <div class="col-12 p-4 d-flex justify-content-between align-items-center">
+                <div>
+                    <button id="save-settings-btn-bottom" class="btn btn-primary" (click)="save()">
+                        <span class="bi bi-file-check"></span> Save to Browser
+                    </button>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <button id="reset-clipboard-btn-bottom" class="btn btn-outline-secondary btn-sm" (click)="onResetClipboard()">
+                        <span class="bi bi-clipboard-x"></span> Reset Clipboard
+                    </button>
+                    <button id="reset-settings-btn-bottom" class="btn" (click)="restore()">
+                        <span class="bi bi-arrow-counterclockwise"></span> Reset to Defaults
+                    </button>
+                </div>
             </div>
         </div>
     </div>

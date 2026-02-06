@@ -206,6 +206,14 @@ export class AiConversationStateService {
   }
   
   /**
+   * Clear pending tool calls when a round is done (before continuation).
+   * Avoids stale "Pending: ..." UI when keys do not match manager's getCallKey.
+   */
+  clearPendingToolCalls(): void {
+    this._pendingToolCalls.set([]);
+  }
+  
+  /**
    * Mark tool call as executing
    */
   markToolCallExecuting(callKey: string, toolCall: ParsedToolCall): void {
@@ -239,9 +247,7 @@ export class AiConversationStateService {
     results.set(callKey, result);
     this._toolExecutionResults.set(results);
     
-    // Update state
     if (executing.size === 0) {
-      // All tools completed
       this.transitionTo('results-ready');
     }
   }

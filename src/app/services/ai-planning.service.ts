@@ -168,6 +168,8 @@ This plan will add the BMI calculation function while maintaining code quality a
 - Use tools to modify code as needed
 - Make actual changes to the codebase
 - Follow through on the agreed strategy
+
+**FIRST RESPONSE MUST USE TOOLS WHEN NEEDED:** On each new user message, if you need to read code, search, or get context, your first reply MUST include a tool_call (e.g. get_code or search_code). Do not answer with only text until you have called tools and received their results.
 `;
     
     if (hasPlan) {
@@ -182,6 +184,7 @@ This plan will add the BMI calculation function while maintaining code quality a
 **DIRECT EXECUTION:**
 - Proceed with implementation directly
 - Use tools to make necessary changes
+- On the first response, call get_code (or another tool) if you need context before answering
 `;
     }
     
@@ -189,7 +192,7 @@ This plan will add the BMI calculation function while maintaining code quality a
 **TOOLS AVAILABLE:**
 - All tools are available, including code modification tools
 - Use insert_code, replace_code, create_library as needed
-- Read files first to understand context before modifying
+- Read files first (get_code) to understand context before modifying
 `;
     
     return prompt;

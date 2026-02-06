@@ -141,29 +141,6 @@
       }
     }
     
-    // Welcome message
-    .welcome-message {
-      height: 100%;
-      background-color: theme.$ide-bg-primary;
-      
-      .suggested-commands {
-        .suggested-command-btn {
-          max-width: 300px;
-          white-space: normal;
-          text-align: left;
-          line-height: 1.3;
-          padding: 8px 12px;
-          border-radius: 6px;
-          transition: all 0.2s ease;
-          
-          &:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0, 123, 255, 0.2);
-          }
-        }
-      }
-    }
-    
     // Fixed Input Area
     .ai-input-area {
       position: sticky;
@@ -640,16 +617,6 @@
         &.plan-display-message,
         &.diff-preview-message {
           margin-bottom: 0.75rem !important;
-        }
-      }
-      
-      .welcome-message {
-        h5, h6 {
-          color: theme.$ide-text-white !important;
-        }
-        
-        p, span {
-          color: theme.$ide-text-primary !important;
         }
       }
     }

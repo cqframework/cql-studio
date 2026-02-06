@@ -9,13 +9,13 @@ import { MarkdownComponent } from 'ngx-markdown';
 import { AiService } from '../../../../services/ai.service';
 import { IdeStateService } from '../../../../services/ide-state.service';
 import { SettingsService } from '../../../../services/settings.service';
-import { ConversationManagerService, Conversation, UIMessage } from '../../../../services/conversation-manager.service';
+import { ConversationManagerService, Conversation } from '../../../../services/conversation-manager.service';
 import { ToolResult } from '../../../../services/tool-orchestrator.service';
 import { ToolCallParserService, ParsedToolCall } from '../../../../services/tool-call-parser.service';
 import { CodeDiffPreviewComponent, CodeDiff } from './code-diff-preview.component';
 import { AiConversationStateService } from '../../../../services/ai-conversation-state.service';
 import { AiToolExecutionManagerService } from '../../../../services/ai-tool-execution-manager.service';
-import { Plan, PlanStep } from '../../../../models/plan.model';
+import { AiStreamResponseHandlerService, StreamResponseContext } from '../../../../services/ai-stream-response-handler.service';
 import { PlanDisplayComponent } from './plan-display.component';
 import { TimeagoPipe } from 'ngx-timeago';
 
@@ -108,8 +108,36 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     private router: Router,
     private toolCallParser: ToolCallParserService,
     private conversationState: AiConversationStateService,
-    private toolExecutionManager: AiToolExecutionManagerService
+    private toolExecutionManager: AiToolExecutionManagerService,
+    private streamHandler: AiStreamResponseHandlerService
   ) {
+  }
+
+  private getStreamResponseContext(isMainStream: boolean): StreamResponseContext {
+    return {
+      isMainStream,
+      getActiveConversation: () => this.activeConversation(),
+      executeToolCalls: (calls) => this.executeToolCallsWithOptions(calls),
+      currentMode: () => this.currentMode()
+    };
+  }
+
+  private async executeToolCallsWithOptions(toolCalls: ParsedToolCall[]): Promise<ToolResult[]> {
+    const conv = this.activeConversation();
+    const plan = conv?.plan;
+    const options = {
+      conversationId: conv?.id,
+      planSteps: plan && this.currentMode() === 'act' ? plan.steps : undefined,
+      onResult: (tc: ParsedToolCall, r: ToolResult) => this.handleToolResult(tc, r)
+    };
+    return this.toolExecutionManager.executeToolCallsAsPromise(toolCalls, options);
+  }
+
+  private finishResponse(): void {
+    this.conversationState.endStreaming();
+    this._isLoading.set(false);
+    this._currentMessage.set('');
+    this._currentSubscription = null;
   }
 
   ngOnInit(): void {
@@ -343,42 +371,6 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     this.onSendMessage();
   }
 
-  private hashString(str: string): string {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash;
-    }
-    return hash.toString();
-  }
-
-  private removeToolCallJsonFromResponse(response: string, toolCalls: ParsedToolCall[]): string {
-    let cleaned = response;
-    
-    for (const toolCall of toolCalls) {
-      if (toolCall.raw) {
-        if (cleaned.includes(toolCall.raw)) {
-          cleaned = cleaned.replace(toolCall.raw, '').trim();
-        }
-      }
-    }
-    
-    const standaloneToolCallPattern = /\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[\s\S]*?\}\s*\}/g;
-    cleaned = cleaned.replace(standaloneToolCallPattern, '').trim();
-    
-    const lines = cleaned.split('\n');
-    const filteredLines = lines.filter(line => {
-      const trimmed = line.trim();
-      if (trimmed.startsWith('{') && trimmed.includes('"tool"') && trimmed.includes('"params"')) {
-        return false;
-      }
-      return true;
-    });
-    
-    return filteredLines.join('\n').trim();
-  }
-
   private handleToolResult(toolCall: ParsedToolCall, result: ToolResult): void {
     if (toolCall.tool === 'insert_code' || toolCall.tool === 'replace_code') {
       let code = '';
@@ -467,15 +459,12 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
         if (event.type === 'start') {
           this.conversationState.startStreaming();
         } else if (event.type === 'chunk') {
-          let chunkContent = event.content || '';
-          const toolCallInChunk = /\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[\s\S]*?\}\s*\}/g;
-          chunkContent = chunkContent.replace(toolCallInChunk, '');
-          
-          if (chunkContent.trim().length > 0) {
+          const chunkContent = event.content || '';
+          if (chunkContent.length > 0) {
             this.conversationState.addStreamingChunk(chunkContent);
           }
         } else if (event.type === 'end') {
-          const finalResponse = this.conversationState.streamingResponse();
+          const finalResponse = (event as { fullResponse?: string }).fullResponse ?? this.conversationState.streamingResponse();
           await this.handleMainStreamResponse(finalResponse);
         }
       },
@@ -657,496 +646,79 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     return statusMessages[toolName] || `Executing ${toolName}...`;
   }
 
-  /**
-   * Execute tool calls serially (one after another)
-   * Returns a promise that resolves with all results after sequential execution
-   */
-  private async executeToolCallsWithPromise(toolCalls: ParsedToolCall[]): Promise<ToolResult[]> {
-    if (toolCalls.length === 0) {
-      return [];
+  private async handleMainStreamResponse(finalResponse: string): Promise<void> {
+    try {
+      const result = await this.streamHandler.processResponse(
+        finalResponse,
+        this.getStreamResponseContext(true)
+      );
+      if ('startContinuation' in result) {
+        this.startContinuationStream(result.startContinuation.editorId, result.startContinuation.summary);
+      } else {
+        this.finishResponse();
+      }
+    } catch (err) {
+      console.error('[AI Tab] Error processing main stream response:', err);
+      this.finishResponse();
     }
-
-    const results: ToolResult[] = [];
-    const activeConversation = this.activeConversation();
-
-    // Execute each tool call sequentially
-    for (let index = 0; index < toolCalls.length; index++) {
-      const toolCall = toolCalls[index];
-      
-      // Update plan step status if we have a plan and are executing
-      if (activeConversation?.plan && this.currentMode() === 'act') {
-        const step = activeConversation.plan.steps[index];
-        if (step) {
-          const callKey = this.toolExecutionManager.getCallKey(toolCall);
-          this.conversationManager.updatePlanStepStatus(
-            activeConversation.id,
-            step.id,
-            'in-progress',
-            callKey
-          );
-        }
-      }
-
-      try {
-        // Execute tool call and wait for it to complete before moving to next
-        const result = await new Promise<ToolResult>((resolve) => {
-          let subscription: any = null;
-          let timeoutId: any = null;
-          let resolved = false; // Guard to prevent double resolution
-
-          const cleanupAndResolve = (result: ToolResult) => {
-            if (resolved) return; // Prevent double resolution
-            resolved = true;
-            
-            if (timeoutId) {
-              clearTimeout(timeoutId);
-              timeoutId = null;
-            }
-            if (subscription && !subscription.closed) {
-              subscription.unsubscribe();
-            }
-            resolve(result);
-          };
-
-          subscription = this.toolExecutionManager.executeToolCall(toolCall).subscribe({
-            next: (result) => {
-              this.handleToolResult(toolCall, result);
-              
-              // Update plan step status on completion
-              if (activeConversation?.plan && this.currentMode() === 'act') {
-                const step = activeConversation.plan.steps[index];
-                if (step) {
-                  this.conversationManager.updatePlanStepStatus(
-                    activeConversation.id,
-                    step.id,
-                    result.success ? 'completed' : 'failed'
-                  );
-                }
-              }
-              
-              const resultJson = JSON.stringify({
-                tool: toolCall.tool,
-                success: result.success,
-                result: result.result,
-                error: result.error
-              }, null, 2);
-              
-              this.ideStateService.addJsonOutput(
-                `Tool Execution Result: ${toolCall.tool}`,
-                resultJson,
-                result.success ? 'success' : 'error'
-              );
-              
-              cleanupAndResolve(result);
-            },
-            error: (error) => {
-              // Only log actual execution errors, not validation errors (e.g., Plan Mode restrictions)
-              const isValidationError = (error as any)?.isValidationError === true;
-              if (!isValidationError) {
-                console.error(`[Component] Tool execution error for ${toolCall.tool}:`, error);
-              }
-              
-              const errorJson = JSON.stringify({
-                tool: toolCall.tool,
-                success: false,
-                error: error.message || 'Tool execution failed'
-              }, null, 2);
-              
-              this.ideStateService.addJsonOutput(
-                `Tool Execution Error: ${toolCall.tool}`,
-                errorJson,
-                'error'
-              );
-              
-              // Update plan step status on error
-              if (activeConversation?.plan && this.currentMode() === 'act') {
-                const step = activeConversation.plan.steps[index];
-                if (step) {
-                  this.conversationManager.updatePlanStepStatus(
-                    activeConversation.id,
-                    step.id,
-                    'failed'
-                  );
-                }
-              }
-              
-              cleanupAndResolve({
-                tool: toolCall.tool,
-                success: false,
-                error: error.message || 'Tool execution failed'
-              } as ToolResult);
-            },
-            complete: () => {
-              // Subscription completed - this doesn't resolve the promise
-              // The promise is resolved in next() or error() handlers
-            }
-          });
-          
-          // Set timeout for tool execution
-          timeoutId = setTimeout(() => {
-            if (!resolved && subscription && !subscription.closed) {
-              console.warn(`[Component] Tool execution timeout for ${toolCall.tool}`);
-              cleanupAndResolve({
-                tool: toolCall.tool,
-                success: false,
-                error: 'Tool execution timed out'
-              } as ToolResult);
-            }
-          }, 5000);
-        });
-
-        results.push(result);
-      } catch (error: any) {
-        // Fallback error handling
-        const errorResult: ToolResult = {
-          tool: toolCall.tool,
-          success: false,
-          error: error?.message || 'Tool execution failed'
-        };
-        results.push(errorResult);
-      }
+    this._userScrolledUp = false;
+    if (!this._intersectionObserver && this.scrollSentinel()) {
+      this.setupScrollSentinelObserver();
     }
-
-    return results;
-  }
-
-  private handleRecursiveContinuationStreamResponse(finalContinuation: string): void {
-    const finalHash = this.hashString(finalContinuation);
-    if (!this.conversationState.hasProcessedResponse(finalHash)) {
-      this.conversationState.markResponseProcessed(finalHash);
-      const currentConversation = this.activeConversation();
-      
-      // In plan mode, check for and parse plan in recursive continuation response
-      let planFound = false;
-      if (currentConversation && this.currentMode() === 'plan') {
-        const plan = this.aiService.parsePlan(finalContinuation);
-        if (plan) {
-          this.conversationManager.updatePlan(currentConversation.id, plan);
-          planFound = true;
-          console.log('[Component] Plan found and updated in recursive continuation response', plan);
-        } else {
-          console.log('[Component] No plan found in recursive continuation response', { responseLength: finalContinuation?.length });
-        }
-      }
-      
-      // If a plan was found but no text content, add a minimal message so the conversation shows progress
-      if (planFound && (!finalContinuation || finalContinuation.trim().length === 0)) {
-        if (currentConversation) {
-          this.conversationManager.addAssistantMessage(currentConversation.id, 'I\'ve created a plan based on the investigation results. Review it below and click "Execute" when ready to proceed.');
-        }
-      }
-      
-      if (currentConversation && finalContinuation && finalContinuation.trim().length > 0) {
-        // Use sanitizeMessageContent to remove plan JSON and tool results
-        let cleanedResponse = this.aiService.sanitizeMessageContent(finalContinuation);
-        if (cleanedResponse.trim().length > 0) {
-          this.conversationManager.addAssistantMessage(currentConversation.id, cleanedResponse);
-        } else if (planFound) {
-          // If plan found but cleaned response is empty, still add a message
-          this.conversationManager.addAssistantMessage(currentConversation.id, 'I\'ve created a plan based on the investigation results. Review it below and click "Execute" when ready to proceed.');
-        }
-      }
-      this.conversationState.endStreaming();
-      this._isLoading.set(false);
-      this._currentMessage.set('');
-      this._currentSubscription = null;
-    } else {
-      this.conversationState.endStreaming();
-      this._isLoading.set(false);
-      this._currentSubscription = null;
-    }
-  }
-
-  private async handleContinuationStreamResponse(continuationResponse: string): Promise<void> {
-    const responseHash = this.hashString(continuationResponse);
-    
-    if (!this.conversationState.hasProcessedResponse(responseHash)) {
-      this.conversationState.markResponseProcessed(responseHash);
-      
-      const activeConversation = this.activeConversation();
-      
-      // In plan mode, check for and parse plan in continuation response (check before processing tool calls)
-      let planFound = false;
-      if (activeConversation && this.currentMode() === 'plan') {
-        const plan = this.aiService.parsePlan(continuationResponse);
-        if (plan) {
-          this.conversationManager.updatePlan(activeConversation.id, plan);
-          planFound = true;
-          console.log('[Component] Plan found and updated in continuation response', plan);
-        } else {
-          console.log('[Component] No plan found in continuation response', { responseLength: continuationResponse?.length });
-        }
-      }
-      
-      let cleanedResponse = continuationResponse;
-      const continuationToolCalls = this.toolCallParser.parseToolCalls(cleanedResponse);
-      let continuationNewCalls: ParsedToolCall[] = [];
-      
-      if (continuationToolCalls.length > 0 && this.toolCallParser.hasCompleteToolCalls(cleanedResponse)) {
-        continuationNewCalls = this.conversationState.addToolCalls(continuationToolCalls, (c) => 
-          this.toolExecutionManager.getCallKey(c)
-        );
-        
-        cleanedResponse = this.removeToolCallJsonFromResponse(cleanedResponse, continuationToolCalls);
-        
-        if (activeConversation && cleanedResponse && cleanedResponse.trim().length > 0) {
-          this.conversationManager.addAssistantMessage(activeConversation.id, cleanedResponse);
-        }
-        
-        if (continuationNewCalls.length > 0) {
-          // Execute tools serially - wait for all to complete sequentially
-          this.executeToolCallsWithPromise(continuationNewCalls).then(() => {
-            this.conversationState.updateStateForExecutionStatus();
-            const activeConversation = this.activeConversation();
-            const continuationSummary = this.toolExecutionManager.getToolResultsSummary(continuationNewCalls);
-            if (continuationSummary && activeConversation) {
-              this.startRecursiveContinuationStream(activeConversation.editorId, continuationSummary);
-            } else {
-              this.conversationState.endStreaming();
-              this._isLoading.set(false);
-              this._currentMessage.set('');
-              this._currentSubscription = null;
-            }
-          }).catch((error) => {
-            console.error('[Component] Error in continuation tool execution:', error);
-            this.conversationState.updateStateForExecutionStatus();
-          });
-          return;
-        }
-      }
-      
-      // If a plan was found but no text content, add a minimal message so the conversation shows progress
-      if (planFound && (!cleanedResponse || cleanedResponse.trim().length === 0)) {
-        if (activeConversation) {
-          this.conversationManager.addAssistantMessage(activeConversation.id, 'I\'ve created a plan based on the investigation results. Review it below and click "Execute" when ready to proceed.');
-        }
-      }
-      
-      if (activeConversation && cleanedResponse && cleanedResponse.trim().length > 0) {
-        // Use sanitizeMessageContent to remove plan JSON and tool results
-        cleanedResponse = this.aiService.sanitizeMessageContent(cleanedResponse);
-        if (cleanedResponse.trim().length > 0) {
-          this.conversationManager.addAssistantMessage(activeConversation.id, cleanedResponse);
-        }
-      }
-      
-      this.conversationState.endStreaming();
-      this._isLoading.set(false);
-      this._currentMessage.set('');
-      this._currentSubscription = null;
-    } else {
-      this.conversationState.endStreaming();
-      this._isLoading.set(false);
-      this._currentSubscription = null;
-    }
-  }
-
-  private startRecursiveContinuationStream(editorId: string, continuationSummary: string): void {
-    this.conversationState.startStreaming();
-    this._isLoading.set(true);
-    if (this._currentSubscription) {
-      this._currentSubscription.unsubscribe();
-      this._currentSubscription = null;
-    }
-    
-    const mode = this.currentMode();
-    this._currentSubscription = this.aiService.sendStreamingMessage(
-      '',
-      editorId,
-      this.useMCPTools(),
-      this.cqlContent(),
-      continuationSummary,
-      mode
-    ).subscribe({
-      next: async (event) => {
-        if (event.type === 'start') {
-        } else if (event.type === 'chunk') {
-          this.conversationState.addStreamingChunk(event.content || '');
-        } else if (event.type === 'end') {
-          const finalContinuation = this.conversationState.streamingResponse();
-          this.handleRecursiveContinuationStreamResponse(finalContinuation);
-        }
-      },
-      error: (error) => {
-        console.error('[Component] Recursive continuation error:', error);
-        this._isLoading.set(false);
-        
-        let errorMessage = 'Failed to continue response';
-        if (error?.message) {
-          errorMessage = error.message;
-        } else if (error instanceof TypeError && error.message === 'Failed to fetch') {
-          errorMessage = 'Unable to connect to Ollama server. Please check your settings and ensure the server is running.';
-        }
-        
-        this.conversationState.setError(errorMessage);
-        this.conversationState.endStreaming();
-        this._error.set(errorMessage);
-        this._currentSubscription = null;
-      },
-      complete: () => {
-        this._currentSubscription = null;
-      }
-    });
   }
 
   private startContinuationStream(editorId: string, summary: string): void {
     this.conversationState.startStreaming();
     this._isLoading.set(true);
-    
     if (this._currentSubscription) {
       this._currentSubscription.unsubscribe();
       this._currentSubscription = null;
     }
-    
     const mode = this.currentMode();
-    this._currentSubscription = this.aiService.sendStreamingMessage(
-      '',
-      editorId,
-      this.useMCPTools(),
-      this.cqlContent(),
-      summary,
-      mode
-    ).subscribe({
-      next: async (event) => {
-        if (event.type === 'start') {
-        } else if (event.type === 'chunk') {
-          this.conversationState.addStreamingChunk(event.content || '');
-        } else if (event.type === 'end') {
-          const continuationResponse = this.conversationState.streamingResponse();
-          await this.handleContinuationStreamResponse(continuationResponse);
-        }
-      },
-      error: (error) => {
-        console.error('[Component] Continuation error:', error);
-        this._isLoading.set(false);
-        
-        let errorMessage = 'Failed to continue response';
-        if (error?.message) {
-          errorMessage = error.message;
-        } else if (error instanceof TypeError && error.message === 'Failed to fetch') {
-          errorMessage = 'Unable to connect to Ollama server. Please check your settings and ensure the server is running.';
-        }
-        
-        this.conversationState.setError(errorMessage);
-        this.conversationState.endStreaming();
-        this._error.set(errorMessage);
-        this._currentSubscription = null;
-      },
-      complete: () => {
-        this._currentSubscription = null;
-      }
-    });
-  }
-
-  private async handleMainStreamResponse(finalResponse: string): Promise<void> {
-    const responseHash = this.hashString(finalResponse);
-    
-    if (!this.conversationState.hasProcessedResponse(responseHash)) {
-      this.conversationState.markResponseProcessed(responseHash);
-      
-      let parsedToolCalls: ParsedToolCall[] = [];
-      const toolCalls = this.toolCallParser.parseToolCalls(finalResponse);
-      let newCalls: ParsedToolCall[] = [];
-      
-      if (toolCalls.length > 0 && this.toolCallParser.hasCompleteToolCalls(finalResponse)) {
-        parsedToolCalls = toolCalls;
-        
-        newCalls = this.conversationState.addToolCalls(toolCalls, (c) => 
-          this.toolExecutionManager.getCallKey(c)
-        );
-        
-        if (this.conversationState.isStreaming()) {
-          this.conversationState.endStreaming();
-        }
-        
-        for (const toolCall of toolCalls) {
-          if (toolCall.raw) {
-            let formattedJson = toolCall.raw;
+    this._currentSubscription = this.aiService
+      .sendStreamingMessage('', editorId, this.useMCPTools(), this.cqlContent(), summary, mode)
+      .subscribe({
+        next: async (event) => {
+          if (event.type === 'chunk') {
+            this.conversationState.addStreamingChunk(event.content || '');
+          } else if (event.type === 'end') {
+            const finalResponse = (event as { fullResponse?: string }).fullResponse ?? this.conversationState.streamingResponse();
             try {
-              const parsed = JSON.parse(toolCall.raw);
-              formattedJson = JSON.stringify(parsed, null, 2);
-            } catch {
+              const result = await this.streamHandler.processResponse(
+                finalResponse,
+                this.getStreamResponseContext(false)
+              );
+              if ('startContinuation' in result) {
+                this.startContinuationStream(
+                  result.startContinuation.editorId,
+                  result.startContinuation.summary
+                );
+              } else {
+                this.finishResponse();
+              }
+            } catch (err) {
+              console.error('[AI Tab] Error processing continuation response:', err);
+              this.finishResponse();
             }
-            
-            this.ideStateService.addJsonOutput(
-              `Tool Call: ${toolCall.tool}`,
-              formattedJson,
-              'pending'
-            );
           }
+        },
+        error: (error: unknown) => {
+          const err = error as { message?: string };
+          const errorMessage =
+            err?.message ||
+            (error instanceof TypeError && (error as Error).message === 'Failed to fetch'
+              ? 'Unable to connect to Ollama server. Please check your settings and ensure the server is running.'
+              : 'Failed to continue response');
+          this._isLoading.set(false);
+          this.conversationState.setError(errorMessage);
+          this.conversationState.endStreaming();
+          this._error.set(errorMessage);
+          this._currentSubscription = null;
+        },
+        complete: () => {
+          this._currentSubscription = null;
         }
-        
-        finalResponse = this.removeToolCallJsonFromResponse(finalResponse, toolCalls);
-      }
-      
-      const standaloneToolCallPattern = /\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[\s\S]*?\}\s*\}/g;
-      let cleanedResponse = finalResponse.replace(standaloneToolCallPattern, '').trim();
-      
-      // In plan mode, check for and parse plan
-      const activeConversation = this.activeConversation();
-      if (activeConversation && this.currentMode() === 'plan') {
-        const plan = this.aiService.parsePlan(finalResponse);
-        if (plan) {
-          this.conversationManager.updatePlan(activeConversation.id, plan);
-          // Remove plan JSON from cleaned response (already sanitized by sanitizeMessageContent)
-        }
-      }
-      
-      if (activeConversation && cleanedResponse && cleanedResponse.trim().length > 0) {
-        // Use sanitizeMessageContent to remove plan JSON and tool results
-        cleanedResponse = this.aiService.sanitizeMessageContent(cleanedResponse);
-        if (cleanedResponse.trim().length > 0) {
-          this.conversationManager.addAssistantMessage(activeConversation.id, cleanedResponse);
-          this.conversationManager.completeStreaming(activeConversation.id);
-        }
-      }
-      
-      if (parsedToolCalls.length > 0) {
-        try {
-          // Execute tools serially - wait for all to complete sequentially
-          await this.executeToolCallsWithPromise(newCalls);
-        } catch (error) {
-          console.error('[Component] Error waiting for tool executions:', error);
-        }
-        
-        this.conversationState.updateStateForExecutionStatus();
-        
-        const activeConversation = this.activeConversation();
-        if (activeConversation && newCalls.length > 0) {
-          const summary = this.toolExecutionManager.getToolResultsSummary(newCalls);
-          const toolNames = newCalls.map(c => c.tool).join(', ');
-          const fallbackSummary = summary || `Tools executed: ${toolNames}. Continue with your response.`;
-          
-          if (summary) {
-            this.ideStateService.addJsonOutput(
-              'Tool Execution Summary',
-              summary,
-              'success'
-            );
-          }
-          
-          this.startContinuationStream(activeConversation.editorId, summary || fallbackSummary);
-        } else {
-          const state = this.conversationState.conversationState();
-          if (state === 'idle' || state === 'results-ready') {
-            this._isLoading.set(false);
-            this._currentMessage.set('');
-            this._currentSubscription = null;
-          }
-        }
-      } else {
-        this.conversationState.endStreaming();
-        this._isLoading.set(false);
-        this._currentMessage.set('');
-        this._currentSubscription = null;
-      }
-      
-      this._userScrolledUp = false;
-      
-      if (!this._intersectionObserver && this.scrollSentinel()) {
-        this.setupScrollSentinelObserver();
-      }
-    }
+      });
   }
 
   public onExecutePlan(): void {

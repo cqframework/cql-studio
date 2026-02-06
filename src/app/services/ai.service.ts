@@ -19,10 +19,14 @@ export interface OllamaMessage {
   content: string;
 }
 
+/** JSON schema or 'json' for Ollama structured output (format parameter) */
+export type OllamaFormat = 'json' | Record<string, unknown>;
+
 export interface OllamaRequest {
   model: string;
   messages: OllamaMessage[];
   stream?: boolean;
+  format?: OllamaFormat;
   options?: {
     temperature?: number;
     top_p?: number;
@@ -79,23 +83,27 @@ export class AiService extends BaseService {
   private serverMCPToolsCache: MCPTool[] | null = null;
 
   /**
-   * Check if AI assistant is available (Ollama configured and enabled)
+   * Check if AI assistant is available (server proxy, Ollama URL, and enabled)
    */
   isAiAssistantAvailable(): boolean {
-    return !!(this.settingsService.getEffectiveOllamaBaseUrl() &&
+    return !!(this.settingsService.getEffectiveServerBaseUrl() &&
+      this.settingsService.getEffectiveOllamaBaseUrl() &&
       this.settingsService.settings().enableAiAssistant);
+  }
+
+  private getProxyBaseUrl(): string {
+    return this.settingsService.getEffectiveServerBaseUrl().replace(/\/+$/, '') + '/api/ollama';
   }
 
   /**
    * Test Ollama connection and model availability
    */
   testOllamaConnection(): Observable<{ connected: boolean, models: string[], error?: string }> {
-    const ollamaUrl = this.settingsService.getEffectiveOllamaBaseUrl();
-    if (!ollamaUrl) {
-      return throwError(() => new Error('Ollama base URL not configured'));
+    if (!this.settingsService.getEffectiveServerBaseUrl() || !this.settingsService.getEffectiveOllamaBaseUrl()) {
+      return throwError(() => new Error('Server base URL and Ollama base URL not configured'));
     }
 
-    return this.http.get<OllamaTagsResponse>(`${ollamaUrl}/api/tags`, {
+    return this.http.get<OllamaTagsResponse>(`${this.getProxyBaseUrl()}/tags`, {
       headers: this.getOllamaHeaders(),
       timeout: 10000 // 10 second timeout for connection test
     }).pipe(
@@ -134,9 +142,8 @@ export class AiService extends BaseService {
     useMCPTools: boolean = true,
     cqlContent?: string
   ): Observable<OllamaResponse> {
-    const ollamaUrl = this.settingsService.getEffectiveOllamaBaseUrl();
-    if (!ollamaUrl || !this.settingsService.settings().enableAiAssistant) {
-      return throwError(() => new Error('AI Assistant is not enabled or Ollama base URL not configured'));
+    if (!this.isAiAssistantAvailable()) {
+      return throwError(() => new Error('AI Assistant is not enabled or server/Ollama base URL not configured'));
     }
 
     const model = this.settingsService.getEffectiveOllamaModel();
@@ -163,19 +170,21 @@ export class AiService extends BaseService {
       model: model,
       messages: [systemMessage, ...apiMessages],
       stream: false,
+      format: useMCPTools ? this.getActModeResponseFormat() : this.getContentOnlyFormat(),
       options: {
         temperature: 0.7,
         top_p: 0.9
       }
     };
 
-    return this.http.post<OllamaResponse>(`${ollamaUrl}/api/chat`, request, {
+    return this.http.post<OllamaResponse>(`${this.getProxyBaseUrl()}/chat`, request, {
       headers: this.getOllamaHeaders(),
       timeout: 120000 // 2 minute timeout
     }).pipe(
       map(response => {
-        // Add assistant response to conversation
-        this.conversationManager.addAssistantMessage(conversation!.id, response.message.content);
+        const content = response.message.content;
+        const displayContent = this.formatStructuredContentForDisplay(content);
+        this.conversationManager.addAssistantMessage(conversation!.id, displayContent.length > 0 ? displayContent : content);
         this.conversationManager.updateConversationTitleFromUserMessage(conversation!.id, message);
         return response;
       }),
@@ -209,10 +218,8 @@ export class AiService extends BaseService {
     toolResultsSummary?: string,
     mode?: 'plan' | 'act'
   ): Observable<{ type: 'start' | 'chunk' | 'end', content?: string, fullResponse?: string }> {
-    const ollamaUrl = this.settingsService.getEffectiveOllamaBaseUrl();
-
-    if (!ollamaUrl || !this.settingsService.settings().enableAiAssistant) {
-      return throwError(() => new Error('AI Assistant is not enabled or Ollama base URL not configured'));
+    if (!this.isAiAssistantAvailable()) {
+      return throwError(() => new Error('AI Assistant is not enabled or server/Ollama base URL not configured'));
     }
 
     const model = this.settingsService.getEffectiveOllamaModel();
@@ -253,7 +260,10 @@ export class AiService extends BaseService {
         let toolResultsText = `\n\n**Tool Execution Results:**\n${toolResultsSummary}`;
         if (conversationMode === 'plan' && !message) {
           // Continuation mode in plan - explicitly request plan creation
-          toolResultsText += `\n\nBased on these tool execution results, create a structured plan in JSON format. The plan should outline the steps needed to accomplish the user's request. Include the plan JSON in your response.`;
+          toolResultsText += `\n\nBased on these tool execution results, create a structured plan. Your response must be a JSON object with a "plan" key containing "description" and "steps" (array of objects with "number" and "description"), and optionally "comment". At most 12 steps.`;
+        } else if (conversationMode === 'act' && !message) {
+          // Continuation in act mode - instruct to continue (call more tools or give final answer)
+          toolResultsText += `\n\nBased on these tool execution results, continue. You may call another tool if you need more information, or provide your final answer. Respond with the same JSON format: {"comment": "...", "tool_call": {...}} when calling a tool, or {"comment": "..."} for a final answer.`;
         }
 
         apiMessages[apiMessages.length - 1] = {
@@ -275,10 +285,15 @@ export class AiService extends BaseService {
     const hasEditorContext = editorContext.editorId !== ConversationManagerService.NO_EDITOR_CONTEXT_ID;
     const systemMessage = this.buildSystemMessage(editorContext.editorType, useMCPTools, cqlContent, conversationMode, hasPlanMessages, hasEditorContext);
 
+    const format: OllamaFormat = useMCPTools
+      ? (conversationMode === 'plan' ? this.getPlanModeResponseFormat() : this.getActModeResponseFormat())
+      : this.getContentOnlyFormat();
+
     const request: OllamaRequest = {
       model: model,
       messages: [systemMessage, ...apiMessages],
       stream: true,
+      format,
       options: {
         temperature: 0.7,
         top_p: 0.9
@@ -292,11 +307,12 @@ export class AiService extends BaseService {
       // Emit start event
       observer.next({ type: 'start' });
 
-      fetch(`${ollamaUrl}/api/chat`, {
+      fetch(`${this.getProxyBaseUrl()}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'X-Ollama-Base-URL': this.settingsService.getEffectiveOllamaBaseUrl()
         },
         body: JSON.stringify(request)
       }).then(response => {
@@ -472,24 +488,25 @@ export class AiService extends BaseService {
    * Generate suggested AI commands based on CQL content
    */
   generateSuggestedCommands(cqlContent: string): Observable<string[]> {
-    const ollamaUrl = this.settingsService.getEffectiveOllamaBaseUrl();
-
-    if (!ollamaUrl || !this.settingsService.settings().enableAiAssistant) {
-      return throwError(() => new Error('AI Assistant is not enabled or Ollama base URL not configured'));
+    if (!this.isAiAssistantAvailable()) {
+      return throwError(() => new Error('AI Assistant is not enabled or server/Ollama base URL not configured'));
     }
 
     const model = this.settingsService.getEffectiveOllamaModel();
 
     const systemMessage: OllamaMessage = {
       role: 'system',
-      content: `You are an AI assistant that generates helpful suggestions and code for CQL developers. Based on the provided CQL content, generate 3-5 specific, actionable commands that a developer might want to ask an AI assistant about their CQL code.
+      content: `You are an AI assistant that generates helpful suggestions and code for Clinical Quality Language (CQL) and HL7 FHIR developers. Based on the provided CQL content, generate 3-5 specific, actionable commands that a developer might want to ask an AI assistant about their CQL code.
 
 IMPORTANT: Return ONLY a valid JSON array of strings. Do not include any markdown formatting, code blocks, or explanations. Just return the raw JSON array.
 
 Example format:
 ["Review this CQL code for best practices", "Explain the logic in this CQL expression", "Help me debug any syntax errors", "Suggest improvements for performance", "Generate test cases for this CQL"]
 
-Focus on practical, specific commands that would be immediately useful to someone working with the provided CQL code.`
+Focus on practical, specific commands that would be immediately useful.
+- Consider any content present in the application clipboard as context.
+- If CQL context is present, focus on commands that would be immediately useful to someone working with the provided CQL code.
+- If CQL context is not present, focus on commands that would be immediately useful to someone starting a new FHIR Library of CQL.`
     };
 
     const userMessage: OllamaMessage = {
@@ -505,13 +522,14 @@ ${cqlContent}
       model: model,
       messages: [systemMessage, userMessage],
       stream: false,
+      format: this.getSuggestedCommandsFormat(),
       options: {
         temperature: 0.3,
         top_p: 0.8
       }
     };
 
-    return this.http.post<OllamaResponse>(`${ollamaUrl}/api/chat`, request, {
+    return this.http.post<OllamaResponse>(`${this.getProxyBaseUrl()}/chat`, request, {
       headers: this.getOllamaHeaders(),
       timeout: 30000 // 30 second timeout for command generation
     }).pipe(
@@ -597,7 +615,10 @@ ${cqlContent}
     if (!content) {
       return content;
     }
-
+    const structuredDisplay = this.formatStructuredContentForDisplay(content);
+    if (structuredDisplay !== content) {
+      content = structuredDisplay;
+    }
     // Remove JSON plan blocks
     let sanitized = content.replace(/```(?:json)?\s*\{[\s\S]*?"plan"[\s\S]*?\}\s*```/g, '');
 
@@ -631,9 +652,9 @@ ${cqlContent}
   }
 
   private buildSystemMessage(editorType: 'cql' | 'fhir' | 'general', useMCPTools: boolean, cqlContent?: string, mode: 'plan' | 'act' = 'act', hasPlan: boolean = false, hasEditorContext: boolean = true): OllamaMessage {
-    let systemContent = `You are an AI assistant specialized in CQL (Clinical Quality Language) development. You can help with writing/debugging CQL, FHIR resources, syntax, best practices, and library structure.
+    let systemContent = `You are an AI assistant specialized in CQL (Clinical Quality Language) and HL7 FHIR development. You can help with writing/debugging CQL, FHIR resources, syntax, best practices, and library structure.
 
-**VALID CQL AND FHIR ONLY:** Use only official CQL (HL7) and FHIR R4 syntax and resources. Do not invent syntax or fabricate resource types. When uncertain, use web/search tools (if available) to find official documentation.`;
+**VALID CQL AND FHIR ONLY:** Use only official CQL and FHIR R4 syntax and resources. Do not invent syntax or fabricate resource types. When uncertain, use web/search tools (if available) to find official documentation.`;
 
     if (hasEditorContext) {
       systemContent += `\n\n**Current context:** The user has a CQL library or file open. Use get_code, insert_code, replace_code, format_code as needed to read and edit their code.`;
@@ -654,10 +675,9 @@ Use this context when helping improve, debug, or extend the code.`;
     if (useMCPTools) {
       systemContent += `
 
-**Response format:** One brief sentence, then a newline, then tool call JSON on its own line. Example:
-Reading current code.
-{"tool": "get_code", "params": {}}
-Always call a tool first; do not answer directly until you have results. Put each tool call on its own line.`;
+**CRITICAL – Use tools in your first response:** When the user asks about code, editing, or anything that requires context (current file, libraries, search), you MUST include a "tool_call" in your very first response. Do not reply with only a comment or explanation until you have called the appropriate tool (e.g. get_code, search_code) and received results. Example first response: {"comment": "Reading the current code.", "tool_call": {"tool": "get_code", "params": {}}}.
+
+**Response format (structured JSON):** Every response must be a JSON object with "comment" (required: brief natural language) and optionally "tool_call" when invoking a tool. Example with tool: {"comment": "Reading current code.", "tool_call": {"tool": "get_code", "params": {}}}. Example without tool (only after you have results): {"comment": "Here is the summary."}. Always call a tool first when you need information; do not answer directly until you have results.`;
 
       if (hasEditorContext) {
         systemContent += `
@@ -749,7 +769,8 @@ Always call a tool first; do not answer directly until you have results. Put eac
   private getOllamaHeaders(): HttpHeaders {
     return new HttpHeaders({
       'Content-Type': 'application/json',
-      'Accept': 'application/json'
+      'Accept': 'application/json',
+      'X-Ollama-Base-URL': this.settingsService.getEffectiveOllamaBaseUrl()
     });
   }
 
@@ -770,6 +791,161 @@ Always call a tool first; do not answer directly until you have results. Put eac
   }
 
   /**
+   * JSON schema for suggested commands: array of strings (Ollama format parameter)
+   */
+  private getSuggestedCommandsFormat(): OllamaFormat {
+    return { type: 'array', items: { type: 'string' } };
+  }
+
+  /**
+   * JSON schema for act-mode response: comment plus optional tool_call (Ollama format parameter)
+   */
+  private getActModeResponseFormat(): OllamaFormat {
+    return {
+      type: 'object',
+      properties: {
+        comment: { type: 'string', description: 'Brief natural language comment' },
+        tool_call: {
+          type: 'object',
+          description: 'Optional tool to invoke',
+          properties: {
+            tool: { type: 'string' },
+            params: { type: 'object' }
+          },
+          required: ['tool', 'params']
+        }
+      },
+      required: ['comment']
+    };
+  }
+
+  /**
+   * JSON schema for plan-mode response: optional comment and plan with steps (Ollama format parameter)
+   */
+  private getPlanModeResponseFormat(): OllamaFormat {
+    return {
+      type: 'object',
+      properties: {
+        comment: { type: 'string', description: 'Optional brief comment' },
+        plan: {
+          type: 'object',
+          description: 'Structured plan',
+          properties: {
+            description: { type: 'string' },
+            steps: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  number: { type: 'number' },
+                  description: { type: 'string' }
+                },
+                required: ['number', 'description']
+              }
+            }
+          },
+          required: ['description', 'steps']
+        }
+      }
+    };
+  }
+
+  /**
+   * JSON schema for content-only response when MCP tools are disabled (Ollama format parameter)
+   */
+  private getContentOnlyFormat(): OllamaFormat {
+    return {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'Full response text (markdown allowed)' }
+      },
+      required: ['content']
+    };
+  }
+
+  /**
+   * Parse structured act-mode response (format: { comment, tool_call? }).
+   * Returns null if content is not valid JSON with that shape.
+   */
+  parseStructuredActResponse(content: string): { comment: string; tool_call?: { tool: string; params: Record<string, unknown> } } | null {
+    if (!content || !content.trim()) return null;
+    const trimmed = content.trim();
+    if (!trimmed.startsWith('{')) return null;
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      if (typeof parsed['comment'] !== 'string') return null;
+      const result: { comment: string; tool_call?: { tool: string; params: Record<string, unknown> } } = { comment: parsed['comment'] };
+      const tc = parsed['tool_call'];
+      if (tc != null && typeof tc === 'object' && typeof (tc as Record<string, unknown>)['tool'] === 'string' && (tc as Record<string, unknown>)['params'] !== undefined) {
+        const tco = tc as Record<string, unknown>;
+        result.tool_call = {
+          tool: tco['tool'] as string,
+          params: tco['params'] != null && typeof tco['params'] === 'object' ? tco['params'] as Record<string, unknown> : {}
+        };
+      }
+      return result;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Parse structured plan-mode response (format: { comment?, plan? }).
+   * Returns Plan if content is valid JSON with a plan.steps array; otherwise null.
+   */
+  parseStructuredPlanResponse(content: string): Plan | null {
+    if (!content || !content.trim()) return null;
+    const trimmed = content.trim();
+    if (!trimmed.startsWith('{')) return null;
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      const planObj = parsed['plan'];
+      if (!planObj || typeof planObj !== 'object' || !Array.isArray((planObj as any).steps)) return null;
+      return this.createPlanFromParsed(planObj as any);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Parse content-only structured response (format: { content }).
+   * Returns the content string if valid, otherwise null.
+   */
+  parseStructuredContentResponse(content: string): string | null {
+    if (!content || !content.trim()) return null;
+    const trimmed = content.trim();
+    if (!trimmed.startsWith('{')) return null;
+    try {
+      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+      if (typeof parsed['content'] === 'string') return parsed['content'];
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Format structured act/plan/content response for display.
+   * If content is not our structured JSON, returns the original content unchanged.
+   */
+  formatStructuredContentForDisplay(content: string): string {
+    const act = this.parseStructuredActResponse(content);
+    if (act) {
+      const comment = act.comment.trim();
+      const toolLine = act.tool_call ? `[Tool: ${act.tool_call.tool}]` : '';
+      return comment ? (toolLine ? `${comment}\n${toolLine}` : comment) : toolLine;
+    }
+    const plan = this.parseStructuredPlanResponse(content);
+    if (plan) {
+      const comment = (content.trim().startsWith('{') ? (() => { try { const p = JSON.parse(content.trim()) as Record<string, unknown>; return typeof p['comment'] === 'string' ? p['comment'] : ''; } catch { return ''; } })() : '') || '';
+      return comment.trim() ? comment : 'Plan created with ' + plan.steps.length + ' step(s).';
+    }
+    const contentOnly = this.parseStructuredContentResponse(content);
+    if (contentOnly !== null) return contentOnly;
+    return content;
+  }
+
+  /**
    * Parse plan from AI response text
    * Looks for JSON plan structure in markdown code blocks or inline JSON
    */
@@ -777,6 +953,9 @@ Always call a tool first; do not answer directly until you have results. Put eac
     if (!responseText || responseText.trim().length === 0) {
       return null;
     }
+
+    const structured = this.parseStructuredPlanResponse(responseText);
+    if (structured) return structured;
 
     // Try to find JSON plan in markdown code blocks
     const jsonBlockRegex = /```(?:json)?\s*(\{[\s\S]*?"plan"[\s\S]*?\})\s*```/g;
