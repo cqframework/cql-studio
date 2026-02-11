@@ -96,3 +96,29 @@
 .btn:hover {
   background-color: rgba(255, 255, 255, 0.1) !important;
 }
+
+/* Tab bar: keep horizontal layout when CDK adds .cdk-drop-list */
+.ide-panel-tab-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  flex-direction: row;
+  align-items: stretch;
+  min-height: 2.5rem;
+}
+
+.ide-panel-tab {
+  cursor: grab;
+  &:active {
+    cursor: grabbing;
+  }
+}
+
+/* CDK drag placeholder and animation */
+.cdk-drag-placeholder {
+  opacity: 0.4;
+  min-width: 4rem;
+}
+
+.cdk-drag-animating {
+  transition: transform 150ms ease;
+}

@@ -546,6 +546,20 @@ export class IdeStateService {
     this.addTabToPanel(toPanelId, tab);
   }
 
+  reorderTabInPanel(panelId: string, fromIndex: number, toIndex: number): void {
+    if (fromIndex === toIndex) return;
+    this._panelState.update(state => {
+      const panel = state[panelId as keyof IdePanelState];
+      const tabs = [...panel.tabs];
+      const [moved] = tabs.splice(fromIndex, 1);
+      tabs.splice(toIndex, 0, moved);
+      return {
+        ...state,
+        [panelId]: { ...panel, tabs, activeTabId: panel.activeTabId }
+      };
+    });
+  }
+
   // Editor action methods (for tool orchestrator)
   requestNavigateToLine(lineNumber: number): void {
     this._navigateToLineRequest.set(lineNumber);

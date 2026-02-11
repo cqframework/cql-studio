@@ -2,21 +2,27 @@
   #panelElement
   [class]="panelClasses"
   [style]="panelStyles"
-  (dragover)="onTabDragOver($event)"
-  (drop)="onTabDrop($event)"
 >
-  <!-- Panel Header with Tabs -->
-  <div class="bg-dark border-dark border-bottom d-flex">
+  <!-- Panel tab bar: Angular CDK drag-drop for reorder and move between panels -->
+  <div
+    cdkDropList
+    cdkDropListOrientation="horizontal"
+    [id]="'panel-' + panel().id"
+    [cdkDropListData]="panelTabsData()"
+    [cdkDropListConnectedTo]="connectedPanelIds()"
+    (cdkDropListDropped)="onPanelTabDrop($event)"
+    class="ide-panel-tab-bar bg-dark border-dark border-bottom">
     @for (tab of panel().tabs; track tab.id) {
-      <button 
-        class="btn rounded-0 flex-fill" 
+      <div
+        cdkDrag
+        role="button"
+        tabindex="0"
+        class="btn rounded-0 flex-fill ide-panel-tab"
         [class.active]="tab.isActive"
         (click)="onTabClick(tab)"
-        draggable="true"
-        (dragstart)="onTabDragStart($event, tab)"
-      >
+        (keydown)="onTabKeydown($event, tab)">
         {{ tab.title }}
-      </button>
+      </div>
     }
   </div>
   

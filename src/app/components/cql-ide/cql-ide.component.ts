@@ -270,10 +270,12 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.setActiveTab(panelId, tabId);
   }
 
-  // Tab management
-  onMoveTab(event: { tabId: string, fromPanelId: string, toPanelId: string }): void {
-    // Implementation for moving tabs between panels
-    console.log('Moving tab:', event);
+  onMoveTab(event: { tabId: string; fromPanelId: string; toPanelId: string }): void {
+    this.ideStateService.moveTabToPanel(event.tabId, event.fromPanelId, event.toPanelId);
+  }
+
+  onReorderPanelTab(event: { panelId: string; fromIndex: number; toIndex: number }): void {
+    this.ideStateService.reorderTabInPanel(event.panelId, event.fromIndex, event.toIndex);
   }
 
   // Drag and drop handlers

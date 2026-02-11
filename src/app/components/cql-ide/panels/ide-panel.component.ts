@@ -1,9 +1,15 @@
 // Author: Preston Lee
 
-import { Component, input, output, viewChild, ElementRef, HostListener, inject } from '@angular/core';
+import { Component, input, output, viewChild, ElementRef, HostListener, inject, computed } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { CdkDropList, CdkDrag, CdkDragDrop } from '@angular/cdk/drag-drop';
 import { IdePanel, IdePanelTab } from './ide-panel-tab.interface';
 import { IdeStateService } from '../../../services/ide-state.service';
+
+export interface PanelTabListData {
+  panelId: string;
+  tabs: IdePanelTab[];
+}
 import { LibraryService } from '../../../services/library.service';
 import { TranslationService } from '../../../services/translation.service';
 import { SettingsService } from '../../../services/settings.service';
@@ -23,6 +29,8 @@ import { ClipboardTabComponent } from '../tabs/clipboard-tab/clipboard-tab.compo
   standalone: true,
   imports: [
     CommonModule,
+    CdkDropList,
+    CdkDrag,
     NavigationTabComponent,
     OutlineTabComponent,
     FhirTabComponent,
@@ -43,6 +51,7 @@ export class IdePanelComponent {
   setActiveTab = output<string>();
   startResize = output<{ type: string; event: MouseEvent; newSize?: number }>();
   moveTab = output<{ tabId: string; fromPanelId: string; toPanelId: string }>();
+  reorderTab = output<{ panelId: string; fromIndex: number; toIndex: number }>();
   tabDrop = output<{ tab: any; targetPanelId: string }>();
   dragOver = output<string>();
   dragLeave = output<string>();
@@ -53,6 +62,17 @@ export class IdePanelComponent {
   navigationTab = viewChild(NavigationTabComponent);
 
   public ideStateService = inject(IdeStateService);
+
+  panelTabsData = computed<PanelTabListData>(() => ({
+    panelId: this.panel().id,
+    tabs: this.panel().tabs
+  }));
+
+  connectedPanelIds = computed(() =>
+    (['left', 'right', 'bottom'] as const)
+      .filter(id => id !== this.panel().id)
+      .map(id => `panel-${id}`)
+  );
   private libraryService = inject(LibraryService);
   private translationService = inject(TranslationService);
   private settingsService = inject(SettingsService);
@@ -241,38 +261,33 @@ export class IdePanelComponent {
     this.onSetActiveTab(tab.id);
   }
 
-  onTabDragStart(event: DragEvent, tab: IdePanelTab): void {
-    if (event.dataTransfer) {
-      event.dataTransfer.effectAllowed = 'move';
-      event.dataTransfer.setData('text/plain', JSON.stringify({
-        tabId: tab.id,
-        fromPanelId: this.panel().id,
-        tabType: tab.type
-      }));
+  onTabKeydown(event: KeyboardEvent, tab: IdePanelTab): void {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      this.onSetActiveTab(tab.id);
     }
   }
 
-  onTabDragOver(event: DragEvent): void {
-    event.preventDefault();
-    if (event.dataTransfer) {
-      event.dataTransfer.dropEffect = 'move';
-    }
-  }
-
-  onTabDrop(event: DragEvent): void {
-    event.preventDefault();
-    
-    try {
-      const data = JSON.parse(event.dataTransfer?.getData('text/plain') || '{}');
-      if (data.tabId && data.fromPanelId && data.fromPanelId !== this.panel().id) {
-        this.moveTab.emit({
-          tabId: data.tabId,
-          fromPanelId: data.fromPanelId,
-          toPanelId: this.panel().id
+  onPanelTabDrop(event: CdkDragDrop<PanelTabListData>): void {
+    const prev = event.previousContainer.data;
+    const curr = event.container.data;
+    if (event.previousContainer === event.container) {
+      if (event.previousIndex !== event.currentIndex) {
+        this.reorderTab.emit({
+          panelId: curr.panelId,
+          fromIndex: event.previousIndex,
+          toIndex: event.currentIndex
         });
       }
-    } catch (error) {
-      console.error('Error handling tab drop:', error);
+    } else {
+      const tab = prev.tabs[event.previousIndex];
+      if (tab) {
+        this.moveTab.emit({
+          tabId: tab.id,
+          fromPanelId: prev.panelId,
+          toPanelId: curr.panelId
+        });
+      }
     }
   }
 
