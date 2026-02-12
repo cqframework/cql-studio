@@ -3,7 +3,8 @@
 import { BaseBrowserTool } from './base-browser-tool';
 
 export class GetLibraryContentTool extends BaseBrowserTool {
-  readonly name = 'get_library_content';
+  static readonly id = 'get_library_content';
+  readonly name = GetLibraryContentTool.id;
   readonly description = 'Get the full content of a specific library';
   readonly parameters = {
     type: 'object',

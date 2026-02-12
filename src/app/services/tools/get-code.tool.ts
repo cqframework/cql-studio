@@ -3,7 +3,8 @@
 import { BaseBrowserTool } from './base-browser-tool';
 
 export class GetCodeTool extends BaseBrowserTool {
-  readonly name = 'get_code';
+  static readonly id = 'get_code';
+  readonly name = GetCodeTool.id;
   readonly description = 'Get current code content from the active editor';
   readonly parameters = {
     type: 'object',

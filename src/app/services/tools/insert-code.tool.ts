@@ -3,7 +3,8 @@
 import { BaseBrowserTool } from './base-browser-tool';
 
 export class InsertCodeTool extends BaseBrowserTool {
-  readonly name = 'insert_code';
+  static readonly id = 'insert_code';
+  readonly name = InsertCodeTool.id;
   readonly description = 'Insert code at the current cursor position in the editor';
   readonly parameters = {
     type: 'object',

@@ -3,7 +3,8 @@
 import { BaseBrowserTool } from './base-browser-tool';
 
 export class RemoveFromClipboardTool extends BaseBrowserTool {
-  readonly name = 'remove_from_clipboard';
+  static readonly id = 'remove_from_clipboard';
+  readonly name = RemoveFromClipboardTool.id;
   readonly description = 'Remove a single item from the FHIR clipboard by its id. Use list_clipboard to get item ids.';
   readonly parameters = {
     type: 'object',

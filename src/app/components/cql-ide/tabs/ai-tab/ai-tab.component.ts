@@ -16,6 +16,8 @@ import { CodeDiffPreviewComponent, CodeDiff } from './code-diff-preview.componen
 import { AiConversationStateService } from '../../../../services/ai-conversation-state.service';
 import { AiToolExecutionManagerService } from '../../../../services/ai-tool-execution-manager.service';
 import { AiStreamResponseHandlerService, StreamResponseContext } from '../../../../services/ai-stream-response-handler.service';
+import { InsertCodeTool, ReplaceCodeTool } from '../../../../services/tools';
+import { TOOL_STATUS_MESSAGES } from '../../../../services/tool-ids';
 import { PlanDisplayComponent } from './plan-display.component';
 import { TimeagoPipe } from 'ngx-timeago';
 
@@ -372,7 +374,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   }
 
   private handleToolResult(toolCall: ParsedToolCall, result: ToolResult): void {
-    if (toolCall.tool === 'insert_code' || toolCall.tool === 'replace_code') {
+    if (toolCall.tool === InsertCodeTool.id || toolCall.tool === ReplaceCodeTool.id) {
       let code = '';
       if (toolCall.params && toolCall.params['code']) {
         code = typeof toolCall.params['code'] === 'string' 
@@ -385,7 +387,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
         return;
       }
 
-      if (toolCall.tool === 'replace_code') {
+      if (toolCall.tool === ReplaceCodeTool.id) {
         const currentCode = this.cqlContent() || '';
         const autoApply = this.settingsService.settings().autoApplyCodeEdits && 
                          !this.settingsService.settings().requireDiffPreview;
@@ -402,7 +404,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
           this._codeDiffPreview.set({ ...diff });
           this._showDiffPreview.set(true);
         }
-      } else if (toolCall.tool === 'insert_code') {
+      } else if (toolCall.tool === InsertCodeTool.id) {
         const autoApply = this.settingsService.settings().autoApplyCodeEdits && 
                          !this.settingsService.settings().requireDiffPreview;
         
@@ -626,24 +628,11 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
 
   getToolStatusMessage(toolCall: ParsedToolCall): string {
     const toolName = toolCall.tool;
-    const statusMessages: Record<string, string> = {
-      'get_code': 'Reading code...',
-      'insert_code': 'Inserting code...',
-      'replace_code': 'Updating code...',
-      'format_code': 'Formatting code...',
-      'list_libraries': 'Listing libraries...',
-      'get_library_content': 'Loading library...',
-      'search_code': 'Searching code...',
-      'create_library': 'Creating library...',
-      'get_cursor_position': 'Getting cursor position...',
-      'get_selection': 'Getting selection...',
-      'navigate_to_line': 'Navigating...',
-      'web_search': 'Searching web...',
-      'searxng_search': 'Searching web (SearXNG)...',
-      'fetch_url': 'Fetching URL...'
-    };
-    
-    return statusMessages[toolName] || `Executing ${toolName}...`;
+    const fromBrowser = TOOL_STATUS_MESSAGES[toolName];
+    if (fromBrowser) return fromBrowser;
+    const serverTool = this.aiService.getCachedServerMCPTools().find(t => t.name === toolName);
+    if (serverTool?.statusMessage) return serverTool.statusMessage;
+    return `Executing ${toolName}...`;
   }
 
   private async handleMainStreamResponse(finalResponse: string): Promise<void> {

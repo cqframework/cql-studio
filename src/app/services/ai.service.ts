@@ -11,6 +11,14 @@ import { ConversationManagerService } from './conversation-manager.service';
 import { AiPlanningService } from './ai-planning.service';
 import { Plan, PlanStep } from '../models/plan.model';
 import { BrowserToolsRegistry } from './tools';
+import { CreateLibraryTool } from './tools/create-library.tool';
+import { FormatCodeTool } from './tools/format-code.tool';
+import { GetCodeTool } from './tools/get-code.tool';
+import { GetLibraryContentTool } from './tools/get-library-content.tool';
+import { InsertCodeTool } from './tools/insert-code.tool';
+import { ListLibrariesTool } from './tools/list-libraries.tool';
+import { ReplaceCodeTool } from './tools/replace-code.tool';
+import { SearchCodeTool } from './tools/search-code.tool';
 
 // Ollama API types (structured options per https://github.com/ollama/ollama/blob/main/docs/api.md)
 
@@ -54,6 +62,8 @@ export interface OllamaStreamChunk {
 export interface MCPTool {
   name: string;
   description: string;
+  /** User-facing message shown while the tool is executing (from server) */
+  statusMessage?: string;
   parameters: any;
 }
 
@@ -656,6 +666,8 @@ ${cqlContent}
 
 **VALID CQL AND FHIR ONLY:** Use only official CQL and FHIR R4 syntax and resources. Do not invent syntax or fabricate resource types. When uncertain, use web/search tools (if available) to find official documentation.
 
+When creating completely new CQL library code, use available tools to format the code prior to inserting it into the editor.
+
 When creating new CQL Library content, assume a FHIR 4.0.1 data modal and use of FHIRHelpers with the following below the "library ..." declaration line:
 
 \`\`\`
@@ -665,9 +677,9 @@ include FHIRHelpers version '4.0.1'
 `;
 
     if (hasEditorContext) {
-      systemContent += `\n\n**Current context:** The user has a CQL library or file open. Use get_code, insert_code, replace_code, format_code as needed to read and edit their code.`;
+      systemContent += `\n\n**Current context:** The user has a CQL library or file open. Use ${GetCodeTool.id}, ${InsertCodeTool.id}, ${ReplaceCodeTool.id}, ${FormatCodeTool.id} as needed to read and edit their code.`;
     } else {
-      systemContent += `\n\n**Current context:** No editor is open. Use create_library to start a new library, or list_libraries / get_library_content / search_code if the user has existing libraries, as well as clipboard tools to get context. For general CQL/FHIR questions you may answer or use web search tools if available.`;
+      systemContent += `\n\n**Current context:** No editor is open. Use ${CreateLibraryTool.id} to start a new library, or ${ListLibrariesTool.id} / ${GetLibraryContentTool.id} / ${SearchCodeTool.id} if the user has existing libraries, as well as clipboard tools to get context. For general CQL/FHIR questions you may answer or use web search tools if available.`;
     }
 
     if (cqlContent && cqlContent.trim()) {
@@ -683,23 +695,23 @@ Use this context when helping improve, debug, or extend the code.`;
     if (useMCPTools) {
       systemContent += `
 
-**CRITICAL – Use tools in your first response:** When the user asks about code, editing, or anything that requires context (current file, libraries, search), you MUST include a "tool_call" in your very first response. Do not reply with only a comment or explanation until you have called the appropriate tool (e.g. get_code, search_code) and received results. Example first response: {"comment": "Reading the current code.", "tool_call": {"tool": "get_code", "params": {}}}.
+**CRITICAL – Use tools in your first response:** When the user asks about code, editing, or anything that requires context (current file, libraries, search), you MUST include a "tool_call" in your very first response. Do not reply with only a comment or explanation until you have called the appropriate tool (e.g. ${GetCodeTool.id}, ${SearchCodeTool.id}) and received results. Example first response: {"comment": "Reading the current code.", "tool_call": {"tool": "${GetCodeTool.id}", "params": {}}}.
 
-**Response format (structured JSON):** Every response must be a JSON object with "comment" (required: brief natural language) and optionally "tool_call" when invoking a tool. Example with tool: {"comment": "Reading current code.", "tool_call": {"tool": "get_code", "params": {}}}. Example without tool (only after you have results): {"comment": "Here is the summary."}. Always call a tool first when you need information; do not answer directly until you have results.`;
+**Response format (structured JSON):** Every response must be a JSON object with "comment" (required: brief natural language) and optionally "tool_call" when invoking a tool. Example with tool: {"comment": "Reading current code.", "tool_call": {"tool": "${GetCodeTool.id}", "params": {}}}. Example without tool (only after you have results): {"comment": "Here is the summary."}. Always call a tool first when you need information; do not answer directly until you have results.`;
 
       if (hasEditorContext) {
         systemContent += `
 
-**Code editing (editor is open):** For add/fix/improve/modify code, call get_code first, then insert_code or replace_code with the actual code in the "code" parameter (required, non-empty string). Do not just show code—use the tools to edit the editor. replace_code can take startLine/endLine.`;
+**Code editing (editor is open):** For add/fix/improve/modify code, call ${GetCodeTool.id} first, then ${InsertCodeTool.id} or ${ReplaceCodeTool.id} with the actual code in the "code" parameter (required, non-empty string). Do not just show code—use the tools to edit the editor. ${ReplaceCodeTool.id} can take startLine/endLine.`;
       }
 
       systemContent += `
 
-**Search rate limiting:** If server tools (searxng_search, web_search, fetch_url) exist, use one search per turn when possible; prefer get_code/search_code for in-editor content.`
+**Search rate limiting:** If server tools exist, use one search per turn when possible; prefer ${GetCodeTool.id}/${SearchCodeTool.id} for in-editor content.`
         + this.formatBrowserToolsForSystemPrompt(BrowserToolsRegistry.getDefinitions() as MCPTool[])
         + `
 
-**Tool selection:** Code question → get_code. "Where is X" → search_code. Add/create code → get_code then insert_code. Fix/improve code → get_code then replace_code. Format → format_code. New library → create_library. Documentation/URLs → server web/search tools if listed below.`
+**Tool selection:** Code question → ${GetCodeTool.id}. "Where is X" → ${SearchCodeTool.id}. Add/create code → ${GetCodeTool.id} then ${InsertCodeTool.id}. Fix/improve code → ${GetCodeTool.id} then ${ReplaceCodeTool.id}. Format → ${FormatCodeTool.id}. New library → ${CreateLibraryTool.id}. Documentation/URLs → server web/search tools if listed below.`
         + this.formatServerToolsForSystemPrompt(this.getCachedServerMCPTools());
     }
 

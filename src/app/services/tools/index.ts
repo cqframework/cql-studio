@@ -13,6 +13,8 @@ import { GetCursorPositionTool } from './get-cursor-position.tool';
 import { GetSelectionTool } from './get-selection.tool';
 import { NavigateToLineTool } from './navigate-to-line.tool';
 import { CreateLibraryTool } from './create-library.tool';
+import { ValidateCqlTool } from './validate-cql.tool';
+import { FormatCqlTool } from './format-cql.tool';
 import { ListClipboardTool } from './list-clipboard.tool';
 import { ClearClipboardTool } from './clear-clipboard.tool';
 import { AddToClipboardTool } from './add-to-clipboard.tool';
@@ -31,6 +33,8 @@ export class BrowserToolsRegistry {
     GetSelectionTool,
     NavigateToLineTool,
     CreateLibraryTool,
+    ValidateCqlTool,
+    FormatCqlTool,
     ListClipboardTool,
     ClearClipboardTool,
     AddToClipboardTool,
@@ -50,3 +54,5 @@ export class BrowserToolsRegistry {
 export type BrowserToolClass = (typeof BrowserToolsRegistry.toolClasses)[number];
 
 export { BaseBrowserTool, type BrowserToolMCPMetadata, type BrowserToolContext } from './base-browser-tool';
+export { InsertCodeTool } from './insert-code.tool';
+export { ReplaceCodeTool } from './replace-code.tool';

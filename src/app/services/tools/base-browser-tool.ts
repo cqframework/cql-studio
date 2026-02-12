@@ -3,6 +3,8 @@
 import type { IdeStateService } from '../ide-state.service';
 import type { SettingsService } from '../settings.service';
 import type { ClipboardService } from '../clipboard.service';
+import type { CqlValidationService } from '../cql-validation.service';
+import type { CqlFormatterService } from '../cql-formatter.service';
 
 export interface BrowserToolMCPMetadata {
   name: string;
@@ -14,6 +16,8 @@ export interface BrowserToolContext {
   ideStateService: IdeStateService;
   settingsService: SettingsService;
   clipboardService: ClipboardService;
+  cqlValidationService: CqlValidationService;
+  cqlFormatterService: CqlFormatterService;
 }
 
 export abstract class BaseBrowserTool {

@@ -3,7 +3,8 @@
 import { BaseBrowserTool } from './base-browser-tool';
 
 export class ListLibrariesTool extends BaseBrowserTool {
-  readonly name = 'list_libraries';
+  static readonly id = 'list_libraries';
+  readonly name = ListLibrariesTool.id;
   readonly description = 'List all loaded CQL libraries';
   readonly parameters = {
     type: 'object',

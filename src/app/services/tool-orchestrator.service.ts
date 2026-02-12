@@ -7,6 +7,8 @@ import { AiService, MCPTool, MCPResponse } from './ai.service';
 import { IdeStateService } from './ide-state.service';
 import { SettingsService } from './settings.service';
 import { ClipboardService } from './clipboard.service';
+import { CqlValidationService } from './cql-validation.service';
+import { CqlFormatterService } from './cql-formatter.service';
 import { BrowserToolsRegistry } from './tools';
 
 export interface ToolCall {
@@ -31,12 +33,16 @@ export class ToolOrchestratorService {
     private aiService: AiService,
     private ideStateService: IdeStateService,
     private settingsService: SettingsService,
-    private clipboardService: ClipboardService
+    private clipboardService: ClipboardService,
+    private cqlValidationService: CqlValidationService,
+    private cqlFormatterService: CqlFormatterService
   ) {
     this.browserTools = BrowserToolsRegistry.createTools({
       ideStateService: this.ideStateService,
       settingsService: this.settingsService,
-      clipboardService: this.clipboardService
+      clipboardService: this.clipboardService,
+      cqlValidationService: this.cqlValidationService,
+      cqlFormatterService: this.cqlFormatterService
     });
   }
 

@@ -3,7 +3,8 @@
 import { BaseBrowserTool } from './base-browser-tool';
 
 export class ReplaceCodeTool extends BaseBrowserTool {
-  readonly name = 'replace_code';
+  static readonly id = 'replace_code';
+  readonly name = ReplaceCodeTool.id;
   readonly description = 'Replace selected code or code at specified position';
   readonly parameters = {
     type: 'object',

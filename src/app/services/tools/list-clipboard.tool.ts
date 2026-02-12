@@ -6,7 +6,8 @@ import { BaseBrowserTool } from './base-browser-tool';
 const MAX_ITEMS = 50;
 
 export class ListClipboardTool extends BaseBrowserTool {
-  readonly name = 'list_clipboard';
+  static readonly id = 'list_clipboard';
+  readonly name = ListClipboardTool.id;
   readonly description = 'List or query items on the FHIR clipboard (ValueSets, CodeSystems, Codings, etc.). Use search or typeFilter to narrow results.';
   readonly parameters = {
     type: 'object',

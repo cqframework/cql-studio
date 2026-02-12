@@ -3,7 +3,8 @@
 import { BaseBrowserTool } from './base-browser-tool';
 
 export class FormatCodeTool extends BaseBrowserTool {
-  readonly name = 'format_code';
+  static readonly id = 'format_code';
+  readonly name = FormatCodeTool.id;
   readonly description = 'Format the current CQL code in the editor';
   readonly parameters = {
     type: 'object',

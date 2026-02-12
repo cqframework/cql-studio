@@ -1,48 +1,25 @@
 // Author: Preston Lee
 
 import { Injectable } from '@angular/core';
-
-/**
- * Tools allowed in Plan Mode (read-only investigation)
- */
-const PLAN_MODE_ALLOWED_TOOLS = new Set([
-  'get_code',
-  'list_libraries',
-  'get_library_content',
-  'search_code',
-  'read_file',
-  'list_files',
-  'get_cursor_position',
-  'get_selection',
-  'web_search',
-  'searxng_search',
-  'fetch_url'
-]);
-
-/**
- * Tools blocked in Plan Mode (modification tools)
- */
-const PLAN_MODE_BLOCKED_TOOLS = new Set([
-  'insert_code',
-  'replace_code',
-  'delete_file',
-  'write_file',
-  'edit_file',
-  'create_library'
-]);
+import { PLAN_MODE_ALLOWED_TOOLS, PLAN_MODE_BLOCKED_TOOLS } from './tool-ids';
+import { CreateLibraryTool } from './tools/create-library.tool';
+import { GetCodeTool } from './tools/get-code.tool';
+import { InsertCodeTool } from './tools/insert-code.tool';
+import { ReplaceCodeTool } from './tools/replace-code.tool';
+import { SearchCodeTool } from './tools/search-code.tool';
 
 @Injectable({
   providedIn: 'root'
 })
 export class AiPlanningService {
-  
+
   /**
    * Check if a tool is allowed in Plan Mode
    */
   isToolAllowedInPlanMode(toolName: string): boolean {
     return PLAN_MODE_ALLOWED_TOOLS.has(toolName);
   }
-  
+
   /**
    * Check if a tool is blocked in Plan Mode
    */
@@ -70,13 +47,15 @@ export class AiPlanningService {
    * Get Plan Mode system prompt additions
    */
   getPlanModeSystemPrompt(): string {
+    const blockedList = [...PLAN_MODE_BLOCKED_TOOLS].sort().join(', ');
+    const allowedList = [...PLAN_MODE_ALLOWED_TOOLS].sort().join(', ');
     return `
 ## 🚨 YOU ARE IN PLAN MODE 🚨
 
 **CRITICAL RESTRICTIONS:**
 - You MUST NOT modify any files
-- You MUST NOT call tools that modify code: insert_code, replace_code, delete_file, write_file, edit_file, create_library
-- You CAN ONLY use investigation tools: get_code, list_libraries, get_library_content, search_code, read_file, list_files, web_search, searxng_search, fetch_url
+- You MUST NOT call tools that modify code: ${blockedList}
+- You CAN ONLY use investigation tools: ${allowedList}
 
 **YOUR ROLE:**
 - Analyze the codebase and understand the current state
@@ -169,7 +148,7 @@ This plan will add the BMI calculation function while maintaining code quality a
 - Make actual changes to the codebase
 - Follow through on the agreed strategy
 
-**FIRST RESPONSE MUST USE TOOLS WHEN NEEDED:** On each new user message, if you need to read code, search, or get context, your first reply MUST include a tool_call (e.g. get_code or search_code). Do not answer with only text until you have called tools and received their results.
+**FIRST RESPONSE MUST USE TOOLS WHEN NEEDED:** On each new user message, if you need to read code, search, or get context, your first reply MUST include a tool_call (e.g. ${GetCodeTool.id} or ${SearchCodeTool.id}). Do not answer with only text until you have called tools and received their results.
 `;
     
     if (hasPlan) {
@@ -184,15 +163,15 @@ This plan will add the BMI calculation function while maintaining code quality a
 **DIRECT EXECUTION:**
 - Proceed with implementation directly
 - Use tools to make necessary changes
-- On the first response, call get_code (or another tool) if you need context before answering
+- On the first response, call ${GetCodeTool.id} (or another tool) if you need context before answering
 `;
     }
     
     prompt += `
 **TOOLS AVAILABLE:**
 - All tools are available, including code modification tools
-- Use insert_code, replace_code, create_library as needed
-- Read files first (get_code) to understand context before modifying
+- Use ${InsertCodeTool.id}, ${ReplaceCodeTool.id}, ${CreateLibraryTool.id} as needed (see tool definitions)
+- Read files first (${GetCodeTool.id}) to understand context before modifying
 `;
     
     return prompt;

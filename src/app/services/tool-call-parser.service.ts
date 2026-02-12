@@ -1,6 +1,7 @@
 // Author: Preston Lee
 
 import { Injectable } from '@angular/core';
+import { InsertCodeTool, ReplaceCodeTool } from './tools';
 
 export interface ParsedToolCall {
   tool: string;
@@ -72,7 +73,7 @@ export class ToolCallParserService {
           console.log('[Tool Parser] ✅ Parsed tool call:', parsed.tool, 'params keys:', Object.keys(parsed.params));
           
           // Special logging for code editing tools with multiline content
-          if ((parsed.tool === 'insert_code' || parsed.tool === 'replace_code') && parsed.params['code']) {
+          if ((parsed.tool === InsertCodeTool.id || parsed.tool === ReplaceCodeTool.id) && parsed.params['code']) {
             const code = parsed.params['code'];
             const hasNewlines = code.includes('\n') || code.split('\n').length > 1;
             console.log(`[Tool Parser] Code parameter length: ${code.length}, has newlines: ${hasNewlines}, lines: ${code.split('\n').length}`);

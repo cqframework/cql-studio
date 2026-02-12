@@ -3,7 +3,8 @@
 import { BaseBrowserTool } from './base-browser-tool';
 
 export class NavigateToLineTool extends BaseBrowserTool {
-  readonly name = 'navigate_to_line';
+  static readonly id = 'navigate_to_line';
+  readonly name = NavigateToLineTool.id;
   readonly description = 'Navigate the editor to a specific line number';
   readonly parameters = {
     type: 'object',

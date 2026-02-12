@@ -3,8 +3,9 @@
 import { BaseBrowserTool } from './base-browser-tool';
 
 export class SearchCodeTool extends BaseBrowserTool {
-  readonly name = 'search_code';
-  readonly description = 'Search for patterns in loaded CQL libraries';
+  static readonly id = 'search_code';
+  readonly name = SearchCodeTool.id;
+  readonly description = 'Search for patterns in CQL libraries open within the CQL IDE. Does not search external files or content.';
   readonly parameters = {
     type: 'object',
     properties: {

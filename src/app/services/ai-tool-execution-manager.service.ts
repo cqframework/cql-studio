@@ -10,6 +10,7 @@ import { AiPlanningService } from './ai-planning.service';
 import { ConversationManagerService } from './conversation-manager.service';
 import { IdeStateService } from './ide-state.service';
 import { PlanStep } from '../models/plan.model';
+import { InsertCodeTool, ReplaceCodeTool } from './tools';
 
 export interface ToolExecutionEvent {
   type: 'started' | 'completed' | 'failed';
@@ -75,7 +76,7 @@ export class AiToolExecutionManagerService {
     }
     
     // Validate code editing tools have code
-    if ((toolCall.tool === 'insert_code' || toolCall.tool === 'replace_code')) {
+    if ((toolCall.tool === InsertCodeTool.id || toolCall.tool === ReplaceCodeTool.id)) {
       const code = toolCall.params['code'];
       if (!code || typeof code !== 'string') {
         return { valid: false, error: `${toolCall.tool} requires a 'code' parameter` };
