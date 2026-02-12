@@ -332,7 +332,7 @@ export class IdePanelComponent {
           type: 'error',
           status: 'error',
           executionTime: 0,
-          expanded: true,
+          expanded: false,
           timestamp: new Date()
         });
       } else {

@@ -963,7 +963,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       type: 'json',
       status: status,
       executionTime: executionTime,
-      expanded: true,
+      expanded: false,
       timestamp: new Date()
     });
   }
@@ -978,7 +978,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       type: 'error',
       status: 'error',
       executionTime: 0,
-      expanded: true,
+      expanded: false,
       timestamp: new Date()
     });
   }

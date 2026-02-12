@@ -252,7 +252,7 @@ export class IdeStateService {
       content,
       type: 'text',
       status,
-      expanded: true,
+      expanded: false,
       timestamp: new Date()
     };
     this.addOutputSection(section);
@@ -265,7 +265,7 @@ export class IdeStateService {
       content,
       type: 'json',
       status,
-      expanded: true,
+      expanded: false,
       timestamp: new Date()
     };
     this.addOutputSection(section);
@@ -278,7 +278,7 @@ export class IdeStateService {
       content,
       type: 'error',
       status: 'error',
-      expanded: true,
+      expanded: false,
       timestamp: new Date()
     };
     this.addOutputSection(section);
@@ -291,7 +291,7 @@ export class IdeStateService {
       content,
       type: 'warning',
       status: 'success',
-      expanded: true,
+      expanded: false,
       timestamp: new Date()
     };
     this.addOutputSection(section);
@@ -304,7 +304,7 @@ export class IdeStateService {
       content,
       type: 'info',
       status: 'success',
-      expanded: true,
+      expanded: false,
       timestamp: new Date()
     };
     this.addOutputSection(section);
@@ -317,7 +317,7 @@ export class IdeStateService {
       content,
       type,
       status: 'success',
-      expanded: true,
+      expanded: false,
       timestamp: new Date(),
       metadata
     };
@@ -336,7 +336,7 @@ export class IdeStateService {
       content: typeof result === 'string' ? result : JSON.stringify(result, null, 2),
       type: 'custom',
       status: 'success',
-      expanded: true,
+      expanded: false,
       timestamp: new Date(),
       executionTime,
       metadata: {
@@ -355,7 +355,7 @@ export class IdeStateService {
       content: elmContent,
       type: 'custom',
       status: 'success',
-      expanded: true,
+      expanded: false,
       timestamp: new Date(),
       metadata: {
         libraryName,
@@ -373,7 +373,7 @@ export class IdeStateService {
       content: typeof validationResults === 'string' ? validationResults : JSON.stringify(validationResults, null, 2),
       type: 'custom',
       status: errorCount > 0 ? 'error' : 'success',
-      expanded: true,
+      expanded: false,
       timestamp: new Date(),
       metadata: {
         libraryName,
