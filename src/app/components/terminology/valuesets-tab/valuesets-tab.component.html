@@ -53,8 +53,8 @@
       <div class="list-group-item list-group-item-action" (click)="selectValueSet(valueset)"
         [class.active]="selectedValueSet()?.id === valueset.id">
         <div class="d-flex w-100 justify-content-between align-items-start">
-          <div class="d-flex align-items-center flex-grow-1">
-            <h6 class="mb-1 text-truncate me-2" style="max-width: 60%;">{{ valueset.name || 'Unnamed ValueSet' }}</h6>
+          <div class="d-flex align-items-center flex-grow-1 overflow-hidden" style="min-width: 0;">
+            <h6 class="mb-1 text-truncate me-2">{{ valueset.name || 'Unnamed ValueSet' }}</h6>
           </div>
           <div class="d-flex align-items-center gap-1 flex-shrink-0">
             @if (valueset.version) {

@@ -1,0 +1,313 @@
+@if (searchValueSet() || expandLoading()) {
+  <div class="card h-100">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="card-title mb-0">
+        <i class="bi bi-search me-2"></i>Code Search Results
+        @if (searchValueSet()) {
+          <span class="text-muted fw-normal ms-2">— {{ searchValueSet()?.name || searchValueSet()?.url || 'ValueSet' }}</span>
+        }
+        @if (expandLoading()) {
+          <span class="spinner-border spinner-border-sm ms-2" role="status" aria-hidden="true"></span>
+        }
+      </h5>
+    </div>
+    <div class="card-body">
+      @if (searchValueSet() && (searchFilter() || searchValueSet()?.url)) {
+        <div class="mb-3">
+          <h6 class="text-muted text-uppercase small fw-normal mb-2">Search context</h6>
+          <div class="row g-2 small">
+            @if (searchValueSet()?.url) {
+              <div class="col-12">
+                <span class="text-muted">ValueSet:</span>
+                <code class="ms-1 text-break">{{ searchValueSet()?.url }}</code>
+              </div>
+            }
+            @if (searchFilter()) {
+              <div class="col-12">
+                <span class="text-muted">Filter:</span>
+                <code class="ms-1">{{ searchFilter() }}</code>
+              </div>
+            }
+          </div>
+        </div>
+      }
+
+      @if (expandLoading()) {
+        <div class="text-center py-4">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-2 text-muted small">Expanding ValueSet...</p>
+        </div>
+      } @else if (expandedCodes().length > 0) {
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h6 class="mb-0">Codes ({{ expandedCodes().length }})</h6>
+          <div class="d-flex align-items-center gap-2">
+            <label for="codeSearchPageSizeSelect" class="small text-muted mb-0">Items per page:</label>
+            <select class="form-select form-select-sm" id="codeSearchPageSizeSelect"
+                    [(ngModel)]="currentPageSize"
+                    style="width: auto;">
+              @for (size of availablePageSizes(); track size) {
+                <option [value]="size">{{ size }}</option>
+              }
+            </select>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-striped table-hover mb-0">
+            <thead class="sticky-top">
+              <tr>
+                <th scope="col" class="text-nowrap">Code</th>
+                <th scope="col" class="text-nowrap">Display</th>
+                <th scope="col" class="text-nowrap">System</th>
+                <th scope="col" class="text-nowrap text-end">Clipboard</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (code of paginatedCodes(); track code.code + '-' + code.system; let rowIndex = $index) {
+                <tr (click)="handleRowClick(code)" style="cursor: pointer;">
+                  <td><code class="small">{{ code.code }}</code></td>
+                  <td class="text-muted small">{{ code.display || 'No display name' }}</td>
+                  <td><small class="text-muted">{{ code.system }}</small></td>
+                  <td class="text-end">
+                    <button
+                      type="button"
+                      [id]="'code-search-clipboard-btn-' + rowIndex"
+                      class="btn btn-outline-secondary btn-sm"
+                      title="Add Coding to Clipboard"
+                      (click)="onAddCodeToClipboard(code); $event.stopPropagation()"
+                    >
+                      <i class="bi bi-clipboard-plus"></i>
+                    </button>
+                  </td>
+                </tr>
+                @if (isRowExpanded(code)) {
+                  <tr class="table-active">
+                    <td colspan="4" class="p-0">
+                      <div class="p-3">
+                        @if (isLoadingCodeDetails(code)) {
+                          <div class="text-center py-2">
+                            <div class="spinner-border spinner-border-sm text-primary me-2" role="status">
+                              <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <small class="text-muted">Loading code details...</small>
+                          </div>
+                        } @else {
+                          @if (getCodeDetails(code)?.error) {
+                            <div class="alert alert-danger alert-sm mb-0" role="alert">
+                              <i class="bi bi-exclamation-circle me-1"></i>
+                              <small>{{ getCodeDetails(code).error }}</small>
+                            </div>
+                          } @else if (getCodeDetails(code)) {
+                            <div class="row g-3">
+                              <div class="col-md-6">
+                                <div class="text-muted text-uppercase small fw-normal mb-2">Code Details</div>
+                                <div>
+                                  <div class="mb-2">
+                                    <div class="text-muted small mb-1">Code</div>
+                                    <code>{{ code.code }}</code>
+                                  </div>
+                                  <div class="mb-2">
+                                    <div class="text-muted small mb-1">Display</div>
+                                    <div>{{ code.display || 'No display name' }}</div>
+                                  </div>
+                                  <div class="mb-2">
+                                    <div class="text-muted small mb-1">System</div>
+                                    <div class="text-muted small">{{ code.system }}</div>
+                                  </div>
+                                  @if (getCodeDetails(code)?.parameter) {
+                                    @for (param of getCodeDetails(code).parameter; track $index) {
+                                      @if (param.name === 'name') {
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">Code System Name</div>
+                                          <div>{{ param.valueString }}</div>
+                                        </div>
+                                      }
+                                      @if (param.name === 'version') {
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">Version</div>
+                                          <div>{{ param.valueString }}</div>
+                                        </div>
+                                      }
+                                      @if (param.name === 'display') {
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">Full Display</div>
+                                          <div>{{ param.valueString }}</div>
+                                        </div>
+                                      }
+                                      @if (param.name === 'definition') {
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">Definition</div>
+                                          <div>{{ param.valueString }}</div>
+                                        </div>
+                                      }
+                                    }
+                                  }
+                                </div>
+                                @if (getCodeDetails(code)?.parameter) {
+                                  @for (param of getCodeDetails(code).parameter; track $index) {
+                                    @if (param.name === 'designation') {
+                                      <div class="mt-3">
+                                        <div class="text-muted text-uppercase small fw-normal mb-2">Designations</div>
+                                        <div>
+                                          @if (param.part && param.part.length > 0) {
+                                            @for (part of param.part; track $index) {
+                                              @if (part.name === 'value') {
+                                                <div class="mb-2">
+                                                  @if (part.valueString) {
+                                                    <div class="d-inline">{{ part.valueString }}</div>
+                                                  }
+                                                  @for (otherPart of param.part; track $index) {
+                                                    @if (otherPart.name === 'language' && otherPart !== part) {
+                                                      <span class="badge bg-secondary ms-2">{{ otherPart.valueCode }}</span>
+                                                    }
+                                                    @if (otherPart.name === 'use' && otherPart !== part) {
+                                                      <span class="badge bg-info ms-1">{{ otherPart.valueCoding?.code || otherPart.valueCode }}</span>
+                                                    }
+                                                  }
+                                                </div>
+                                              }
+                                            }
+                                          } @else if (param.valueString) {
+                                            <div class="mb-2">{{ param.valueString }}</div>
+                                          } @else if (param.valueCoding) {
+                                            <div class="mb-2">
+                                              @if (param.valueCoding.display) {
+                                                <div>{{ param.valueCoding.display }}</div>
+                                              }
+                                              @if (param.valueCoding.code) {
+                                                <code class="small">{{ param.valueCoding.code }}</code>
+                                              }
+                                            </div>
+                                          }
+                                        </div>
+                                      </div>
+                                    }
+                                  }
+                                }
+                              </div>
+                              <div class="col-md-6">
+                                @if (getCodeDetails(code)?.parameter) {
+                                  <div class="text-muted text-uppercase small fw-normal mb-2">Additional Properties</div>
+                                  <div>
+                                    @for (param of getCodeDetails(code).parameter; track $index) {
+                                      @if (param.name !== 'display' && param.name !== 'definition' && param.name !== 'name' && param.name !== 'version' && param.name !== 'designation') {
+                                        <div class="mb-2">
+                                          <div class="text-muted small mb-1">{{ param.name }}</div>
+                                          @if (param.valueString) {
+                                            <div>{{ param.valueString }}</div>
+                                          } @else if (param.valueBoolean !== undefined) {
+                                            <div>
+                                              <span class="badge" [class.bg-success]="param.valueBoolean" [class.bg-secondary]="!param.valueBoolean">
+                                                {{ param.valueBoolean ? 'Yes' : 'No' }}
+                                              </span>
+                                            </div>
+                                          } @else if (param.valueCode) {
+                                            <code class="small">{{ param.valueCode }}</code>
+                                          } @else if (param.valueInteger !== undefined) {
+                                            <div>{{ param.valueInteger }}</div>
+                                          } @else if (param.valueDecimal !== undefined) {
+                                            <div>{{ param.valueDecimal }}</div>
+                                          } @else if (param.valueUri) {
+                                            <a [href]="param.valueUri" target="_blank" rel="noopener noreferrer" class="text-break">
+                                              <code class="small">{{ param.valueUri }}</code>
+                                            </a>
+                                          } @else if (param.valueDateTime) {
+                                            <div>{{ formatDate(param.valueDateTime) }}</div>
+                                          } @else if (param.valueDate) {
+                                            <div>{{ formatDate(param.valueDate) }}</div>
+                                          } @else if (param.valueCoding) {
+                                            <div>
+                                              @if (param.valueCoding.code) {
+                                                <code class="small me-2">{{ param.valueCoding.code }}</code>
+                                              }
+                                              @if (param.valueCoding.display) {
+                                                <span>{{ param.valueCoding.display }}</span>
+                                              }
+                                              @if (param.valueCoding.system) {
+                                                <div class="text-muted small mt-1">{{ param.valueCoding.system }}</div>
+                                              }
+                                            </div>
+                                          } @else if (param.part) {
+                                            <div class="ms-2">
+                                              @for (part of param.part; track $index) {
+                                                <div class="mb-1">
+                                                  <span class="text-muted small">{{ part.name }}:</span>
+                                                  @if (part.valueString) {
+                                                    <span class="ms-1">{{ part.valueString }}</span>
+                                                  } @else if (part.valueCode) {
+                                                    <code class="small ms-1">{{ part.valueCode }}</code>
+                                                  } @else if (part.valueCoding) {
+                                                    <code class="small ms-1">{{ part.valueCoding.code }}</code>
+                                                    @if (part.valueCoding.display) {
+                                                      <span class="ms-1">({{ part.valueCoding.display }})</span>
+                                                    }
+                                                  }
+                                                </div>
+                                              }
+                                            </div>
+                                          }
+                                        </div>
+                                      }
+                                    }
+                                  </div>
+                                }
+                              </div>
+                            </div>
+                          }
+                        }
+                      </div>
+                    </td>
+                  </tr>
+                }
+              }
+            </tbody>
+          </table>
+        </div>
+
+        @if (totalPages() > 1) {
+          <nav aria-label="Code search page navigation" class="mt-3">
+            <ul class="pagination justify-content-center mb-0">
+              <li class="page-item" [class.disabled]="!hasPreviousPage()">
+                <button class="page-link" (click)="goToFirstPage()" [disabled]="!hasPreviousPage()" type="button">
+                  <i class="bi bi-chevron-double-left"></i>
+                </button>
+              </li>
+              <li class="page-item" [class.disabled]="!hasPreviousPage()">
+                <button class="page-link" (click)="previousPage()" [disabled]="!hasPreviousPage()" type="button">
+                  <i class="bi bi-chevron-left"></i>
+                </button>
+              </li>
+              <li class="page-item disabled">
+                <span class="page-link">Page {{ currentPage() }} of {{ totalPages() }}</span>
+              </li>
+              <li class="page-item disabled">
+                <span class="page-link">Showing {{ startIndex() }} - {{ endIndex() }} of {{ expandedCodes().length }}</span>
+              </li>
+              <li class="page-item" [class.disabled]="!hasNextPage()">
+                <button class="page-link" (click)="nextPage()" [disabled]="!hasNextPage()" type="button">
+                  <i class="bi bi-chevron-right"></i>
+                </button>
+              </li>
+              <li class="page-item" [class.disabled]="!hasNextPage()">
+                <button class="page-link" (click)="goToLastPage()" [disabled]="!hasNextPage()" type="button">
+                  <i class="bi bi-chevron-double-right"></i>
+                </button>
+              </li>
+            </ul>
+          </nav>
+        }
+      } @else if (searchValueSet() && !expandLoading()) {
+        <div class="text-center text-muted py-4">
+          <i class="bi bi-info-circle display-6"></i>
+          <p class="mt-2 small">No codes returned for this search.</p>
+        </div>
+      }
+    </div>
+  </div>
+} @else {
+  <div class="text-center text-muted py-5">
+    <i class="bi bi-search display-4"></i>
+    <p class="mt-2">Select a ValueSet and click Search to view codes.</p>
+  </div>
+}

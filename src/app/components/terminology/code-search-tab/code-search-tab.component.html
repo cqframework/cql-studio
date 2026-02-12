@@ -1,0 +1,116 @@
+<div class="row">
+  <div class="col-md-4">
+    <div class="mb-3 position-relative">
+      <div class="form-floating">
+        <input type="text" class="form-control form-control-sm" id="codeSearchValueSet"
+          [ngModel]="valueSetInput()"
+          (ngModelChange)="onValueSetInputChange($event)"
+          (focus)="onValueSetInputFocus()"
+          (blur)="onValueSetInputBlur()"
+          (keydown)="onValueSetInputKeyDown($event)"
+          placeholder="e.g., http://hl7.org/fhir/ValueSet/example or search by name">
+        <label for="codeSearchValueSet">ValueSet</label>
+      </div>
+      @if (showValueSetDropdown()) {
+        <div class="dropdown-menu show w-100" style="position: absolute; top: 100%; z-index: 1000; max-height: 300px; overflow-y: auto;">
+          @if (valueSetSearchLoading()) {
+            <div class="dropdown-item-text text-center py-2">
+              <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+              Searching...
+            </div>
+          } @else if (valueSetSearchResults().length > 0) {
+            @for (vs of valueSetSearchResults(); track getValueSetTrackKey(vs, $index); let i = $index) {
+              <button type="button"
+                [id]="'code-search-valueset-item-' + i"
+                class="dropdown-item"
+                [class.active]="valueSetHighlightedIndex() === i"
+                (click)="selectValueSetFromSearch(vs)"
+                (mousedown)="$event.preventDefault()">
+                <div class="fw-bold">{{ getValueSetDisplayName(vs) }}</div>
+                @if (vs.url) {
+                  <div class="small text-muted">{{ vs.url }}</div>
+                }
+              </button>
+            }
+          } @else if (valueSetInput().trim().length >= 2) {
+            <div class="dropdown-item-text text-center py-2 text-muted">No ValueSets found</div>
+          }
+        </div>
+      }
+    </div>
+
+    <div class="form-floating mb-3">
+      <input type="text" class="form-control form-control-sm" id="codeSearchFilter"
+        [ngModel]="filterInput()"
+        (ngModelChange)="filterInput.set($event)"
+        placeholder="Filter by display/code">
+      <label for="codeSearchFilter">Filter (optional)</label>
+    </div>
+
+    <div class="row g-2 mb-3">
+      <div class="col-6">
+        <div class="form-floating">
+          <input type="number" class="form-control form-control-sm" id="codeSearchCount"
+            [ngModel]="countInput()"
+            (ngModelChange)="countInput.set(+$event)"
+            min="1" max="1000" step="1">
+          <label for="codeSearchCount">Count</label>
+        </div>
+      </div>
+      <div class="col-6">
+        <div class="form-floating">
+          <input type="number" class="form-control form-control-sm" id="codeSearchOffset"
+            [ngModel]="offsetInput()"
+            (ngModelChange)="offsetInput.set(+$event)"
+            min="0" step="1">
+          <label for="codeSearchOffset">Offset</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="codeSearchIncludeDesignations"
+          [ngModel]="includeDesignations()"
+          (ngModelChange)="includeDesignations.set($event)">
+        <label class="form-check-label" for="codeSearchIncludeDesignations">Include designations</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="codeSearchIncludeDefinition"
+          [ngModel]="includeDefinition()"
+          (ngModelChange)="includeDefinition.set($event)">
+        <label class="form-check-label" for="codeSearchIncludeDefinition">Include definition</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="codeSearchActiveOnly"
+          [ngModel]="activeOnly()"
+          (ngModelChange)="activeOnly.set($event)">
+        <label class="form-check-label" for="codeSearchActiveOnly">Active only</label>
+      </div>
+    </div>
+
+    <button type="button" class="btn btn-primary btn-lg w-100" id="codeSearchRunBtn"
+      (click)="runSearch()"
+      [disabled]="expandLoading() || !hasValidConfiguration()">
+      @if (expandLoading()) {
+        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+        Searching...
+      } @else {
+        <i class="bi bi-search me-2"></i>Search
+      }
+    </button>
+  </div>
+
+  <div class="col-md-8">
+    <app-code-search-details-pane
+      [searchValueSet]="selectedValueSet()"
+      [searchFilter]="searchFilterUsed()"
+      [expandLoading]="expandLoading()"
+      [expandedCodes]="expandedCodes()"
+      [expandedRows]="expandedRows()"
+      [expandedCodeDetails]="expandedCodeDetails()"
+      [loadingDetails]="loadingDetails()"
+      [availablePageSizes]="availablePageSizes"
+      [onRowToggle]="toggleRowExpansion.bind(this)" />
+  </div>
+</div>

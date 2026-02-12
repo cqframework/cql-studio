@@ -17,6 +17,7 @@ import { ValueSetsTabComponent } from './components/terminology/valuesets-tab/va
 import { ConceptMapsTabComponent } from './components/terminology/conceptmaps-tab/conceptmaps-tab.component';
 import { CodeSystemsTabComponent } from './components/terminology/codesystems-tab/codesystems-tab.component';
 import { ValidationTabComponent } from './components/terminology/validation-tab/validation-tab.component';
+import { CodeSearchTabComponent } from './components/terminology/code-search-tab/code-search-tab.component';
 import { AboutComponent } from './components/about/about.component';
 import { LandingComponent } from './components/landing/landing.component';
 import { GuidelinesComponent } from './components/guidelines/guidelines.component';
@@ -47,7 +48,8 @@ export const routes: Routes = [
       { path: 'valuesets', component: ValueSetsTabComponent },
       { path: 'conceptmaps', component: ConceptMapsTabComponent },
       { path: 'codesystems', component: CodeSystemsTabComponent },
-      { path: 'validation', component: ValidationTabComponent }
+      { path: 'validation', component: ValidationTabComponent },
+      { path: 'search', component: CodeSearchTabComponent }
     ]
   },
   {
