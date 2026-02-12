@@ -9,6 +9,7 @@ import { SettingsService } from './settings.service';
 import { IdeStateService } from './ide-state.service';
 import { ConversationManagerService } from './conversation-manager.service';
 import { AiPlanningService } from './ai-planning.service';
+import { ToolPolicyService } from './tool-policy.service';
 import { Plan, PlanStep } from '../models/plan.model';
 import { BrowserToolsRegistry } from './tools';
 import { CreateLibraryTool } from './tools/create-library.tool';
@@ -64,6 +65,8 @@ export interface MCPTool {
   description: string;
   /** User-facing message shown while the tool is executing (from server) */
   statusMessage?: string;
+  /** If true, tool is read-only and allowed in Plan Mode. If false, blocked. */
+  allowedInPlanMode?: boolean;
   parameters: any;
 }
 
@@ -88,6 +91,7 @@ export class AiService extends BaseService {
   private ideStateService = inject(IdeStateService);
   private conversationManager = inject(ConversationManagerService);
   private planningService = inject(AiPlanningService);
+  private toolPolicyService = inject(ToolPolicyService);
 
   /** Cached server MCP tools; populated by reinitializeServerMCPTools() when Server MCP is enabled. */
   private serverMCPToolsCache: MCPTool[] | null = null;
@@ -715,11 +719,21 @@ Use this context when helping improve, debug, or extend the code.`;
         + this.formatServerToolsForSystemPrompt(this.getCachedServerMCPTools());
     }
 
-    // Add mode-specific prompts
+    // Add mode-specific prompts (pass dynamically built tool lists from tool metadata)
+    const serverTools = this.getCachedServerMCPTools();
+    const allowedSet = this.toolPolicyService.getPlanModeAllowedTools(serverTools);
+    const blockedSet = this.toolPolicyService.getPlanModeBlockedTools(serverTools);
+    const allToolNames = [
+      ...(BrowserToolsRegistry.getDefinitions() as MCPTool[]).map(t => t.name),
+      ...serverTools.map(t => t.name)
+    ];
+    const allowedToolNames = allToolNames.filter(n => allowedSet.has(n));
+    const blockedToolNames = allToolNames.filter(n => blockedSet.has(n));
+
     if (mode === 'plan') {
-      systemContent += '\n\n' + this.planningService.getPlanModeSystemPrompt();
+      systemContent += '\n\n' + this.planningService.getPlanModeSystemPrompt(allowedToolNames, blockedToolNames);
     } else {
-      systemContent += '\n\n' + this.planningService.getActModeSystemPrompt(hasPlan);
+      systemContent += '\n\n' + this.planningService.getActModeSystemPrompt(hasPlan, allowedToolNames, blockedToolNames);
 
       // In Act Mode, if there was a plan, emphasize following it
       if (hasPlan) {

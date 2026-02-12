@@ -4,6 +4,8 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class NavigateToLineTool extends BaseBrowserTool {
   static readonly id = 'navigate_to_line';
+  static override planModeAllowed = true;
+  static override statusMessage = 'Navigating...';
   readonly name = NavigateToLineTool.id;
   readonly description = 'Navigate the editor to a specific line number';
   readonly parameters = {

@@ -4,6 +4,8 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class GetLibraryContentTool extends BaseBrowserTool {
   static readonly id = 'get_library_content';
+  static override planModeAllowed = true;
+  static override statusMessage = 'Loading library...';
   readonly name = GetLibraryContentTool.id;
   readonly description = 'Get the full content of a specific library';
   readonly parameters = {

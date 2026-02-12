@@ -13,6 +13,7 @@ function isCoding(obj: unknown): obj is Coding {
 
 export class AddToClipboardTool extends BaseBrowserTool {
   static readonly id = 'add_to_clipboard';
+  static override statusMessage = 'Adding to clipboard...';
   readonly name = AddToClipboardTool.id;
   readonly description = 'Add a FHIR resource (e.g. ValueSet, CodeSystem) or Coding to the clipboard. Pass the full JSON payload.';
   readonly parameters = {

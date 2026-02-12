@@ -4,6 +4,7 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class InsertCodeTool extends BaseBrowserTool {
   static readonly id = 'insert_code';
+  static override statusMessage = 'Inserting code...';
   readonly name = InsertCodeTool.id;
   readonly description = 'Insert code at the current cursor position in the editor';
   readonly parameters = {

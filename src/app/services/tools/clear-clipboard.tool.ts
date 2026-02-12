@@ -4,6 +4,7 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class ClearClipboardTool extends BaseBrowserTool {
   static readonly id = 'clear_clipboard';
+  static override statusMessage = 'Clearing clipboard...';
   readonly name = ClearClipboardTool.id;
   readonly description = 'Clear all items from the FHIR clipboard.';
   readonly parameters = {

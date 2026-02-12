@@ -4,6 +4,8 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class GetCodeTool extends BaseBrowserTool {
   static readonly id = 'get_code';
+  static override planModeAllowed = true;
+  static override statusMessage = 'Reading code...';
   readonly name = GetCodeTool.id;
   readonly description = 'Get current code content from the active editor';
   readonly parameters = {

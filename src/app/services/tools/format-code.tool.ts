@@ -4,6 +4,7 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class FormatCodeTool extends BaseBrowserTool {
   static readonly id = 'format_code';
+  static override statusMessage = 'Formatting code...';
   readonly name = FormatCodeTool.id;
   readonly description = 'Format the current CQL code in the editor';
   readonly parameters = {

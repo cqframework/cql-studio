@@ -7,6 +7,8 @@ import { ToolOrchestratorService, ToolResult } from './tool-orchestrator.service
 import { ParsedToolCall } from './tool-call-parser.service';
 import { AiConversationStateService } from './ai-conversation-state.service';
 import { AiPlanningService } from './ai-planning.service';
+import { AiService } from './ai.service';
+import { ToolPolicyService } from './tool-policy.service';
 import { ConversationManagerService } from './conversation-manager.service';
 import { IdeStateService } from './ide-state.service';
 import { PlanStep } from '../models/plan.model';
@@ -42,6 +44,8 @@ export class AiToolExecutionManagerService {
     private toolOrchestrator: ToolOrchestratorService,
     private stateService: AiConversationStateService,
     private planningService: AiPlanningService,
+    private toolPolicyService: ToolPolicyService,
+    private aiService: AiService,
     private conversationManager: ConversationManagerService,
     private ideStateService: IdeStateService
   ) {}
@@ -86,7 +90,14 @@ export class AiToolExecutionManagerService {
     // Check mode restrictions (Plan Mode blocks modification tools)
     const conversation = this.conversationManager.activeConversation();
     if (conversation?.mode === 'plan') {
-      const modeValidation = this.planningService.validateToolCallForMode(toolCall.tool, 'plan');
+      const blockedTools = this.toolPolicyService.getPlanModeBlockedTools(
+        this.aiService.getCachedServerMCPTools()
+      );
+      const modeValidation = this.planningService.validateToolCallForMode(
+        toolCall.tool,
+        'plan',
+        { blockedTools }
+      );
       if (!modeValidation.allowed) {
         return { valid: false, error: modeValidation.reason };
       }

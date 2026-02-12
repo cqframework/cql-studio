@@ -4,6 +4,8 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class ValidateCqlTool extends BaseBrowserTool {
   static readonly id = 'validate_cql';
+  static override planModeAllowed = true;
+  static override statusMessage = 'Validating CQL...';
   readonly name = ValidateCqlTool.id;
   readonly description =
     'Validate CQL syntax and semantics. Returns errors, warnings, and info messages with line/column locations. Use this to check CQL code before or after making changes.';

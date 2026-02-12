@@ -25,6 +25,11 @@ export abstract class BaseBrowserTool {
   abstract readonly description: string;
   abstract readonly parameters: BrowserToolMCPMetadata['parameters'];
 
+  /** If true, tool is read-only and allowed in Plan Mode. Default false (blocked). */
+  static planModeAllowed: boolean = false;
+  /** User-facing message shown while the tool is executing. */
+  static statusMessage?: string;
+
   constructor(protected readonly ctx: BrowserToolContext) {}
 
   toMCPTool(): BrowserToolMCPMetadata {

@@ -4,6 +4,8 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class ListLibrariesTool extends BaseBrowserTool {
   static readonly id = 'list_libraries';
+  static override planModeAllowed = true;
+  static override statusMessage = 'Listing libraries...';
   readonly name = ListLibrariesTool.id;
   readonly description = 'List all loaded CQL libraries';
   readonly parameters = {

@@ -4,6 +4,8 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class SearchCodeTool extends BaseBrowserTool {
   static readonly id = 'search_code';
+  static override planModeAllowed = true;
+  static override statusMessage = 'Searching code...';
   readonly name = SearchCodeTool.id;
   readonly description = 'Search for patterns in CQL libraries open within the CQL IDE. Does not search external files or content.';
   readonly parameters = {

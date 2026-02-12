@@ -4,6 +4,8 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class FormatCqlTool extends BaseBrowserTool {
   static readonly id = 'format_cql';
+  static override planModeAllowed = true;
+  static override statusMessage = 'Formatting CQL...';
   readonly name = FormatCqlTool.id;
   readonly description =
     'Format CQL code (indentation, operator spacing, etc.) and return the formatted result. Use this to normalize CQL style in string format without modifying the editor.';

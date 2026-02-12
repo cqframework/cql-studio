@@ -7,6 +7,8 @@ const MAX_ITEMS = 50;
 
 export class ListClipboardTool extends BaseBrowserTool {
   static readonly id = 'list_clipboard';
+  static override planModeAllowed = true;
+  static override statusMessage = 'Listing clipboard...';
   readonly name = ListClipboardTool.id;
   readonly description = 'List or query items on the FHIR clipboard (ValueSets, CodeSystems, Codings, etc.). Use search or typeFilter to narrow results.';
   readonly parameters = {

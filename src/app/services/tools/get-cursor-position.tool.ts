@@ -4,6 +4,8 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class GetCursorPositionTool extends BaseBrowserTool {
   static readonly id = 'get_cursor_position';
+  static override planModeAllowed = true;
+  static override statusMessage = 'Getting cursor position...';
   readonly name = GetCursorPositionTool.id;
   readonly description = 'Get the current cursor position in the editor';
   readonly parameters = {

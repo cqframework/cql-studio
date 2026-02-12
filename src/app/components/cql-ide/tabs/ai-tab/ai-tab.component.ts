@@ -17,7 +17,7 @@ import { AiConversationStateService } from '../../../../services/ai-conversation
 import { AiToolExecutionManagerService } from '../../../../services/ai-tool-execution-manager.service';
 import { AiStreamResponseHandlerService, StreamResponseContext } from '../../../../services/ai-stream-response-handler.service';
 import { InsertCodeTool, ReplaceCodeTool } from '../../../../services/tools';
-import { TOOL_STATUS_MESSAGES } from '../../../../services/tool-ids';
+import { ToolPolicyService } from '../../../../services/tool-policy.service';
 import { PlanDisplayComponent } from './plan-display.component';
 import { TimeagoPipe } from 'ngx-timeago';
 
@@ -111,7 +111,8 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     private toolCallParser: ToolCallParserService,
     private conversationState: AiConversationStateService,
     private toolExecutionManager: AiToolExecutionManagerService,
-    private streamHandler: AiStreamResponseHandlerService
+    private streamHandler: AiStreamResponseHandlerService,
+    private toolPolicyService: ToolPolicyService
   ) {
   }
 
@@ -628,11 +629,9 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
 
   getToolStatusMessage(toolCall: ParsedToolCall): string {
     const toolName = toolCall.tool;
-    const fromBrowser = TOOL_STATUS_MESSAGES[toolName];
-    if (fromBrowser) return fromBrowser;
-    const serverTool = this.aiService.getCachedServerMCPTools().find(t => t.name === toolName);
-    if (serverTool?.statusMessage) return serverTool.statusMessage;
-    return `Executing ${toolName}...`;
+    const serverTools = this.aiService.getCachedServerMCPTools();
+    const messages = this.toolPolicyService.getToolStatusMessages(serverTools);
+    return messages[toolName] ?? `Executing ${toolName}...`;
   }
 
   private async handleMainStreamResponse(finalResponse: string): Promise<void> {

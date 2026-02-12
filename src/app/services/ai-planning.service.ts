@@ -1,12 +1,6 @@
 // Author: Preston Lee
 
 import { Injectable } from '@angular/core';
-import { PLAN_MODE_ALLOWED_TOOLS, PLAN_MODE_BLOCKED_TOOLS } from './tool-ids';
-import { CreateLibraryTool } from './tools/create-library.tool';
-import { GetCodeTool } from './tools/get-code.tool';
-import { InsertCodeTool } from './tools/insert-code.tool';
-import { ReplaceCodeTool } from './tools/replace-code.tool';
-import { SearchCodeTool } from './tools/search-code.tool';
 
 @Injectable({
   providedIn: 'root'
@@ -14,41 +8,32 @@ import { SearchCodeTool } from './tools/search-code.tool';
 export class AiPlanningService {
 
   /**
-   * Check if a tool is allowed in Plan Mode
+   * Validate tool call for current mode.
+   * Caller must provide blockedTools (from ToolPolicyService) when mode is 'plan'.
    */
-  isToolAllowedInPlanMode(toolName: string): boolean {
-    return PLAN_MODE_ALLOWED_TOOLS.has(toolName);
-  }
-
-  /**
-   * Check if a tool is blocked in Plan Mode
-   */
-  isToolBlockedInPlanMode(toolName: string): boolean {
-    return PLAN_MODE_BLOCKED_TOOLS.has(toolName);
-  }
-  
-  /**
-   * Validate tool call for current mode
-   */
-  validateToolCallForMode(toolName: string, mode: 'plan' | 'act'): { allowed: boolean; reason?: string } {
+  validateToolCallForMode(
+    toolName: string,
+    mode: 'plan' | 'act',
+    toolsContext: { blockedTools: Set<string> }
+  ): { allowed: boolean; reason?: string } {
     if (mode === 'plan') {
-      if (this.isToolBlockedInPlanMode(toolName)) {
+      if (toolsContext.blockedTools.has(toolName)) {
         return {
           allowed: false,
           reason: `Tool '${toolName}' is not allowed in Plan Mode. Plan Mode only allows read-only investigation tools.`
         };
       }
     }
-    // Act Mode allows all tools
     return { allowed: true };
   }
   
   /**
-   * Get Plan Mode system prompt additions
+   * Get Plan Mode system prompt additions.
+   * Uses dynamically provided tool lists (built from available tools) - never hardcodes tool IDs.
    */
-  getPlanModeSystemPrompt(): string {
-    const blockedList = [...PLAN_MODE_BLOCKED_TOOLS].sort().join(', ');
-    const allowedList = [...PLAN_MODE_ALLOWED_TOOLS].sort().join(', ');
+  getPlanModeSystemPrompt(allowedToolNames: string[], blockedToolNames: string[]): string {
+    const blockedList = blockedToolNames.length > 0 ? blockedToolNames.slice().sort().join(', ') : '(none available)';
+    const allowedList = allowedToolNames.length > 0 ? allowedToolNames.slice().sort().join(', ') : '(none available)';
     return `
 ## 🚨 YOU ARE IN PLAN MODE 🚨
 
@@ -136,9 +121,13 @@ This plan will add the BMI calculation function while maintaining code quality a
   }
   
   /**
-   * Get Act Mode system prompt additions (can reference plan if available)
+   * Get Act Mode system prompt additions (can reference plan if available).
+   * Uses dynamically provided tool lists (built from available tools) - never hardcodes tool IDs.
    */
-  getActModeSystemPrompt(hasPlan: boolean = false): string {
+  getActModeSystemPrompt(hasPlan: boolean, readToolNames: string[], modificationToolNames: string[]): string {
+    const readExamples = readToolNames.length > 0 ? readToolNames.slice(0, 3).join(', ') : 'available read tools';
+    const modificationExamples = modificationToolNames.length > 0 ? modificationToolNames.slice(0, 3).join(', ') : 'available modification tools';
+
     let prompt = `
 ## 🚀 YOU ARE IN ACT MODE 🚀
 
@@ -148,7 +137,7 @@ This plan will add the BMI calculation function while maintaining code quality a
 - Make actual changes to the codebase
 - Follow through on the agreed strategy
 
-**FIRST RESPONSE MUST USE TOOLS WHEN NEEDED:** On each new user message, if you need to read code, search, or get context, your first reply MUST include a tool_call (e.g. ${GetCodeTool.id} or ${SearchCodeTool.id}). Do not answer with only text until you have called tools and received their results.
+**FIRST RESPONSE MUST USE TOOLS WHEN NEEDED:** On each new user message, if you need to read code, search, or get context, your first reply MUST include a tool_call (e.g. ${readExamples}). Do not answer with only text until you have called tools and received their results.
 `;
     
     if (hasPlan) {
@@ -163,15 +152,15 @@ This plan will add the BMI calculation function while maintaining code quality a
 **DIRECT EXECUTION:**
 - Proceed with implementation directly
 - Use tools to make necessary changes
-- On the first response, call ${GetCodeTool.id} (or another tool) if you need context before answering
+- On the first response, call a read tool (e.g. ${readExamples}) if you need context before answering
 `;
     }
     
     prompt += `
 **TOOLS AVAILABLE:**
 - All tools are available, including code modification tools
-- Use ${InsertCodeTool.id}, ${ReplaceCodeTool.id}, ${CreateLibraryTool.id} as needed (see tool definitions)
-- Read files first (${GetCodeTool.id}) to understand context before modifying
+- Use modification tools (e.g. ${modificationExamples}) as needed (see tool definitions)
+- Read files first using available read tools to understand context before modifying
 `;
     
     return prompt;

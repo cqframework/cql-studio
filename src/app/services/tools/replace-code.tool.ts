@@ -4,6 +4,7 @@ import { BaseBrowserTool } from './base-browser-tool';
 
 export class ReplaceCodeTool extends BaseBrowserTool {
   static readonly id = 'replace_code';
+  static override statusMessage = 'Updating code...';
   readonly name = ReplaceCodeTool.id;
   readonly description = 'Replace selected code or code at specified position';
   readonly parameters = {
