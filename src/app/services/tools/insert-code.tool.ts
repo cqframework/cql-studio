@@ -16,9 +16,16 @@ export class InsertCodeTool extends BaseBrowserTool {
   };
 
   execute(params: Record<string, unknown>): unknown {
+    const code = typeof params?.['code'] === 'string' ? params['code'] : '';
+    if (!code.trim()) {
+      throw new Error('insert_code requires a non-empty "code" string.');
+    }
+
     return {
-      message: 'insert_code requires editor access via event chain',
-      params
+      accepted: true,
+      mode: 'ui_event_chain',
+      message: 'Insert request accepted and dispatched to the editor handler.',
+      codeLength: code.length
     };
   }
 }

@@ -39,6 +39,8 @@ export interface ExecuteToolCallsOptions {
 export class AiToolExecutionManagerService {
   private executionEvents$ = new Subject<ToolExecutionEvent>();
   public executionEvents = this.executionEvents$.asObservable();
+  private readonly MAX_TOOL_RETRY_ATTEMPTS = 1;
+  private readonly TOOL_RESULTS_SUMMARY_CHAR_LIMIT = 2000;
   
   constructor(
     private toolOrchestrator: ToolOrchestratorService,
@@ -237,7 +239,7 @@ export class AiToolExecutionManagerService {
     options: ExecuteToolCallsOptions = {}
   ): Promise<ToolResult[]> {
     if (toolCalls.length === 0) return [];
-    const { conversationId, planSteps, onResult, timeoutMs = 5000 } = options;
+    const { conversationId, planSteps, onResult, timeoutMs = 25000 } = options;
     const results: ToolResult[] = [];
 
     for (let index = 0; index < toolCalls.length; index++) {
@@ -253,8 +255,10 @@ export class AiToolExecutionManagerService {
       }
 
       try {
-        const result = await firstValueFrom(
-          this.executeToolCall(toolCall).pipe(timeout(timeoutMs))
+        const result = await this.executeToolCallWithRetry(
+          toolCall,
+          timeoutMs,
+          this.MAX_TOOL_RETRY_ATTEMPTS
         );
         results.push(result);
         onResult?.(toolCall, result);
@@ -304,6 +308,112 @@ export class AiToolExecutionManagerService {
     }
     return results;
   }
+
+  private async executeToolCallWithRetry(
+    toolCall: ParsedToolCall,
+    timeoutMs: number,
+    maxRetries: number
+  ): Promise<ToolResult> {
+    const callKey = this.getCallKey(toolCall);
+    let attempt = 0;
+    while (attempt <= maxRetries) {
+      try {
+        const result = attempt === 0
+          ? await firstValueFrom(this.executeToolCall(toolCall).pipe(timeout(timeoutMs)))
+          : await this.executeRetryAttempt(toolCall, callKey, timeoutMs);
+
+        if (result.success || attempt >= maxRetries || !this.isTransientToolFailure(result.error)) {
+          return result;
+        }
+
+        attempt += 1;
+        this.ideStateService.addWarningOutput(
+          'AI tool retry',
+          `Retrying ${toolCall.tool} (${attempt}/${maxRetries}) due to transient failure.`
+        );
+      } catch (error: unknown) {
+        const err = error as { message?: string; isValidationError?: boolean };
+        if (err?.isValidationError) {
+          throw error;
+        }
+
+        const transientFailure = this.isTransientToolFailure(err?.message);
+        if (!transientFailure || attempt >= maxRetries) {
+          throw error;
+        }
+
+        const timeoutResult: ToolResult = {
+          tool: toolCall.tool,
+          success: false,
+          error: err?.message ?? 'Tool execution timed out'
+        };
+        this.stateService.markToolCallCompleted(callKey, timeoutResult);
+        this.executionEvents$.next({
+          type: 'failed',
+          callKey,
+          toolCall,
+          result: timeoutResult,
+          error: timeoutResult.error
+        });
+
+        attempt += 1;
+        this.ideStateService.addWarningOutput(
+          'AI tool retry',
+          `Retrying ${toolCall.tool} (${attempt}/${maxRetries}) after transient error: ${timeoutResult.error}`
+        );
+      }
+    }
+
+    return {
+      tool: toolCall.tool,
+      success: false,
+      error: `Tool execution failed after ${maxRetries + 1} attempts`
+    };
+  }
+
+  private async executeRetryAttempt(
+    toolCall: ParsedToolCall,
+    callKey: string,
+    timeoutMs: number
+  ): Promise<ToolResult> {
+    const retryResult = await firstValueFrom(
+      this.toolOrchestrator.executeToolCall(toolCall.tool, toolCall.params).pipe(
+        timeout(timeoutMs),
+        catchError((error: unknown) =>
+          of({
+            tool: toolCall.tool,
+            success: false,
+            error: (error as { message?: string })?.message ?? 'Tool execution failed'
+          })
+        )
+      )
+    );
+
+    this.stateService.markToolCallCompleted(callKey, retryResult);
+    this.executionEvents$.next({
+      type: retryResult.success ? 'completed' : 'failed',
+      callKey,
+      toolCall,
+      result: retryResult,
+      error: retryResult.error
+    });
+    return retryResult;
+  }
+
+  private isTransientToolFailure(errorMessage?: string): boolean {
+    if (!errorMessage) {
+      return false;
+    }
+    const message = errorMessage.toLowerCase();
+    return (
+      message.includes('timeout') ||
+      message.includes('timed out') ||
+      message.includes('network') ||
+      message.includes('failed to fetch') ||
+      message.includes('econn') ||
+      /\b(429|500|502|503|504)\b/.test(message)
+    );
+  }
   
   /**
    * Cancel all executing tool calls
@@ -349,8 +459,8 @@ export class AiToolExecutionManagerService {
         
         if (result.success) {
           const resultStr = JSON.stringify(result.result, null, 2);
-          const truncatedResult = resultStr.length > 500 
-            ? resultStr.substring(0, 500) + '...' 
+          const truncatedResult = resultStr.length > this.TOOL_RESULTS_SUMMARY_CHAR_LIMIT
+            ? resultStr.substring(0, this.TOOL_RESULTS_SUMMARY_CHAR_LIMIT) + '...'
             : resultStr;
           return `Tool ${call.tool} executed successfully:\n${truncatedResult}`;
         } else {

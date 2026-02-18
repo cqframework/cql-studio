@@ -15,7 +15,7 @@ import { ToolCallParserService, ParsedToolCall } from '../../../../services/tool
 import { CodeDiffPreviewComponent, CodeDiff } from './code-diff-preview.component';
 import { AiConversationStateService } from '../../../../services/ai-conversation-state.service';
 import { AiToolExecutionManagerService } from '../../../../services/ai-tool-execution-manager.service';
-import { AiStreamResponseHandlerService, StreamResponseContext } from '../../../../services/ai-stream-response-handler.service';
+import { AiStreamResponseHandlerService, ProcessStreamResult,StreamResponseContext} from '../../../../services/ai-stream-response-handler.service';
 import { InsertCodeTool, ReplaceCodeTool } from '../../../../services/tools';
 import { ToolPolicyService } from '../../../../services/tool-policy.service';
 import { PlanDisplayComponent } from './plan-display.component';
@@ -64,6 +64,10 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   private _scrollRafId: number | null = null;
   private _userScrolledUp = false;
   private _intersectionObserver: IntersectionObserver | null = null;
+  private _continuationRounds = 0;
+  private _noProgressRounds = 0;
+  private static readonly MAX_CONTINUATION_ROUNDS = 9;
+  private static readonly MAX_NO_PROGRESS_ROUNDS = 3;
 
   public isLoading = computed(() => this._isLoading());
   public currentMessage = computed(() => this._currentMessage());
@@ -141,6 +145,72 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     this._isLoading.set(false);
     this._currentMessage.set('');
     this._currentSubscription = null;
+    this.resetContinuationTracking();
+  }
+
+  private resetContinuationTracking(): void {
+    this._continuationRounds = 0;
+    this._noProgressRounds = 0;
+  }
+
+  private processStreamResult(result: ProcessStreamResult): void {
+    if ('startContinuation' in result) {
+      const shouldContinue = this.evaluateContinuationGuardrails(result);
+      if (!shouldContinue) {
+        return;
+      }
+      this.startContinuationStream(result.startContinuation.editorId, result.startContinuation.summary);
+      return;
+    }
+    this.finishResponse();
+  }
+
+  private evaluateContinuationGuardrails(result: Extract<ProcessStreamResult, { startContinuation: { editorId: string; summary: string } }>): boolean {
+    this._continuationRounds += 1;
+    const reason = result.reason;
+
+    if (result.progressDelta === 'no_progress') {
+      this._noProgressRounds += 1;
+      this.ideStateService.addInfoOutput(
+        'AI continuation',
+        `No-progress continuation round ${this._noProgressRounds}/${AiTabComponent.MAX_NO_PROGRESS_ROUNDS} (reason: ${reason}).`
+      );
+    } else {
+      this._noProgressRounds = 0;
+    }
+
+    this.ideStateService.addInfoOutput(
+      'AI continuation',
+      `Starting continuation round ${this._continuationRounds}/${AiTabComponent.MAX_CONTINUATION_ROUNDS} (reason: ${reason}).`
+    );
+
+    if (this._continuationRounds > AiTabComponent.MAX_CONTINUATION_ROUNDS) {
+      this.stopContinuationWithReason(
+        `Stopped after ${AiTabComponent.MAX_CONTINUATION_ROUNDS} continuation rounds to prevent an unbounded tool loop.`
+      );
+      return false;
+    }
+
+    if (this._noProgressRounds >= AiTabComponent.MAX_NO_PROGRESS_ROUNDS) {
+      this.stopContinuationWithReason(
+        `Stopped because no progress was detected in ${this._noProgressRounds} consecutive continuation rounds.`
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  private stopContinuationWithReason(reason: string): void {
+    this.ideStateService.addWarningOutput('AI continuation', reason);
+    const conversation = this.activeConversation();
+    if (conversation) {
+      this.conversationManager.addAssistantMessage(
+        conversation.id,
+        `${reason} Please refine the prompt or reload tools and try again.`
+      );
+    }
+    this.finishResponse();
   }
 
   ngOnInit(): void {
@@ -207,6 +277,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
     
     this._isLoading.set(false);
     this.conversationState.resetState();
+    this.resetContinuationTracking();
   }
 
   public onKeyPress(event: KeyboardEvent): void {
@@ -227,6 +298,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
       this.conversationManager.deleteConversation(active.id);
     }
     this.conversationState.resetState();
+    this.resetContinuationTracking();
     this._currentMessage.set('');
     this._error.set(null);
   }
@@ -238,6 +310,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
   public onClearAllConversations(): void {
     this.conversationManager.clearAllConversations();
     this.conversationState.resetState();
+    this.resetContinuationTracking();
   }
 
   public onResetMCPTools(): void {
@@ -376,6 +449,11 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
 
   private handleToolResult(toolCall: ParsedToolCall, result: ToolResult): void {
     if (toolCall.tool === InsertCodeTool.id || toolCall.tool === ReplaceCodeTool.id) {
+      if (!result.success) {
+        console.warn('[handleToolResult] Skipping code edit for failed tool call', { toolCall, result });
+        return;
+      }
+
       let code = '';
       if (toolCall.params && toolCall.params['code']) {
         code = typeof toolCall.params['code'] === 'string' 
@@ -436,6 +514,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
 
     this._suggestedCommands.set([]);
     this.conversationState.resetState();
+    this.resetContinuationTracking();
     this._isLoading.set(true);
     this._error.set(null);
 
@@ -640,11 +719,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
         finalResponse,
         this.getStreamResponseContext(true)
       );
-      if ('startContinuation' in result) {
-        this.startContinuationStream(result.startContinuation.editorId, result.startContinuation.summary);
-      } else {
-        this.finishResponse();
-      }
+      this.processStreamResult(result);
     } catch (err) {
       console.error('[AI Tab] Error processing main stream response:', err);
       this.finishResponse();
@@ -676,14 +751,7 @@ export class AiTabComponent implements OnInit, AfterViewInit, AfterViewChecked, 
                 finalResponse,
                 this.getStreamResponseContext(false)
               );
-              if ('startContinuation' in result) {
-                this.startContinuationStream(
-                  result.startContinuation.editorId,
-                  result.startContinuation.summary
-                );
-              } else {
-                this.finishResponse();
-              }
+              this.processStreamResult(result);
             } catch (err) {
               console.error('[AI Tab] Error processing continuation response:', err);
               this.finishResponse();

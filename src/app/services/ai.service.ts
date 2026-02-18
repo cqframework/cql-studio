@@ -83,6 +83,25 @@ export interface MCPResponse {
   };
 }
 
+export type ActNextAction = 'tool' | 'final';
+
+export interface StructuredActToolCall {
+  tool: string;
+  params: Record<string, unknown>;
+}
+
+export interface StructuredActResponse {
+  comment: string;
+  next_action: ActNextAction;
+  tool_call?: StructuredActToolCall;
+}
+
+export interface StructuredActParseResult {
+  status: 'valid' | 'invalid' | 'not_structured';
+  response?: StructuredActResponse;
+  error?: string;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -95,6 +114,11 @@ export class AiService extends BaseService {
 
   /** Cached server MCP tools; populated by reinitializeServerMCPTools() when Server MCP is enabled. */
   private serverMCPToolsCache: MCPTool[] | null = null;
+  private readonly TOOL_PHASE_OPTIONS = {
+    act: { temperature: 0.1, top_p: 0.3 },
+    plan: { temperature: 0.2, top_p: 0.4 },
+    contentOnly: { temperature: 0.7, top_p: 0.9 }
+  } as const;
 
   /**
    * Check if AI assistant is available (server proxy, Ollama URL, and enabled)
@@ -185,10 +209,7 @@ export class AiService extends BaseService {
       messages: [systemMessage, ...apiMessages],
       stream: false,
       format: useMCPTools ? this.getActModeResponseFormat() : this.getContentOnlyFormat(),
-      options: {
-        temperature: 0.7,
-        top_p: 0.9
-      }
+      options: this.getRequestOptions('act', useMCPTools)
     };
 
     return this.http.post<OllamaResponse>(`${this.getProxyBaseUrl()}/chat`, request, {
@@ -277,7 +298,7 @@ export class AiService extends BaseService {
           toolResultsText += `\n\nBased on these tool execution results, create a structured plan. Your response must be a JSON object with a "plan" key containing "description" and "steps" (array of objects with "number" and "description"), and optionally "comment". At most 12 steps.`;
         } else if (conversationMode === 'act' && !message) {
           // Continuation in act mode - instruct to continue (call more tools or give final answer)
-          toolResultsText += `\n\nBased on these tool execution results, continue. You may call another tool if you need more information, or provide your final answer. Respond with the same JSON format: {"comment": "...", "tool_call": {...}} when calling a tool, or {"comment": "..."} for a final answer.`;
+          toolResultsText += `\n\nBased on these tool execution results, continue. You may call another tool if you need more information, or provide your final answer. Respond with the same JSON format and required "next_action": {"comment": "...", "next_action": "tool", "tool_call": {...}} when calling a tool, or {"comment": "...", "next_action": "final"} for a final answer.`;
         }
 
         apiMessages[apiMessages.length - 1] = {
@@ -308,10 +329,7 @@ export class AiService extends BaseService {
       messages: [systemMessage, ...apiMessages],
       stream: true,
       format,
-      options: {
-        temperature: 0.7,
-        top_p: 0.9
-      }
+      options: this.getRequestOptions(conversationMode, useMCPTools)
     };
 
     return new Observable(observer => {
@@ -699,15 +717,19 @@ Use this context when helping improve, debug, or extend the code.`;
     if (useMCPTools) {
       systemContent += `
 
-**CRITICAL – Use tools in your first response:** When the user asks about code, editing, or anything that requires context (current file, libraries, search), you MUST include a "tool_call" in your very first response. Do not reply with only a comment or explanation until you have called the appropriate tool (e.g. ${GetCodeTool.id}, ${SearchCodeTool.id}) and received results. Example first response: {"comment": "Reading the current code.", "tool_call": {"tool": "${GetCodeTool.id}", "params": {}}}.
+**CRITICAL – Use tools in your first response:** When the user asks about code, editing, or anything that requires context (current file, libraries, search), you MUST include a "tool_call" in your very first response. Do not reply with only a comment or explanation until you have called the appropriate tool (e.g. ${GetCodeTool.id}, ${SearchCodeTool.id}) and received results. Example first response: {"comment": "Reading the current code.", "next_action": "tool", "tool_call": {"tool": "${GetCodeTool.id}", "params": {}}}.
 
-**Response format (structured JSON):** Every response must be a JSON object with "comment" (required: brief natural language) and optionally "tool_call" when invoking a tool. Example with tool: {"comment": "Reading current code.", "tool_call": {"tool": "${GetCodeTool.id}", "params": {}}}. Example without tool (only after you have results): {"comment": "Here is the summary."}. Always call a tool first when you need information; do not answer directly until you have results.`;
+**Response format (structured JSON):** Every response must be a JSON object with "comment" (required) and "next_action" (required: "tool" | "final"). If "next_action" is "tool", "tool_call" is required with {"tool": string, "params": object}. If "next_action" is "final", do not include "tool_call". Example with tool: {"comment": "Reading current code.", "next_action": "tool", "tool_call": {"tool": "${GetCodeTool.id}", "params": {}}}. Example final: {"comment": "Here is the summary.", "next_action": "final"}. Always call a tool first when you need information; do not answer directly until you have results.`;
 
       if (hasEditorContext) {
         systemContent += `
 
 **Code editing (editor is open):** For add/fix/improve/modify code, call ${GetCodeTool.id} first, then ${InsertCodeTool.id} or ${ReplaceCodeTool.id} with the actual code in the "code" parameter (required, non-empty string). Do not just show code—use the tools to edit the editor. ${ReplaceCodeTool.id} can take startLine/endLine.`;
       }
+
+      systemContent += `
+
+**Completion policy:** If the user asks for a one-shot code action (for example create or insert code) and the requested edit has been applied, respond with "next_action": "final". Do not start unsolicited validation/refactor/fix loops unless the user explicitly asks for validation, testing, or additional fixes.`;
 
       systemContent += `
 
@@ -831,17 +853,29 @@ Use this context when helping improve, debug, or extend the code.`;
     return { type: 'array', items: { type: 'string' } };
   }
 
+  private getRequestOptions(mode: 'plan' | 'act', useMCPTools: boolean): { temperature: number; top_p: number } {
+    if (!useMCPTools) {
+      return this.TOOL_PHASE_OPTIONS.contentOnly;
+    }
+    return mode === 'plan' ? this.TOOL_PHASE_OPTIONS.plan : this.TOOL_PHASE_OPTIONS.act;
+  }
+
   /**
-   * JSON schema for act-mode response: comment plus optional tool_call (Ollama format parameter)
+   * JSON schema for act-mode response: comment + next_action, with tool_call when invoking a tool.
    */
   private getActModeResponseFormat(): OllamaFormat {
     return {
       type: 'object',
       properties: {
         comment: { type: 'string', description: 'Brief natural language comment' },
+        next_action: {
+          type: 'string',
+          enum: ['tool', 'final'],
+          description: 'Set to "tool" when invoking a tool, or "final" when done'
+        },
         tool_call: {
           type: 'object',
-          description: 'Optional tool to invoke',
+          description: 'Tool to invoke when next_action is "tool"',
           properties: {
             tool: { type: 'string' },
             params: { type: 'object' }
@@ -849,7 +883,7 @@ Use this context when helping improve, debug, or extend the code.`;
           required: ['tool', 'params']
         }
       },
-      required: ['comment']
+      required: ['comment', 'next_action']
     };
   }
 
@@ -897,30 +931,65 @@ Use this context when helping improve, debug, or extend the code.`;
     };
   }
 
-  /**
-   * Parse structured act-mode response (format: { comment, tool_call? }).
-   * Returns null if content is not valid JSON with that shape.
-   */
-  parseStructuredActResponse(content: string): { comment: string; tool_call?: { tool: string; params: Record<string, unknown> } } | null {
-    if (!content || !content.trim()) return null;
+  parseStructuredActResponseDetailed(content: string): StructuredActParseResult {
+    if (!content || !content.trim()) {
+      return { status: 'not_structured' };
+    }
     const trimmed = content.trim();
-    if (!trimmed.startsWith('{')) return null;
+    if (!trimmed.startsWith('{')) {
+      return { status: 'not_structured' };
+    }
     try {
       const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-      if (typeof parsed['comment'] !== 'string') return null;
-      const result: { comment: string; tool_call?: { tool: string; params: Record<string, unknown> } } = { comment: parsed['comment'] };
-      const tc = parsed['tool_call'];
-      if (tc != null && typeof tc === 'object' && typeof (tc as Record<string, unknown>)['tool'] === 'string' && (tc as Record<string, unknown>)['params'] !== undefined) {
-        const tco = tc as Record<string, unknown>;
-        result.tool_call = {
-          tool: tco['tool'] as string,
-          params: tco['params'] != null && typeof tco['params'] === 'object' ? tco['params'] as Record<string, unknown> : {}
-        };
+      if (typeof parsed['comment'] !== 'string') {
+        return { status: 'invalid', error: 'Missing required "comment" string.' };
       }
-      return result;
+
+      const toolCall = this.parseStructuredToolCall(parsed['tool_call']);
+      if (parsed['tool_call'] !== undefined && toolCall === null) {
+        return { status: 'invalid', error: 'Invalid "tool_call" shape.' };
+      }
+
+      const nextActionValue = parsed['next_action'];
+      let nextAction: ActNextAction | null = null;
+      if (nextActionValue === 'tool' || nextActionValue === 'final') {
+        nextAction = nextActionValue;
+      } else if (nextActionValue !== undefined) {
+        return { status: 'invalid', error: 'Invalid "next_action". Must be "tool" or "final".' };
+      }
+
+      // Backward compatibility: infer action for legacy structured responses.
+      if (nextAction === null) {
+        nextAction = toolCall ? 'tool' : 'final';
+      }
+
+      if (nextAction === 'tool' && !toolCall) {
+        return { status: 'invalid', error: '"tool_call" is required when next_action is "tool".' };
+      }
+      if (nextAction === 'final' && toolCall) {
+        return { status: 'invalid', error: '"tool_call" is not allowed when next_action is "final".' };
+      }
+
+      const response: StructuredActResponse = {
+        comment: parsed['comment'] as string,
+        next_action: nextAction
+      };
+      if (toolCall) {
+        response.tool_call = toolCall;
+      }
+      return { status: 'valid', response };
     } catch {
-      return null;
+      return { status: 'invalid', error: 'Malformed JSON in structured response.' };
     }
+  }
+
+  /**
+   * Parse structured act-mode response.
+   * Supports both v2 ({comment,next_action,tool_call?}) and legacy ({comment,tool_call?}) shapes.
+   */
+  parseStructuredActResponse(content: string): StructuredActResponse | null {
+    const parsed = this.parseStructuredActResponseDetailed(content);
+    return parsed.status === 'valid' ? parsed.response ?? null : null;
   }
 
   /**
@@ -977,6 +1046,24 @@ Use this context when helping improve, debug, or extend the code.`;
     const contentOnly = this.parseStructuredContentResponse(content);
     if (contentOnly !== null) return contentOnly;
     return content;
+  }
+
+  private parseStructuredToolCall(value: unknown): StructuredActToolCall | null {
+    if (!value || typeof value !== 'object') {
+      return null;
+    }
+    const candidate = value as Record<string, unknown>;
+    if (typeof candidate['tool'] !== 'string') {
+      return null;
+    }
+    const params = candidate['params'];
+    if (!params || typeof params !== 'object') {
+      return null;
+    }
+    return {
+      tool: candidate['tool'] as string,
+      params: params as Record<string, unknown>
+    };
   }
 
   /**

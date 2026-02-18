@@ -137,7 +137,7 @@ This plan will add the BMI calculation function while maintaining code quality a
 - Make actual changes to the codebase
 - Follow through on the agreed strategy
 
-**FIRST RESPONSE MUST USE TOOLS WHEN NEEDED:** On each new user message, if you need to read code, search, or get context, your first reply MUST include a tool_call (e.g. ${readExamples}). Do not answer with only text until you have called tools and received their results.
+**FIRST RESPONSE MUST USE TOOLS WHEN NEEDED:** On each new user message, if you need to read code, search, or get context, your first reply MUST include "next_action":"tool" and a tool_call (e.g. ${readExamples}). Do not answer with only text until you have called tools and received their results.
 `;
     
     if (hasPlan) {
@@ -166,4 +166,3 @@ This plan will add the BMI calculation function while maintaining code quality a
     return prompt;
   }
 }
-

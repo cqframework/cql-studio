@@ -16,9 +16,16 @@ export interface StreamResponseContext {
   currentMode: () => 'plan' | 'act';
 }
 
+export type ProcessReason = 'new_tool_calls' | 'duplicate_tool_calls' | 'final_answer' | 'invalid_contract';
+export type ProgressDelta = 'made_progress' | 'no_progress';
+
 export type ProcessStreamResult =
-  | { done: true }
-  | { startContinuation: { editorId: string; summary: string } };
+  | { done: true; reason: ProcessReason; progressDelta: ProgressDelta }
+  | {
+    startContinuation: { editorId: string; summary: string };
+    reason: ProcessReason;
+    progressDelta: ProgressDelta;
+  };
 
 /**
  * Centralizes parsing and processing of AI stream responses (main, continuation, recursive).
@@ -51,36 +58,45 @@ export class AiStreamResponseHandlerService {
   /**
    * Parse raw response into display text and tool calls (shared by all stream handlers).
    */
-  parseResponseContent(raw: string): { cleanedResponse: string; toolCalls: ParsedToolCall[] } {
-    const structuredAct = this.aiService.parseStructuredActResponse(raw);
-    if (structuredAct) {
-      let cleanedResponse = structuredAct.comment.trim();
-      const toolCalls: ParsedToolCall[] = [];
-      if (structuredAct.tool_call) {
-        cleanedResponse += `\n[Tool: ${structuredAct.tool_call.tool}]`;
-        toolCalls.push({
-          tool: structuredAct.tool_call.tool,
-          params: structuredAct.tool_call.params,
-          raw: JSON.stringify({
+  parseResponseContent(
+    raw: string,
+    mode: 'plan' | 'act'
+  ): { cleanedResponse: string; toolCalls: ParsedToolCall[]; invalidActContract: boolean } {
+    if (mode === 'act') {
+      const structuredActDetailed = this.aiService.parseStructuredActResponseDetailed(raw);
+      if (structuredActDetailed.status === 'valid' && structuredActDetailed.response) {
+        const structuredAct = structuredActDetailed.response;
+        let cleanedResponse = structuredAct.comment.trim();
+        const toolCalls: ParsedToolCall[] = [];
+        if (structuredAct.tool_call) {
+          cleanedResponse += `\n[Tool: ${structuredAct.tool_call.tool}]`;
+          toolCalls.push({
             tool: structuredAct.tool_call.tool,
-            params: structuredAct.tool_call.params
-          })
-        });
+            params: structuredAct.tool_call.params,
+            raw: JSON.stringify({
+              tool: structuredAct.tool_call.tool,
+              params: structuredAct.tool_call.params
+            })
+          });
+        }
+        return { cleanedResponse, toolCalls, invalidActContract: false };
       }
-      return { cleanedResponse, toolCalls };
+      if (structuredActDetailed.status === 'invalid') {
+        return { cleanedResponse: '', toolCalls: [], invalidActContract: true };
+      }
     }
     const contentOnly = this.aiService.parseStructuredContentResponse(raw);
     if (contentOnly !== null) {
-      return { cleanedResponse: contentOnly, toolCalls: [] };
+      return { cleanedResponse: contentOnly, toolCalls: [], invalidActContract: false };
     }
     const toolCalls = this.toolCallParser.parseToolCalls(raw);
     if (toolCalls.length > 0 && this.toolCallParser.hasCompleteToolCalls(raw)) {
       const cleanedResponse = this.toolCallParser.removeToolCallJsonFromResponse(raw, toolCalls);
-      return { cleanedResponse, toolCalls };
+      return { cleanedResponse, toolCalls, invalidActContract: false };
     }
     const standaloneToolCallPattern = /\{\s*"tool"\s*:\s*"[^"]+"\s*,\s*"params"\s*:\s*\{[\s\S]*?\}\s*\}/g;
     const cleanedResponse = raw.replace(standaloneToolCallPattern, '').trim();
-    return { cleanedResponse, toolCalls: [] };
+    return { cleanedResponse, toolCalls: [], invalidActContract: false };
   }
 
   /**
@@ -90,7 +106,7 @@ export class AiStreamResponseHandlerService {
   async processResponse(raw: string, context: StreamResponseContext): Promise<ProcessStreamResult> {
     const hash = this.hashString(raw);
     if (this.conversationState.hasProcessedResponse(hash)) {
-      return { done: true };
+      return { done: true, reason: 'final_answer', progressDelta: 'no_progress' };
     }
     this.conversationState.markResponseProcessed(hash);
     const activeConversation = context.getActiveConversation();
@@ -104,8 +120,26 @@ export class AiStreamResponseHandlerService {
       }
     }
 
-    const { cleanedResponse: parsedCleaned, toolCalls } = this.parseResponseContent(raw);
+    const {
+      cleanedResponse: parsedCleaned,
+      toolCalls,
+      invalidActContract
+    } = this.parseResponseContent(raw, context.currentMode());
     let cleanedResponse = parsedCleaned;
+
+    if (invalidActContract) {
+      if (activeConversation) {
+        return {
+          startContinuation: {
+            editorId: activeConversation.editorId,
+            summary: 'Your previous response did not match the required JSON contract. Respond with exactly one of: {"comment":"...","next_action":"tool","tool_call":{"tool":"...","params":{...}}} or {"comment":"...","next_action":"final"}.'
+          },
+          reason: 'invalid_contract',
+          progressDelta: 'no_progress'
+        };
+      }
+      return { done: true, reason: 'invalid_contract', progressDelta: 'no_progress' };
+    }
 
     const newCalls =
       toolCalls.length > 0
@@ -167,7 +201,11 @@ export class AiStreamResponseHandlerService {
         const summary =
           this.toolExecutionManager.getToolResultsSummary(newCalls) ||
           `Tools executed: ${newCalls.map((c) => c.tool).join(', ')}. Continue with your response.`;
-        return { startContinuation: { editorId: conv.editorId, summary } };
+        return {
+          startContinuation: { editorId: conv.editorId, summary },
+          reason: 'new_tool_calls',
+          progressDelta: 'made_progress'
+        };
       }
     }
 
@@ -176,9 +214,13 @@ export class AiStreamResponseHandlerService {
       const summaryFromExecuted =
         this.toolExecutionManager.getToolResultsSummary(toolCalls) ||
         `Tools executed: ${toolCalls.map((c) => c.tool).join(', ')}. Continue with your response.`;
-      return { startContinuation: { editorId: activeConversation.editorId, summary: summaryFromExecuted } };
+      return {
+        startContinuation: { editorId: activeConversation.editorId, summary: summaryFromExecuted },
+        reason: 'duplicate_tool_calls',
+        progressDelta: 'no_progress'
+      };
     }
 
-    return { done: true };
+    return { done: true, reason: 'final_answer', progressDelta: 'made_progress' };
   }
 }

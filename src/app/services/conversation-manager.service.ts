@@ -258,8 +258,79 @@ export class ConversationManagerService {
       
       messages = [...systemMessages, ...recentMessages];
     }
-    
+
+    // Token budget management: keep system messages and newest non-system messages under token cap.
+    messages = this.applyTokenBudget(messages, this.MAX_CONTEXT_TOKENS);
+
     return messages;
+  }
+
+  private applyTokenBudget(messages: OllamaMessage[], tokenBudget: number): OllamaMessage[] {
+    if (messages.length === 0 || tokenBudget <= 0) {
+      return [];
+    }
+
+    const systemMessages = messages.filter(m => m.role === 'system');
+    const nonSystemMessages = messages.filter(m => m.role !== 'system');
+
+    let remainingBudget = tokenBudget;
+    const preservedSystem: OllamaMessage[] = [];
+    for (const message of systemMessages) {
+      const estimate = this.estimateMessageTokens(message);
+      if (estimate <= remainingBudget) {
+        preservedSystem.push(message);
+        remainingBudget -= estimate;
+      } else {
+        if (remainingBudget > 0) {
+          preservedSystem.push(this.truncateMessageToFitTokens(message, remainingBudget));
+          remainingBudget = 0;
+        }
+        break;
+      }
+    }
+
+    if (remainingBudget <= 0 || nonSystemMessages.length === 0) {
+      return [...preservedSystem];
+    }
+
+    const selectedNonSystem: OllamaMessage[] = [];
+    for (let i = nonSystemMessages.length - 1; i >= 0; i--) {
+      const message = nonSystemMessages[i];
+      const estimate = this.estimateMessageTokens(message);
+      if (estimate <= remainingBudget) {
+        selectedNonSystem.unshift(message);
+        remainingBudget -= estimate;
+      } else if (selectedNonSystem.length === 0 && remainingBudget > 0) {
+        selectedNonSystem.unshift(this.truncateMessageToFitTokens(message, remainingBudget));
+        remainingBudget = 0;
+        break;
+      } else {
+        break;
+      }
+    }
+
+    return [...preservedSystem, ...selectedNonSystem];
+  }
+
+  private estimateMessageTokens(message: OllamaMessage): number {
+    const contentLength = message.content?.length ?? 0;
+    // Approximation: 1 token ~= 4 chars with a small per-message overhead.
+    return Math.max(1, Math.ceil(contentLength / 4) + 4);
+  }
+
+  private truncateMessageToFitTokens(message: OllamaMessage, maxTokens: number): OllamaMessage {
+    if (maxTokens <= 0) {
+      return { ...message, content: '' };
+    }
+    const maxChars = Math.max(0, (maxTokens - 4) * 4);
+    const content = message.content ?? '';
+    if (content.length <= maxChars) {
+      return message;
+    }
+    return {
+      ...message,
+      content: content.substring(0, maxChars)
+    };
   }
   
   /**
@@ -853,4 +924,3 @@ export class ConversationManagerService {
     return 'New Conversation';
   }
 }
-
