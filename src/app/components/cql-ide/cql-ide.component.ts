@@ -963,7 +963,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       type: 'json',
       status: status,
       executionTime: executionTime,
-      expanded: false,
+      expanded: true,
       timestamp: new Date()
     });
   }

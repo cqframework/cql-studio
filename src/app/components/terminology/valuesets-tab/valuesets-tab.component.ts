@@ -286,7 +286,7 @@ export class ValueSetsTabComponent implements OnInit {
 
       const errorMessage = this.getErrorMessage(error) + ' The server might not support expansion of this specific value set.';
       this.valuesetError.set(errorMessage);
-      this.toastService.showWarning(errorMessage, 'ValueSet Expansion Failed');
+      this.toastService.showInfo('The server might not support expansion of this specific value set.', 'ValueSet Not Expanded');
     } finally {
       this.expandLoading.set(false);
     }
