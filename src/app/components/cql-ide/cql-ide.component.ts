@@ -728,12 +728,13 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     const activeLibrary = this.ideStateService.getActiveLibraryResource();
     
     // Update the library's CQL content and metadata
+    // https://github.com/hapifhir/hapi-fhir/issues/7222 - temporarily ignore Library.version
     const updatedLibrary = {
       ...library,
       id: activeLibrary?.id || library.id, // Use the current ID (which might have changed)
       name: activeLibrary?.name || library.name,
       title: activeLibrary?.title || library.title,
-      version: activeLibrary?.version || library.version || '1.0.0',
+      // version: activeLibrary?.version || library.version || '1.0.0',
       description: activeLibrary?.description || library.description,
       url: activeLibrary?.url || library.url || this.libraryService.urlFor(activeLibrary?.id || library.id),
       content: [
@@ -770,7 +771,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
         const libraryName = activeLibrary?.name || activeLibrary?.id || 'Library';
         this.ideStateService.addTextOutput(
           `Library Saved: ${libraryName}`,
-          `Successfully saved library "${libraryName}" to server.\n\nLibrary ID: ${currentId}\nContent length: ${cqlContent.length} characters`,
+          `Successfully saved library "${libraryName}". Server caches may updated asynchronously.\n\nLibrary ID: ${currentId}\nContent length: ${cqlContent.length} characters`,
           'success'
         );
         
@@ -809,11 +810,12 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
   private createNewLibrary(libraryResource: any, cqlContent: string, elmXml: string): void {
     // Create a new FHIR Library resource
+    // https://github.com/hapifhir/hapi-fhir/issues/7222 - temporarily ignore Library.version
     const newLibrary: Library = {
       resourceType: 'Library' as const,
       name: libraryResource.name || libraryResource.id,
       title: libraryResource.title || libraryResource.name || libraryResource.id,
-      version: libraryResource.version || '1.0.0',
+      // version: libraryResource.version || '1.0.0',
       status: 'active' as const,
       url: libraryResource.url || this.libraryService.urlFor(libraryResource.id),
       type: {

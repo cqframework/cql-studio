@@ -14,7 +14,7 @@ export interface LibraryResource {
   id: string;
   name: string;
   title?: string;
-  version: string;
+  version?: string;
   description: string;
   url?: string;
   cqlContent: string;

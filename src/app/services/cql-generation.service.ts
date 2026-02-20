@@ -13,8 +13,8 @@ export class CqlGenerationService {
    */
   generateCql(artifact: GuidelinesArtifact): string {
     const metadata = artifact.metadata || {
-      name: 'NewGuideline',
-      version: '1.0.0'
+      name: 'NewGuideline'
+      // version: '1.0.0'
     };
 
     let cql = `library ${metadata.name} version '${metadata.version || '1.0.0'}'\n\n`;

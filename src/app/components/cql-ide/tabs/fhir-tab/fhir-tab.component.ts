@@ -154,7 +154,7 @@ export class FhirTabComponent {
       libraryCopy.id = activeLibrary.id || '';
       libraryCopy.name = activeLibrary.name || '';
       libraryCopy.title = activeLibrary.title || activeLibrary.name || '';
-      libraryCopy.version = activeLibrary.version || '';
+      // libraryCopy.version = activeLibrary.version || '';
       libraryCopy.description = activeLibrary.description || '';
       libraryCopy.url = activeLibrary.url || this.libraryService.urlFor(activeLibrary.id || '');
       

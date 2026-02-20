@@ -23,10 +23,10 @@ export class CreateLibraryTool extends BaseBrowserTool {
     const requestedVersion = (params['version'] as string) || '1.0.0';
 
     const existingLibraries = this.ctx.ideStateService.libraryResources();
+    // https://github.com/hapifhir/hapi-fhir/issues/7222 - match by name only, not version
     const existingLibrary = existingLibraries.find(lib =>
       lib.name === requestedName ||
-      lib.library?.name === requestedName ||
-      (lib.title === requestedTitle && lib.version === requestedVersion)
+      lib.library?.name === requestedName
     );
 
     if (existingLibrary) {

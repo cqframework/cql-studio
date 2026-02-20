@@ -271,11 +271,12 @@ export class FhirUploaderComponent implements AfterViewInit {
     const canonicalUrl = `${effectiveFhirBaseUrl}/Library/${libraryName}`;
     
     // Create FHIR Library resource
+    // https://github.com/hapifhir/hapi-fhir/issues/7222 - temporarily ignore Library.version
     const library: Library = {
       resourceType: 'Library',
       type: {      },
       id: libraryName,
-      version: cqlVersion,
+      // version: cqlVersion,
       name: libraryName,
       title: libraryName,
       status: 'active',
