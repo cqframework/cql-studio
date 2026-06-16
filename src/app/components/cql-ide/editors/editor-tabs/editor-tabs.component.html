@@ -1,4 +1,4 @@
-<div class="editor-tabs d-flex align-items-center border-dark border-bottom">
+<div class="editor-tabs d-flex align-items-stretch border-dark border-bottom">
   <!-- Drop zone at the beginning -->
   <div 
     class="drop-zone"
@@ -11,7 +11,7 @@
   
   @for (library of libraryResources(); track trackByLibraryId($index, library); let i = $index) {
     <div 
-      class="editor-tab d-flex align-items-center px-3 py-2 border-end border-dark cursor-pointer"
+      class="editor-tab d-flex align-items-center px-2 py-0 border-end border-dark cursor-pointer"
       [class.active]="library.id === activeLibraryId()"
       [class.dirty]="library.isDirty"
       (click)="onSelectLibrary(library.id)"
