@@ -1,682 +1,274 @@
-// Author: Preston Lee
-
-// AI Tab Container
 :host {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+.opencode-tab {
+  min-width: 0;
+  background: var(--bs-body-bg);
+}
+
+.opencode-toolbar,
+.composer,
+.diff-header {
+  background: var(--bs-tertiary-bg);
+}
+
+.empty-state {
+  height: 100%;
   display: flex;
   flex-direction: column;
-  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
 }
 
-.ai-tab-container {
-  background-color: var(--bs-body-bg) !important;
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  
-  // Fixed Toolbar
-  .ai-toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    background-color: var(--bs-secondary-bg);
-    border-bottom: 1px solid var(--bs-border-color);
-    min-height: 48px;
-    flex-shrink: 0; // Prevent toolbar from shrinking
-    
-    // Context indicators
-    .context-indicator {
-      .badge {
-        font-size: 0.75rem;
-        padding: 0.375rem 0.75rem;
-        border-radius: 0.375rem;
-        max-width: 200px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        background-color: var(--bs-primary) !important;
-        color: white !important;
-      }
-    }
-    
-    // Context history dropdown
-    .dropdown-menu {
-      max-height: 300px;
-      overflow-y: auto;
-      background-color: var(--bs-secondary-bg);
-      border-color: var(--bs-border-color);
-      
-      .dropdown-item {
-        padding: 0.5rem 1rem;
-        color: var(--bs-body-color);
-        
-        &:hover {
-          background-color: var(--bs-tertiary-bg);
-          color: var(--bs-body-color);
-        }
-        
-        &.active {
-          background-color: var(--bs-secondary-bg);
-          color: var(--bs-body-color);
-        }
-        
-        .text-muted {
-          color: var(--bs-body-color) !important;
-        }
-      }
-    }
-  }
-  
-  // Main Chat Area
-  .ai-chat-area {
-    // Bootstrap flex-fill handles the flex: 1
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0; // Allow flex item to shrink below content size
-    
-    // Messages Output Area
-    .messages-area {
-      overflow-y: auto;
-      overflow-x: hidden;
-      background-color: var(--bs-body-bg);
-      color: var(--bs-body-color);
-      flex: 1;
-      padding-bottom: 0;
-      
-      // Auto-scroll to bottom - smooth scrolling for better UX
-      // Note: During streaming, we use 'auto' behavior in JS for instant scrolling
-      // Smooth scrolling is only used for new messages and non-streaming updates
-      scroll-behavior: smooth;
-      
-      // Respect user's motion preferences
-      @media (prefers-reduced-motion: reduce) {
-        scroll-behavior: auto;
-      }
-      
-      // Enable scroll anchoring for better performance during streaming
-      // This keeps the scroll position relative to content that's changing
-      & {
-        overflow-anchor: auto;
-      }
-      
-      // Scroll Sentinel - invisible element at bottom that tracks scroll position
-      .scroll-sentinel {
-        height: 1px;
-        width: 100%;
-        // Use scroll-margin to ensure smooth scrolling
-        scroll-margin-bottom: 0;
-      }
-    }
-      
-    // Code blocks
-    .code-block {
-      margin-top: 12px;
-      
-      pre {
-        margin: 0;
-        font-size: 0.875rem;
-        line-height: 1.4;
-        background-color: var(--bs-secondary-bg);
-        color: var(--bs-body-color);
-        border: 1px solid var(--bs-border-color);
-        border-radius: 4px;
-        padding: 12px;
-      }
-    }
-    
-    // Fixed Input Area
-    .ai-input-area {
-      position: sticky;
-      bottom: 0;
-      z-index: 1000;
-      flex-shrink: 0;
-      background-color: var(--bs-secondary-bg);
-      border-top: 1px solid var(--bs-border-color);
-      
-      // Mode toggle footer
-      .mode-toggle-footer {
-        background-color: var(--bs-secondary-bg);
-        border-bottom: 1px solid var(--bs-border-color);
-        min-height: 36px;
-        
-        .mode-toggle-container {
-          .mode-toggle-label {
-            display: flex;
-            align-items: center;
-            color: var(--bs-body-color);
-            font-size: 0.875rem;
-            user-select: none;
-            cursor: pointer;
-            transition: opacity 0.2s ease;
-            
-            &:hover:not(.disabled) {
-              opacity: 0.8;
-            }
-            
-            &.disabled {
-              opacity: 0.5;
-              cursor: not-allowed;
-            }
-            
-            .mode-indicator {
-              display: inline-flex;
-              align-items: center;
-              justify-content: center;
-              width: 20px;
-              height: 20px;
-              border-radius: 4px;
-              font-size: 0.875rem;
-              transition: all 0.2s ease;
-              
-              &.plan-mode {
-                background-color: #ffc107;
-                color: #000;
-              }
-              
-              &.act-mode {
-                background-color: var(--bs-primary);
-                color: white;
-              }
-            }
-            
-            .mode-text {
-              font-weight: 500;
-            }
-          }
-        }
-      }
-
-      &.ai-input-area-drag-over {
-        outline: 2px dashed var(--bs-primary);
-        outline-offset: -2px;
-      }
-
-      .ai-attachment-strip {
-        min-height: 32px;
-        border-bottom: 1px solid var(--bs-border-color);
-        background-color: var(--bs-body-bg);
-
-        .ai-attachment-chip {
-          max-width: 200px;
-          padding: 0.2rem 0.4rem;
-          border-radius: 0.25rem;
-          background-color: var(--bs-secondary-bg);
-          border: 1px solid var(--bs-border-color);
-          color: var(--bs-body-color);
-
-          .ai-attachment-name {
-            max-width: 120px;
-          }
-
-          .ai-attachment-remove {
-            border: none;
-            min-width: 24px;
-            color: var(--bs-body-color);
-            opacity: 0.8;
-
-            &:hover {
-              opacity: 1;
-            }
-          }
-        }
-      }
-      
-      .input-group {
-        .ai-input-textarea {
-          font-size: 0.75rem;
-          padding: 0.375rem 0.5rem;
-          line-height: 1.4;
-        }
-      }
-    }
-  }
-  
-  // AI Not Available
-  .ai-not-available {
-    background-color: var(--bs-body-bg);
-    
-    .connection-test {
-      background-color: var(--bs-secondary-bg);
-      border: 1px solid var(--bs-border-color);
-    }
-  }
+.empty-state p {
+  max-width: 32rem;
 }
 
-// Streaming cursor animation
-.streaming-cursor {
-  span {
-    animation: blink 1s infinite;
-  }
-}
-
-.thinking-full-content {
-  max-height: 16rem;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.thinking-preview {
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 8rem;
-  overflow: hidden;
-}
-
-// Scroll Sentinel - invisible element that tracks bottom of messages
-// CSS handles keeping it in view during content changes
-.scroll-sentinel {
-  height: 1px;
-  width: 100%;
+.connection-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--bs-secondary);
   flex-shrink: 0;
-  // Invisible but takes up space
-  visibility: hidden;
-  pointer-events: none;
-  // Ensure it's at the bottom
-  margin-top: auto;
 }
 
-@keyframes blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+.connection-dot.connected {
+  background: var(--bs-success);
 }
 
-// Plan display styling
-.plan-display-message {
+.reasoning-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.messages {
+  min-height: 0;
+}
+
+.message {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.message.user {
+  margin-left: 1.5rem;
+  background: color-mix(in srgb, var(--bs-primary) 12%, transparent);
+}
+
+.message.assistant {
+  margin-right: 1.5rem;
+  background: var(--bs-tertiary-bg);
+}
+
+.message-role,
+.diff-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--bs-secondary-color);
+  margin-bottom: 0.35rem;
+}
+
+.message ::ng-deep p:last-child {
+  margin-bottom: 0;
+}
+
+.permission-card {
+  background: color-mix(in srgb, var(--bs-warning) 7%, transparent);
+}
+
+.info-card,
+.activity-card,
+.validation-card {
+  background: var(--bs-tertiary-bg);
+}
+
+.activity-card {
+  font-size: 0.82rem;
+}
+
+.activity-card.activity-error,
+.validation-card.invalid {
+  border-color: color-mix(in srgb, var(--bs-danger) 55%, var(--bs-border-color)) !important;
+}
+
+.activity-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+}
+
+.activity-summary small {
+  color: var(--bs-secondary-color);
+  margin-left: auto;
+}
+
+.activity-summary small + small {
+  margin-left: 0;
+}
+
+.activity-detail {
+  max-height: 14rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0.65rem 0.7rem;
+  border-top: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+  white-space: pre-wrap;
+  font-size: 0.74rem;
+}
+
+.activity-card details summary,
+.validation-card details summary {
+  cursor: pointer;
+}
+
+.diagnostic-list {
+  margin: 0;
+  padding: 0.5rem 0.75rem 0.75rem 1.8rem;
+  font-size: 0.78rem;
+}
+
+.diagnostic-list code {
+  margin: 0 0.25rem;
+}
+
+.question-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.4rem;
+  color: var(--bs-body-color);
+  background: var(--bs-body-bg);
+}
+
+.question-option:hover,
+.question-option.selected {
+  border-color: var(--bs-primary);
+  background: color-mix(in srgb, var(--bs-primary) 10%, var(--bs-body-bg));
+}
+
+.question-option small {
+  color: var(--bs-secondary-color);
+}
+
+.command-grid {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.command-help,
+.session-row,
+.suggestion-menu button {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  width: 100%;
+  border: 0;
+  border-radius: 0.3rem;
+  padding: 0.45rem 0.55rem;
+  color: var(--bs-body-color);
+  background: transparent;
+  text-align: left;
+}
+
+.command-help:hover,
+.session-row:hover,
+.suggestion-menu button:hover {
+  background: var(--bs-secondary-bg);
+}
+
+.command-help span,
+.session-row small,
+.suggestion-menu span {
+  color: var(--bs-secondary-color);
+  font-size: 0.75rem;
+}
+
+.session-row {
+  justify-content: space-between;
+  margin-top: 0.25rem;
+}
+
+.diff-card summary {
+  cursor: pointer;
+  background: var(--bs-secondary-bg);
+}
+
+.diff-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  border-top: 1px solid var(--bs-border-color);
+}
+
+.diff-columns > div + div {
+  border-left: 1px solid var(--bs-border-color);
+}
+
+.diff-label {
+  padding: 0.5rem 0.75rem 0;
+}
+
+.diff-columns pre {
+  max-height: 24rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0.75rem;
+  font-size: 0.75rem;
+  white-space: pre;
+}
+
+.composer textarea {
+  resize: vertical;
+  min-height: 4.5rem;
+  max-height: 14rem;
+}
+
+.composer-input {
   position: relative;
-  
-  &.sticky-plan {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background-color: var(--bs-body-bg, #fff);
-    border-bottom: 2px solid var(--bs-border-color, #dee2e6);
-    margin-bottom: 1rem;
-    padding: 0.5rem;
-  }
 }
 
-// Tool execution message styling (Cline-style brief status)
-.tool-execution-message {
-  .message-body {
-    background-color: rgba(0, 123, 255, 0.1);
-    border-left: 3px solid var(--bs-primary);
-    padding: 0.75rem;
-    border-radius: 4px;
-    
-    .tool-status-text {
-      font-size: 0.9rem;
-      color: var(--bs-body-color);
-      font-weight: 500;
-      
-      &.pulsate {
-        animation: pulsate 2s ease-in-out infinite;
-      }
-    }
-  }
+.suggestion-menu {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 0.25rem);
+  max-height: 16rem;
+  overflow: auto;
+  padding: 0.3rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.4rem;
+  background: var(--bs-body-bg);
+  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.18);
 }
 
-// Pulsating animation for status text
-@keyframes pulsate {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
+.min-w-0 {
+  min-width: 0;
 }
 
-// Diff preview message styling
-.diff-preview-message {
-  .message-body {
-    background-color: rgba(255, 193, 7, 0.1);
-    border-left: 3px solid #ffc107;
-    padding: 0;
+@media (max-width: 900px) {
+  .diff-columns {
+    grid-template-columns: 1fr;
   }
-}
 
-// Condensed markdown styling for chat - Cline-style compact formatting
-// Target markdown-rendered content within message bodies
-:host ::ng-deep {
-  // Target all markdown components in the AI tab - multiple selector strategies
-  .message-body markdown,
-  .message-body markdown > *,
-  markdown,
-  .ai-tab-container markdown {
-    font-size: 0.8125rem !important; // 13px base
-    line-height: 1.4 !important;
-    color: var(--bs-body-color) !important;
-  }
-  
-  // Headings - condensed with minimal spacing (target all markdown contexts)
-  // Direct children of message-body (when markdown renders directly)
-  .message-body > h1,
-  .message-body > h2,
-  .message-body > h3,
-  .message-body > h4,
-  .message-body > h5,
-  .message-body > h6,
-  .message-body markdown h1,
-  .message-body markdown h2,
-  .message-body markdown h3,
-  .message-body markdown h4,
-  .message-body markdown h5,
-  .message-body markdown h6,
-  markdown h1,
-  markdown h2,
-  markdown h3,
-  markdown h4,
-  markdown h5,
-  markdown h6,
-  .ai-tab-container markdown h1,
-  .ai-tab-container markdown h2,
-  .ai-tab-container markdown h3,
-  .ai-tab-container markdown h4,
-  .ai-tab-container markdown h5,
-  .ai-tab-container markdown h6 {
-    color: var(--bs-body-color) !important;
-    font-weight: 600 !important;
-    margin: 0.5rem 0 0.25rem 0 !important;
-    line-height: 1.3 !important;
-    
-    &:first-child {
-      margin-top: 0 !important;
-    }
-  }
-  
-  .message-body > h1,
-  .message-body markdown h1,
-  markdown h1,
-  .ai-tab-container markdown h1 {
-    font-size: 1rem !important;
-    margin-top: 0.75rem !important;
-  }
-  
-  .message-body > h2,
-  .message-body markdown h2,
-  markdown h2,
-  .ai-tab-container markdown h2 {
-    font-size: 0.9375rem !important;
-  }
-  
-  .message-body > h3,
-  .message-body markdown h3,
-  markdown h3,
-  .ai-tab-container markdown h3 {
-    font-size: 0.875rem !important;
-  }
-  
-  .message-body > h4,
-  .message-body > h5,
-  .message-body > h6,
-  .message-body markdown h4,
-  .message-body markdown h5,
-  .message-body markdown h6,
-  markdown h4,
-  markdown h5,
-  markdown h6,
-  .ai-tab-container markdown h4,
-  .ai-tab-container markdown h5,
-  .ai-tab-container markdown h6 {
-    font-size: 0.8125rem !important;
-  }
-  
-  // Paragraphs - tight spacing
-  .message-body > p,
-  .message-body markdown p,
-  markdown p,
-  .ai-tab-container markdown p {
-    color: var(--bs-body-color) !important;
-    margin: 0.25rem 0 !important;
-    font-size: 0.8125rem !important;
-    line-height: 1.4 !important;
-    
-    &:first-child {
-      margin-top: 0 !important;
-    }
-    
-    &:last-child {
-      margin-bottom: 0 !important;
-    }
-  }
-  
-  // Lists - compact spacing
-  .message-body > ul,
-  .message-body > ol,
-  .message-body markdown ul,
-  .message-body markdown ol,
-  markdown ul,
-  markdown ol,
-  .ai-tab-container markdown ul,
-  .ai-tab-container markdown ol {
-    color: var(--bs-body-color) !important;
-    margin: 0.25rem 0 !important;
-    padding-left: 1.25rem !important;
-    font-size: 0.8125rem !important;
-    line-height: 1.4 !important;
-    
-    li {
-      margin: 0.125rem 0 !important;
-      
-      p {
-        margin: 0.125rem 0 !important;
-      }
-    }
-    
-    ul, ol {
-      margin: 0.125rem 0 !important;
-    }
-  }
-  
-  // Links
-  .message-body a,
-  .message-body markdown a,
-  markdown a,
-  .ai-tab-container markdown a {
-    color: var(--bs-primary) !important;
-    text-decoration: none !important;
-    
-    &:hover {
-      color: var(--bs-link-hover-color) !important;
-      text-decoration: underline !important;
-    }
-  }
-  
-  // Inline code - very compact
-  .message-body code:not(pre code),
-  .message-body markdown code:not(pre code),
-  markdown code:not(pre code),
-  .ai-tab-container markdown code:not(pre code) {
-    background-color: var(--bs-tertiary-bg) !important;
-    color: var(--bs-body-color) !important;
-    padding: 0.125rem 0.25rem !important;
-    border-radius: 3px !important;
-    font-size: 0.75rem !important;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace !important;
-    line-height: 1.4 !important;
-  }
-  
-  // Code blocks - condensed with minimal padding
-  .message-body pre,
-  .message-body markdown pre,
-  markdown pre,
-  .ai-tab-container markdown pre {
-    background-color: var(--bs-secondary-bg) !important;
-    border: 1px solid var(--bs-border-color) !important;
-    border-radius: 4px !important;
-    padding: 0.5rem 0.75rem !important;
-    margin: 0.5rem 0 !important;
-    overflow-x: auto !important;
-    font-size: 0.75rem !important;
-    line-height: 1.4 !important;
-    
-    code {
-      background-color: transparent !important;
-      padding: 0 !important;
-      border-radius: 0 !important;
-      font-size: 0.75rem !important;
-      color: var(--bs-body-color) !important;
-    }
-  }
-  
-  // Blockquotes - minimal styling
-  .message-body blockquote,
-  .message-body markdown blockquote,
-  markdown blockquote,
-  .ai-tab-container markdown blockquote {
-    border-left: 3px solid var(--bs-border-color) !important;
-    padding-left: 0.75rem !important;
-    margin: 0.5rem 0 !important;
-    color: var(--bs-body-color) !important;
-    font-size: 0.8125rem !important;
-    
-    p {
-      margin: 0.25rem 0 !important;
-    }
-  }
-  
-  // Horizontal rules
-  .message-body hr,
-  .message-body markdown hr,
-  markdown hr,
-  .ai-tab-container markdown hr {
-    border: none !important;
-    border-top: 1px solid var(--bs-border-color) !important;
-    margin: 0.75rem 0 !important;
-  }
-  
-  // Tables - compact
-  .message-body table,
-  .message-body markdown table,
-  markdown table,
-  .ai-tab-container markdown table {
-    font-size: 0.8125rem !important;
-    margin: 0.5rem 0 !important;
-    border-collapse: collapse !important;
-    width: 100% !important;
-    
-    th, td {
-      padding: 0.25rem 0.5rem !important;
-      border: 1px solid var(--bs-border-color) !important;
-    }
-    
-    th {
-      background-color: var(--bs-secondary-bg) !important;
-      font-weight: 600 !important;
-    }
-  }
-  
-  // Strong and emphasis
-  .message-body strong,
-  .message-body b,
-  .message-body markdown strong,
-  .message-body markdown b,
-  markdown strong,
-  markdown b,
-  .ai-tab-container markdown strong,
-  .ai-tab-container markdown b {
-    font-weight: 600 !important;
-    color: var(--bs-body-color) !important;
-  }
-  
-  .message-body em,
-  .message-body i,
-  .message-body markdown em,
-  .message-body markdown i,
-  markdown em,
-  markdown i,
-  .ai-tab-container markdown em,
-  .ai-tab-container markdown i {
-    font-style: italic !important;
-  }
-  
-  // Images
-  .message-body img,
-  .message-body markdown img,
-  markdown img,
-  .ai-tab-container markdown img {
-    max-width: 100% !important;
-    height: auto !important;
-    border-radius: 4px !important;
-    margin: 0.5rem 0 !important;
-  }
-}
-
-// Message styling - condensed and no background colors
-.ai-tab-container {
-  .ai-chat-area {
-    .messages-area {
-      .message {
-        margin-bottom: 0.75rem !important;
-        
-        &.user-message {
-          background-color: var(--bs-secondary-bg);
-          border-radius: 0.25rem;
-          padding: 0.5rem 0.75rem;
-
-          .message-body {
-            color: var(--bs-body-color) !important;
-            background-color: transparent !important;
-            border: none !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-        }
-
-        &.assistant-message {
-          .message-content,
-          .message-body {
-            background-color: transparent !important;
-            color: var(--bs-body-color) !important;
-            border: none !important;
-            padding: 0 !important;
-            margin: 0 !important;
-          }
-        }
-        
-        &.tool-execution-message,
-        &.plan-display-message,
-        &.diff-preview-message {
-          margin-bottom: 0.75rem !important;
-        }
-      }
-    }
-  }
-  
-  .ai-not-available {
-    h5, h6 {
-      color: var(--bs-body-color) !important;
-    }
-    
-    p, span, small {
-      color: var(--bs-body-color) !important;
-    }
-  }
-}
-
-// Responsive design
-@media (max-width: 768px) {
-  .ai-tab-container {
-    .ai-toolbar {
-      .d-flex {
-        flex-direction: column;
-        gap: 8px;
-      }
-    }
-    
-    .ai-chat-area {
-      .messages-area {
-        padding: 16px 12px;
-      }
-      
-      .ai-input-area {
-        padding: 12px;
-        
-        .input-group {
-          .form-control {
-            font-size: 0.9rem;
-          }
-        }
-      }
-    }
+  .diff-columns > div + div {
+    border-left: 0;
+    border-top: 1px solid var(--bs-border-color);
   }
 }

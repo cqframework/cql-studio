@@ -96,12 +96,10 @@
       </app-console-tab>
     }
     
-    <!-- AI Tab -->
+    <!-- OpenCode Tab -->
     @if (getActiveTab()?.type === 'ai') {
-      <app-ai-tab 
-        [cqlContent]="getActiveLibraryCqlContent()"
-        (insertCqlCode)="onInsertCqlCode($event)"
-        (replaceCqlCode)="onReplaceCqlCode($event)">
+      <app-ai-tab
+        (applyLibraryChange)="onApplyLibraryChange($event)">
       </app-ai-tab>
     }
 

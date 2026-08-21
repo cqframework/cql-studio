@@ -1,0 +1,147 @@
+import { CqlEnvironment } from './environment.model';
+
+export interface OpenCodeLibrarySnapshot {
+  id: string;
+  name: string;
+  version?: string;
+  canonicalUrl?: string;
+  cqlContent: string;
+  originalContent?: string;
+  fhirVersionId?: string;
+}
+
+export interface CreateOpenCodeSessionRequest {
+  title?: string;
+  ollamaBaseUrl: string;
+  ollamaModel: string;
+  activeLibrary: OpenCodeLibrarySnapshot;
+  dependencies: OpenCodeLibrarySnapshot[];
+  /** Sent to CQL Studio Server only. It is never written into the runner workspace. */
+  environment: CqlEnvironment;
+  /** Secrets stay in server memory; the runner receives only an opaque capability. */
+  toolContext: {
+    vsacFhirBaseUrl: string;
+    vsacApiUsername: string;
+    vsacApiPassword: string;
+    searxngBaseUrl: string;
+  };
+}
+
+export interface OpenCodeSession {
+  id: string;
+  openCodeSessionId: string;
+  title: string;
+  status: 'starting' | 'idle' | 'busy' | 'error';
+  activeLibraryId: string;
+  activeFile: string;
+  createdAt: string;
+  updatedAt: string;
+  lastActivityAt: string;
+  expiresAt: string;
+  model: string;
+  reasoningEnabled: boolean;
+}
+
+export interface OpenCodeFileDiff {
+  file: string;
+  libraryId: string;
+  before: string;
+  after: string;
+  additions: number;
+  deletions: number;
+}
+
+export interface OpenCodeEvent {
+  type: string;
+  properties: Record<string, unknown>;
+}
+
+export interface OpenCodeEventEnvelope {
+  id: number;
+  sessionId: string;
+  emittedAt: string;
+  event: OpenCodeEvent;
+}
+
+export interface OpenCodeCommand {
+  name: string;
+  description: string;
+  source: 'web' | 'opencode' | 'cql-studio';
+  acceptsArguments: boolean;
+}
+
+export interface OpenCodeFileReference {
+  path: string;
+  name: string;
+  writable: boolean;
+}
+
+export interface OpenCodeDiagnostic {
+  severity: 'error' | 'warning' | 'info';
+  message: string;
+  file?: string;
+  line?: number;
+  column?: number;
+}
+
+export interface OpenCodeValidation {
+  valid: boolean;
+  diagnostics: OpenCodeDiagnostic[];
+  checkedAt: string;
+}
+
+export interface OpenCodeSessionState {
+  session: OpenCodeSession;
+  messages: unknown[];
+  diffs: OpenCodeFileDiff[];
+  commands: OpenCodeCommand[];
+  validation: OpenCodeValidation | null;
+  permissions: OpenCodePermissionRequest[];
+  questions: OpenCodeQuestionRequest[];
+  lastEventId: number;
+}
+
+export interface OpenCodeActivity {
+  id: string;
+  messageId?: string;
+  kind: 'tool' | 'reasoning' | 'step' | 'retry' | 'compaction' | 'validation' | 'repair';
+  title: string;
+  status: 'pending' | 'running' | 'completed' | 'error';
+  detail?: string;
+  output?: string;
+  startedAt?: number;
+  endedAt?: number;
+  reasoningTokens?: number;
+}
+
+export interface OpenCodeApiErrorBody {
+  code: string;
+  message: string;
+  retryable: boolean;
+  details?: unknown;
+}
+
+export interface OpenCodePermissionRequest {
+  id: string;
+  type: string;
+  title: string;
+  pattern?: string | string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface OpenCodeQuestionRequest {
+  id: string;
+  questions: Array<{
+    question: string;
+    header: string;
+    options: Array<{ label: string; description: string }>;
+    multiple?: boolean;
+    custom?: boolean;
+  }>;
+}
+
+export interface OpenCodeUiMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+}

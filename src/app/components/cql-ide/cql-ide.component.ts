@@ -16,7 +16,7 @@ import { TranslationService } from '../../services/translation.service';
 import { LibraryTranslationContextBuilder } from '../../services/library-translation-context.lib';
 import { CqlExecutionService } from '../../services/cql-execution.service';
 import { SettingsService } from '../../services/settings.service';
-import { AiService } from '../../services/ai.service';
+import { OpenCodeService } from '../../services/opencode.service';
 import { CqlValidationService } from '../../services/cql-validation.service';
 import { ToastService } from '../../services/toast.service';
 import { CqlIdeLibraryOpenerService } from '../../services/cql-ide-library-opener.service';
@@ -71,7 +71,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   private libraryTranslationContextBuilder = inject(LibraryTranslationContextBuilder);
   private cqlExecutionService = inject(CqlExecutionService);
   public settingsService = inject(SettingsService);
-  private aiService = inject(AiService);
+  private openCodeService = inject(OpenCodeService);
   private cqlValidationService = inject(CqlValidationService);
   private toastService = inject(ToastService);
   private libraryOpenerService = inject(CqlIdeLibraryOpenerService);
@@ -195,8 +195,8 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
     const aiTab = {
       id: 'ai-tab',
-      title: 'AI',
-      icon: 'bi-robot',
+      title: 'OpenCode',
+      icon: 'bi-terminal',
       type: 'ai',
       isActive: true,
       isClosable: true,
@@ -251,8 +251,8 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.addTabToPanel('right', elmTab);
     this.ideStateService.addTabToPanel('right', clipboardTab);
     
-    // Only add AI tab if server proxy and Ollama are configured and AI is enabled
-    const aiTabAdded = this.aiService.isAiAssistantAvailable();
+    // Only add OpenCode when CQL Studio Server and Ollama are configured and AI is enabled.
+    const aiTabAdded = this.openCodeService.isAvailable();
     if (aiTabAdded) {
       this.ideStateService.addTabToPanel('right', aiTab);
     }
@@ -289,21 +289,21 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   }
 
   /**
-   * Update AI tab availability based on settings
+   * Update OpenCode tab availability based on settings
    */
   updateAiTabAvailability(): void {
     const rightPanel = this.ideStateService.getPanel('right');
     if (!rightPanel) return;
 
     const hasAiTab = rightPanel.tabs.some(tab => tab.type === 'ai');
-    const shouldHaveAiTab = this.aiService.isAiAssistantAvailable();
+    const shouldHaveAiTab = this.openCodeService.isAvailable();
 
     if (shouldHaveAiTab && !hasAiTab) {
       // Add AI tab
       const aiTab = {
         id: 'ai-tab',
-        title: 'AI',
-        icon: 'bi-robot',
+        title: 'OpenCode',
+        icon: 'bi-terminal',
         type: 'ai',
         isActive: false,
         isClosable: true,
@@ -619,6 +619,57 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       editor.setValue(code);
     } else {
       console.warn('CQL editor not available for code replacement');
+    }
+  }
+
+  async onApplyOpenCodeChange(change: { libraryId: string; cqlContent: string; save?: boolean }): Promise<void> {
+    const library = this.ideStateService.libraryResources().find(item => item.id === change.libraryId);
+    if (!library) {
+      this.toastService.showError('The library changed by OpenCode is no longer open.', 'OpenCode');
+      return;
+    }
+    if (library.isReadOnly) {
+      this.toastService.showError(`Library "${library.name}" is read-only.`, 'OpenCode');
+      return;
+    }
+
+    if (change.save !== false) {
+      const candidate = { ...library, cqlContent: change.cqlContent, isDirty: true };
+      const translation = await this.translationService.translateCqlToElmAsync(
+        change.cqlContent,
+        this.libraryTranslationContextBuilder.fromLibraryResource(candidate)
+      );
+      if (translation.hasErrors || !translation.elmXml) {
+        this.ideStateService.setTranslationErrors(translation.errors);
+        this.ideStateService.setTranslationWarnings(translation.warnings);
+        this.ideStateService.setTranslationMessages(translation.messages);
+        this.toastService.showError('The OpenCode change could not be translated and was not applied or saved.', 'OpenCode');
+        this.ideStateService.addTextOutput(
+          `OpenCode Save Blocked: ${library.name}`,
+          translation.errors.join('\n') || 'CQL translation did not produce ELM.',
+          'error'
+        );
+        return;
+      }
+    }
+
+    this.ideStateService.selectLibraryResource(library.id);
+    this.ideStateService.updateLibraryResource(library.id, {
+      cqlContent: change.cqlContent,
+      isDirty: change.cqlContent !== library.originalContent,
+    });
+    this.ideStateService.triggerReload(library.id);
+    if (change.save === false) {
+      this.toastService.showWarning(`Applied OpenCode changes to ${library.name} locally. The library remains unsaved.`, 'OpenCode');
+      return;
+    }
+    await this.onSaveLibrary();
+
+    const saved = this.ideStateService.libraryResources().find(item => item.id === library.id);
+    if (saved?.isDirty) {
+      this.toastService.showWarning('The OpenCode change was applied locally, but the library was not saved.', 'OpenCode');
+    } else {
+      this.toastService.showSuccess(`Applied and saved OpenCode changes to ${library.name}.`, 'OpenCode');
     }
   }
 

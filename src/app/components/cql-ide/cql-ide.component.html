@@ -16,6 +16,7 @@
         (dragLeave)="onDragLeave($event)"
         (executeAll)="onExecuteAll()"
         (navigateToLine)="onNavigateToLine($event)"
+        (applyLibraryChange)="onApplyOpenCodeChange($event)"
         (insertCqlCode)="onInsertCqlCode($event)"
         (replaceCqlCode)="onReplaceCqlCode($event)">
       </app-ide-panel>
@@ -104,6 +105,7 @@
         (dragLeave)="onDragLeave($event)"
         (executeAll)="onExecuteAll()"
         (navigateToLine)="onNavigateToLine($event)"
+        (applyLibraryChange)="onApplyOpenCodeChange($event)"
         (insertCqlCode)="onInsertCqlCode($event)"
         (replaceCqlCode)="onReplaceCqlCode($event)">
       </app-ide-panel>
@@ -123,6 +125,7 @@
       (dragOver)="onDragOver($event)"
       (dragLeave)="onDragLeave($event)"
       (executeAll)="onExecuteAll()"
+      (applyLibraryChange)="onApplyOpenCodeChange($event)"
       (insertCqlCode)="onInsertCqlCode($event)"
       (replaceCqlCode)="onReplaceCqlCode($event)">
     </app-ide-panel>

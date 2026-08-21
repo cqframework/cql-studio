@@ -53,6 +53,36 @@ For a local HAPI FHIR R4 server and Authentik IdP used with SSO development:
 docker compose -f docker-compose.development.yml up -d
 ```
 
+## OpenCode assistant
+
+The IDE's OpenCode tab uses the official TypeScript SDK through a dedicated runner container. Start the runner together with the normal CQL Studio Server process:
+
+```bash
+docker compose -f docker-compose.development.yml up -d --build opencode-runner
+
+# In ../cql-studio-server
+npm run build
+npm start
+```
+
+In Settings, enable the AI assistant and configure:
+
+- CQL Studio Server Base URL (development default `http://localhost:3003`)
+- Ollama Base URL
+- Ollama model name
+
+Starting OpenCode snapshots the active library's current editor text, including unsaved changes. Open CQL libraries referenced through `include` are copied into the session as read-only dependencies. OpenCode cannot directly save a FHIR Library: it proposes a filesystem diff, the user reviews it in the tab, and **Apply & save** returns the accepted text to the editor's existing translate-and-save workflow.
+
+Inside the tab, type `/` to discover browser, OpenCode, and CQL workflow commands, including `/validate`, `/review`, `/explain`, `/dependencies`, `/library`, and `/valueset`. Type `@` to attach the active CQL file or a read-only dependency as an SDK file part. Tool calls, reasoning (opt-in), retries, validation, repair attempts, permission prompts, and OpenCode questions are visible in the activity stream. Sessions reconnect with event replay and can be reattached after a browser reload.
+
+Run the deterministic end-to-end workflow with:
+
+```bash
+npm run test:e2e -- tests/opencode-integration.spec.ts
+```
+
+FHIR/VSAC connection settings are sent only to CQL Studio Server for the lifetime of the session. They are not placed in the runner workspace. See the server README for the filesystem layout, private runner configuration, API endpoints, and MCP tool boundary.
+
 ## Docker Details
 
 This application uses a multi-stage Docker build:

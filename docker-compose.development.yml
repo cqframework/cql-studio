@@ -12,6 +12,25 @@
 # or join this compose network and use http://authentik-server:9000 for server-to-IdP calls.
 
 services:
+  opencode-runner:
+    build:
+      context: ../cql-studio-server
+      dockerfile: Dockerfile.opencode
+    container_name: cql-studio-opencode-runner
+    environment:
+      OPENCODE_RUNNER_TOKEN: cql-studio-opencode-development-only
+      OPENCODE_RUNNER_REWRITE_LOCALHOST: "true"
+      OPENCODE_SESSION_IDLE_MS: "3600000"
+      OPENCODE_CLEANUP_INTERVAL_MS: "60000"
+      OPENCODE_RUNNER_NODE_ENV: development
+    ports:
+      - "127.0.0.1:4097:4097"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - opencode-workspaces:/workspaces
+    restart: unless-stopped
+
   hapi-r4-data:
     image: hapiproject/hapi:v8.10.0-3
     container_name: cql-studio-hapi-r4-data
@@ -127,6 +146,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  opencode-workspaces:
   server-database:
   authentik-database:
   authentik-data:

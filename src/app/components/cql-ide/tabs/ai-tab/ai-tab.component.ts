@@ -1,983 +1,726 @@
-// Author: Preston Lee
-
-import {Component, ChangeDetectionStrategy, input, output, computed, signal, viewChild, ElementRef, OnDestroy, effect, afterNextRender, inject, Injector} from '@angular/core';
-import { Subscription, firstValueFrom } from 'rxjs';
+import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
 import { MarkdownComponent } from 'ngx-markdown';
-import { AiService } from '../../../../services/ai.service';
+import {
+  OpenCodeActivity,
+  OpenCodeCommand,
+  OpenCodeEvent,
+  OpenCodeEventEnvelope,
+  OpenCodeFileDiff,
+  OpenCodeFileReference,
+  OpenCodeLibrarySnapshot,
+  OpenCodePermissionRequest,
+  OpenCodeQuestionRequest,
+  OpenCodeSession,
+  OpenCodeSessionState,
+  OpenCodeUiMessage,
+  OpenCodeValidation,
+} from '../../../../models/opencode.model';
 import { IdeStateService } from '../../../../services/ide-state.service';
+import { OpenCodeApiError, OpenCodeService } from '../../../../services/opencode.service';
 import { SettingsService } from '../../../../services/settings.service';
-import { ConversationManagerService, Conversation } from '../../../../services/conversation-manager.service';
-import { ToolResult } from '../../../../services/tool-orchestrator.service';
-import { ParsedToolCall } from '../../../../services/tool-call-parser.service';
-import { CodeDiffPreviewComponent, CodeDiff } from './code-diff-preview.component';
-import { AiConversationStateService } from '../../../../services/ai-conversation-state.service';
-import { AiToolExecutionManagerService } from '../../../../services/ai-tool-execution-manager.service';
-import { AiStreamResponseHandlerService, ProcessStreamResult,StreamResponseContext} from '../../../../services/ai-stream-response-handler.service';
-import { InsertCodeTool } from '../../../../services/tools/insert-code.tool';
-import { ReplaceCodeTool } from '../../../../services/tools/replace-code.tool';
-import { ToolPolicyService } from '../../../../services/tool-policy.service';
-import { PlanDisplayComponent } from './plan-display.component';
-import { TimeagoPipe } from 'ngx-timeago';
-import { AttachmentParserService } from '../../../../services/attachment-parser.service';
-import { v4 as uuidv4 } from 'uuid';
+import { LibraryResource } from '../../shared/ide-types';
 
-export interface AttachedFileEntry {
-  id: string;
-  file: File;
+interface OpenCodeLibraryChange {
+  libraryId: string;
+  cqlContent: string;
+  save?: boolean;
 }
+
+const WEB_COMMANDS: OpenCodeCommand[] = [
+  { name: 'help', description: 'Show supported OpenCode web commands', source: 'web', acceptsArguments: false },
+  { name: 'new', description: 'Start a new workspace for the active library', source: 'web', acceptsArguments: false },
+  { name: 'sessions', description: 'Open the live session picker', source: 'web', acceptsArguments: false },
+  { name: 'details', description: 'Toggle detailed tool input and output', source: 'web', acceptsArguments: false },
+  { name: 'thinking', description: 'Toggle display of reasoning content', source: 'web', acceptsArguments: false },
+  { name: 'compact', description: 'Compact this OpenCode session', source: 'opencode', acceptsArguments: false },
+];
 
 @Component({
   selector: 'app-ai-tab',
-  imports: [FormsModule, MarkdownComponent, CodeDiffPreviewComponent, PlanDisplayComponent, TimeagoPipe],
+  imports: [FormsModule, MarkdownComponent],
   templateUrl: './ai-tab.component.html',
-
   styleUrls: ['./ai-tab.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AiTabComponent implements OnDestroy {
-  messagesContainer = viewChild<ElementRef>('messagesContainer');
-  scrollSentinel = viewChild<ElementRef>('scrollSentinel');
-  private destroyed = false;
-  thinkingFullContent = viewChild<ElementRef>('thinkingFullContent');
-  attachFileInput = viewChild<ElementRef<HTMLInputElement>>('attachFileInput');
-  cqlContent = input<string>('');
-  replaceCqlCode = output<string>();
-  insertCqlCode = output<string>();
+export class AiTabComponent implements OnInit, OnDestroy {
+  readonly applyLibraryChange = output<OpenCodeLibraryChange>();
 
-  // Component state signals
-  private _isLoading = signal(false);
-  private _currentMessage = signal('');
-  private _error = signal<string | null>(null);
-  
-  connectionTest = signal<{ status: 'unknown' | 'testing' | 'connected' | 'error'; error: string; models: string[] }>({
-    status: 'unknown',
-    error: '',
-    models: []
-  });
-  private _suggestedCommands = signal<string[]>([]);
-  private _isLoadingSuggestions = signal<boolean>(false);
-  private _codeDiffPreview = signal<CodeDiff | null>(null);
-  private _showDiffPreview = signal<boolean>(false);
-  private _resettingMCPTools = signal<boolean>(false);
-  private _thinkingAccordionExpanded = signal<boolean>(false);
-  private _attachedFiles = signal<AttachedFileEntry[]>([]);
-  private _dragOver = signal<boolean>(false);
-
-  private static readonly STREAMING_PREVIEW_LINES = 6;
-  private static readonly ACCEPTED_ATTACHMENT_EXTENSIONS = '.txt,.md,.json,.xml,.csv,.docx,.pdf';
-
-  public currentMode = computed(() => {
-    const conversation = this.activeConversation();
-    return conversation?.mode || 'act';
-  });
-  
-  private _currentSubscription: Subscription | null = null;
-  private _lastMessageCount = 0;
-  private _lastStreamingLength = 0;
-  private _scrollRafId: number | null = null;
-  private _userScrolledUp = false;
-  private _intersectionObserver: IntersectionObserver | null = null;
-  private _continuationRounds = 0;
-  private _noProgressRounds = 0;
-  private static readonly MAX_CONTINUATION_ROUNDS = 9;
-  private static readonly MAX_NO_PROGRESS_ROUNDS = 3;
-
-  public isLoading = computed(() => this._isLoading());
-  public currentMessage = computed(() => this._currentMessage());
-  public error = computed(() => this._error());
-  public useMCPTools = computed(() => this.settingsService.settings().useMCPTools);
-  public activeConversation = computed(() => this.conversationManager.activeConversation());
-  
-  public activeConversationId = computed(() => this.activeConversation()?.id || null);
-  public conversations = computed(() => this.conversationManager.conversations());
-  public hasActiveConversation = computed(() => !!this.activeConversation());
-  
-  public canSendMessage = computed(() =>
-    !this._isLoading() &&
-    (this._currentMessage().trim().length > 0 || this._attachedFiles().length > 0)
-  );
-  public attachedFiles = computed(() => this._attachedFiles());
-  public dragOver = computed(() => this._dragOver());
-  public acceptedAttachmentExtensions = AiTabComponent.ACCEPTED_ATTACHMENT_EXTENSIONS;
-  public canStop = computed(() => 
-    this._isLoading() || this.conversationState.isStreaming()
-  );
-  public canToggleMode = computed(() => 
-    !this._isLoading() && !this.conversationState.isStreaming()
-  );
-  public isAiAvailable = computed(() => this.aiService.isAiAssistantAvailable());
-  public streamingResponse = computed(() => this.conversationState.streamingResponse());
-  public streamingThinking = computed(() => this.conversationState.streamingThinking());
-  public isStreaming = computed(() => this.conversationState.isStreaming());
-  public suggestedCommands = computed(() => this._suggestedCommands());
-  public isLoadingSuggestions = computed(() => this._isLoadingSuggestions());
-  public pendingToolCalls = computed(() => this.conversationState.pendingToolCalls());
-  public executingToolCalls = computed(() => this.conversationState.executingToolCalls());
-  public toolExecutionResults = computed(() => this.conversationState.toolExecutionResults());
-  public codeDiffPreview = computed(() => this._codeDiffPreview());
-  public showDiffPreview = computed(() => this._showDiffPreview());
-  public resettingMCPTools = computed(() => this._resettingMCPTools());
-  public streamingThinkingPreviewLines = computed(() => {
-    const full = this.conversationState.streamingThinking();
-    const lines = full.split(/\r?\n/);
-    const keep = AiTabComponent.STREAMING_PREVIEW_LINES;
-    if (lines.length <= keep) return full;
-    return lines.slice(-keep).join('\n');
-  });
-
-  public hasStreamingThinkingContent = computed(() => this.conversationState.streamingThinking().length > 0);
-
-  public streamingThinkingLineCount = computed(() =>
-    this.conversationState.streamingThinking().split(/\r?\n/).length
-  );
-
-  public thinkingAccordionExpanded = computed(() => this._thinkingAccordionExpanded());
-
-  public setThinkingAccordionExpanded(expanded: boolean): void {
-    this._thinkingAccordionExpanded.set(expanded);
-  }
-
-  public activePlan = computed(() => this.activeConversation()?.plan);
-  public isPlanExecuting = computed(() => {
-    const plan = this.activePlan();
-    if (!plan) return false;
-    return plan.steps.some(s => s.status === 'in-progress');
-  });
-
-  private readonly aiService = inject(AiService);
-  readonly ideStateService = inject(IdeStateService);
+  private readonly ideStateService = inject(IdeStateService);
   readonly settingsService = inject(SettingsService);
-  private readonly conversationManager = inject(ConversationManagerService);
-  private readonly router = inject(Router);
-  private readonly conversationState = inject(AiConversationStateService);
-  private readonly toolExecutionManager = inject(AiToolExecutionManagerService);
-  private readonly streamHandler = inject(AiStreamResponseHandlerService);
-  private readonly toolPolicyService = inject(ToolPolicyService);
-  private readonly attachmentParser = inject(AttachmentParserService);
-  private readonly injector = inject(Injector);
+  private readonly openCodeService = inject(OpenCodeService);
+  private readonly messageRoles = new Map<string, 'user' | 'assistant'>();
+  private readonly messageParts = new Map<string, Map<string, string>>();
+  private readonly activityParts = new Map<string, OpenCodeActivity>();
+  private eventSource: EventSource | null = null;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private reconnectAttempts = 0;
+  private lastEventId = 0;
+  private repairInFlight = false;
 
-  constructor() {
-    afterNextRender(() => this.setupScrollSentinelObserver(), { injector: this.injector });
+  readonly session = signal<OpenCodeSession | null>(null);
+  readonly liveSessions = signal<OpenCodeSession[]>([]);
+  readonly messages = signal<OpenCodeUiMessage[]>([]);
+  readonly activities = signal<OpenCodeActivity[]>([]);
+  readonly diffs = signal<OpenCodeFileDiff[]>([]);
+  readonly validation = signal<OpenCodeValidation | null>(null);
+  readonly permissions = signal<OpenCodePermissionRequest[]>([]);
+  readonly questions = signal<OpenCodeQuestionRequest[]>([]);
+  readonly questionAnswers = signal<Record<string, string[][]>>({});
+  readonly commands = signal<OpenCodeCommand[]>(WEB_COMMANDS);
+  readonly fileSuggestions = signal<OpenCodeFileReference[]>([]);
+  readonly promptText = signal('');
+  readonly agent = signal<'plan' | 'build'>('build');
+  readonly status = signal<'idle' | 'starting' | 'busy' | 'error'>('idle');
+  readonly error = signal<string | null>(null);
+  readonly errorRetryable = signal(false);
+  readonly streamConnected = signal(false);
+  readonly detailsShown = signal(false);
+  readonly reasoningShown = signal(false);
+  readonly reasoningEnabled = signal(false);
+  readonly showHelp = signal(false);
+  readonly showSessions = signal(false);
+  readonly repairAttempts = signal(0);
 
-    effect(() => {
-      const conversation = this.activeConversation();
-      const messageCount = conversation?.uiMessages?.length || 0;
-      const streamingLength = this.conversationState.streamingResponse().length;
-      const isStreaming = this.conversationState.isStreaming();
-      const hasToolCalls = this.conversationState.pendingToolCalls().length > 0;
-      const thinkingExpanded = this._thinkingAccordionExpanded();
+  readonly isAvailable = computed(() => this.openCodeService.isAvailable());
+  readonly activeLibrary = computed(() => this.ideStateService.getActiveLibraryResource());
+  readonly canStart = computed(() => this.isAvailable() && Boolean(this.activeLibrary()) && this.status() !== 'starting');
+  readonly canSend = computed(() => Boolean(this.session()) && this.promptText().trim().length > 0 && this.status() !== 'busy');
+  readonly visibleCommands = computed(() => {
+    const match = this.promptText().match(/^\/([a-z0-9_-]*)$/i);
+    if (!match) return [];
+    const query = match[1].toLowerCase();
+    return this.commands().filter(command => command.name.toLowerCase().includes(query)).slice(0, 12);
+  });
+  readonly hasValidationErrors = computed(() => Boolean(this.validation()?.diagnostics.some(item => item.severity === 'error')));
+  readonly canApplyAndSave = computed(() => Boolean(this.validation()?.valid));
 
-      if (thinkingExpanded && isStreaming) {
-        afterNextRender(() => {
-          const el = this.thinkingFullContent()?.nativeElement as HTMLElement | undefined;
-          if (el) {
-            el.scrollTop = el.scrollHeight;
-          }
-        }, { injector: this.injector });
-      }
-
-      if (messageCount > this._lastMessageCount ||
-          (isStreaming && streamingLength > this._lastStreamingLength) ||
-          hasToolCalls) {
-        const shouldAutoScroll =
-          !this._userScrolledUp || messageCount > this._lastMessageCount;
-        this._lastMessageCount = messageCount;
-        this._lastStreamingLength = streamingLength;
-
-        if (shouldAutoScroll) {
-          afterNextRender(() => this.scheduleScroll(), { injector: this.injector });
-        }
-      }
-    });
-  }
-
-  private getStreamResponseContext(isMainStream: boolean): StreamResponseContext {
-    return {
-      isMainStream,
-      getActiveConversation: () => this.activeConversation(),
-      executeToolCalls: (calls) => this.executeToolCallsWithOptions(calls),
-      currentMode: () => this.currentMode()
-    };
-  }
-
-  private async executeToolCallsWithOptions(toolCalls: ParsedToolCall[]): Promise<ToolResult[]> {
-    const conv = this.activeConversation();
-    const plan = conv?.plan;
-    const options = {
-      conversationId: conv?.id,
-      planSteps: plan && this.currentMode() === 'act' ? plan.steps : undefined,
-      onResult: (tc: ParsedToolCall, r: ToolResult) => this.handleToolResult(tc, r)
-    };
-    return this.toolExecutionManager.executeToolCallsAsPromise(toolCalls, options);
-  }
-
-  private finishResponse(): void {
-    this.conversationState.endStreaming();
-    this._isLoading.set(false);
-    this._currentMessage.set('');
-    this._currentSubscription = null;
-    this.resetContinuationTracking();
-  }
-
-  private resetContinuationTracking(): void {
-    this._continuationRounds = 0;
-    this._noProgressRounds = 0;
-  }
-
-  private processStreamResult(result: ProcessStreamResult): void {
-    if ('startContinuation' in result) {
-      const shouldContinue = this.evaluateContinuationGuardrails(result);
-      if (!shouldContinue) {
-        return;
-      }
-      this.startContinuationStream(result.startContinuation.editorId, result.startContinuation.summary);
-      return;
-    }
-    this.finishResponse();
-  }
-
-  private evaluateContinuationGuardrails(result: Extract<ProcessStreamResult, { startContinuation: { editorId: string; summary: string } }>): boolean {
-    this._continuationRounds += 1;
-    const reason = result.reason;
-
-    if (result.progressDelta === 'no_progress') {
-      this._noProgressRounds += 1;
-      this.ideStateService.addInfoOutput(
-        'AI continuation',
-        `No-progress continuation round ${this._noProgressRounds}/${AiTabComponent.MAX_NO_PROGRESS_ROUNDS} (reason: ${reason}).`
-      );
-    } else {
-      this._noProgressRounds = 0;
-    }
-
-    this.ideStateService.addInfoOutput(
-      'AI continuation',
-      `Starting continuation round ${this._continuationRounds}/${AiTabComponent.MAX_CONTINUATION_ROUNDS} (reason: ${reason}).`
-    );
-
-    if (this._continuationRounds > AiTabComponent.MAX_CONTINUATION_ROUNDS) {
-      this.stopContinuationWithReason(
-        `Stopped after ${AiTabComponent.MAX_CONTINUATION_ROUNDS} continuation rounds to prevent an unbounded tool loop.`
-      );
-      return false;
-    }
-
-    if (this._noProgressRounds >= AiTabComponent.MAX_NO_PROGRESS_ROUNDS) {
-      this.stopContinuationWithReason(
-        `Stopped because no progress was detected in ${this._noProgressRounds} consecutive continuation rounds.`
-      );
-      return false;
-    }
-
-    return true;
-  }
-
-  private stopContinuationWithReason(reason: string): void {
-    this.ideStateService.addWarningOutput('AI continuation', reason);
-    const conversation = this.activeConversation();
-    if (conversation) {
-      this.conversationManager.addAssistantMessage(
-        conversation.id,
-        `${reason} Please refine the prompt or reload tools and try again.`
-      );
-    }
-    this.finishResponse();
+  ngOnInit(): void {
+    setTimeout(() => void this.restoreSession(), 0);
   }
 
   ngOnDestroy(): void {
-    this.destroyed = true;
-    if (this._currentSubscription) {
-      this._currentSubscription.unsubscribe();
-      this._currentSubscription = null;
+    this.eventSource?.close();
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+  }
+
+  async startSession(): Promise<void> {
+    const active = this.activeLibrary();
+    if (!active) {
+      this.error.set('Open or create a CQL library before starting OpenCode.');
+      return;
     }
-    
-    if (this._intersectionObserver) {
-      this._intersectionObserver.disconnect();
-      this._intersectionObserver = null;
-    }
-    
-    if (this._scrollRafId !== null) {
-      cancelAnimationFrame(this._scrollRafId);
-      this._scrollRafId = null;
-    }
-    
-    if (this.messagesContainer()) {
-      this.messagesContainer()!.nativeElement.removeEventListener('scroll', this.onUserScroll);
-    }
-  }
-
-  onMessageChange(event: Event): void {
-    const target = event.target as HTMLTextAreaElement;
-    const value = target?.value || '';
-    this._currentMessage.set(value);
-    this._error.set(null);
-    this.autoResizeTextarea(target);
-  }
-
-  onAttachFiles(files: FileList | File[]): void {
-    const list = Array.from(files);
-    const accepted = list.filter((f) => this.attachmentParser.isAcceptedFile(f));
-    const entries: AttachedFileEntry[] = accepted.map((file) => ({ id: uuidv4(), file }));
-    this._attachedFiles.update((prev) => [...prev, ...entries]);
-  }
-
-  onRemoveAttachment(id: string): void {
-    this._attachedFiles.update((prev) => prev.filter((e) => e.id !== id));
-  }
-
-  clearAttachments(): void {
-    this._attachedFiles.set([]);
-  }
-
-  formatFileSize(bytes: number): string {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' kB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  }
-
-  onAttachClick(): void {
-    this.attachFileInput()?.nativeElement?.click();
-  }
-
-  onFileInputChange(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const files = input.files;
-    if (files?.length) {
-      this.onAttachFiles(files);
-    }
-    input.value = '';
-  }
-
-  onDragOver(event: DragEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
-    this._dragOver.set(true);
-  }
-
-  onDragLeave(event: DragEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
-    this._dragOver.set(false);
-  }
-
-  onDrop(event: DragEvent): void {
-    event.preventDefault();
-    event.stopPropagation();
-    this._dragOver.set(false);
-    const files = event.dataTransfer?.files;
-    if (files?.length) {
-      this.onAttachFiles(files);
-    }
-  }
-
-  private autoResizeTextarea(textarea: HTMLTextAreaElement): void {
-    textarea.style.height = 'auto';
-    const scrollHeight = textarea.scrollHeight;
-    const maxHeight = 120;
-    const minHeight = 36;
-    
-    if (scrollHeight > maxHeight) {
-      textarea.style.height = maxHeight + 'px';
-      textarea.style.overflowY = 'auto';
-    } else if (scrollHeight < minHeight) {
-      textarea.style.height = minHeight + 'px';
-      textarea.style.overflowY = 'hidden';
-    } else {
-      textarea.style.height = scrollHeight + 'px';
-      textarea.style.overflowY = 'hidden';
-    }
-  }
-
-  public onStopRequest(): void {
-    if (this._currentSubscription) {
-      this._currentSubscription.unsubscribe();
-      this._currentSubscription = null;
-    }
-    
-    this._isLoading.set(false);
-    this.conversationState.resetState();
-    this.resetContinuationTracking();
-  }
-
-  public onKeyPress(event: KeyboardEvent): void {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      this.onSendMessage();
-    }
-  }
-
-  public onSelectConversation(conversationId: string): void {
-    this.conversationManager.setActiveConversationById(conversationId);
-    this._error.set(null);
-  }
-
-  public onNewConversation(): void {
-    const active = this.activeConversation();
-    if (active) {
-      this.conversationManager.deleteConversation(active.id);
-    }
-    this.conversationState.resetState();
-    this.resetContinuationTracking();
-    this._currentMessage.set('');
-    this._error.set(null);
-    this.clearAttachments();
-  }
-
-  public onDeleteConversation(conversationId: string): void {
-    this.conversationManager.deleteConversation(conversationId);
-  }
-
-  public onClearAllConversations(): void {
-    this.conversationManager.clearAllConversations();
-    this.conversationState.resetState();
-    this.resetContinuationTracking();
-  }
-
-  public async onResetMCPTools(): Promise<void> {
-    this._resettingMCPTools.set(true);
-    this.ideStateService.addInfoOutput('AI MCP tools', 'Reinitializing server MCP tools...');
+    this.resetConversation();
+    this.status.set('starting');
     try {
-      const result = await firstValueFrom(this.aiService.reinitializeServerMCPTools());
-      if (result.success) {
-        this.ideStateService.addInfoOutput(
-          'AI MCP tools',
-          result.count !== undefined
-            ? `Reinitialized server MCP tools. ${result.count} tool(s) loaded from CQL Studio Server.`
-            : 'Reinitialized server MCP tools.'
-        );
-      } else {
-        this.ideStateService.addWarningOutput('AI MCP tools', result.error ?? 'Reinitialization failed.');
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Reinitialization failed.';
-      this.ideStateService.addErrorOutput('AI MCP tools', message);
-    } finally {
-      this._resettingMCPTools.set(false);
+      const session = await this.openCodeService.createSession({
+        title: `${active.name} in CQL Studio`,
+        ollamaBaseUrl: this.settingsService.getEffectiveOllamaBaseUrl(),
+        ollamaModel: this.settingsService.getEffectiveOllamaModel(),
+        activeLibrary: this.snapshot(active),
+        dependencies: await this.collectDependencies(active),
+        environment: this.settingsService.getActiveEnvironment(),
+        toolContext: {
+          vsacFhirBaseUrl: this.settingsService.getEffectiveVsacFhirBaseUrl(),
+          vsacApiUsername: this.settingsService.getEffectiveVsacApiUsername(),
+          vsacApiPassword: this.settingsService.getEffectiveVsacApiPassword(),
+          searxngBaseUrl: this.settingsService.getEffectiveSearxngBaseUrl(),
+        },
+      });
+      this.session.set(session);
+      this.status.set(session.status === 'error' ? 'error' : 'idle');
+      await this.loadCommandsAndFiles();
+      this.connectEvents(session.id);
+    } catch (error) {
+      this.setError(error);
     }
   }
 
-  public onNavigateToSettings(): void {
-    this.router.navigate(['/settings']);
-  }
-
-  public async testConnection(): Promise<void> {
-    this.connectionTest.set({ status: 'testing', error: '', models: [] });
+  async attachSession(session: OpenCodeSession): Promise<void> {
+    this.showSessions.set(false);
+    this.resetConversation();
+    this.status.set('starting');
     try {
-      const result = await firstValueFrom(this.aiService.testOllamaConnection());
-      const status: 'connected' | 'error' | 'unknown' = result.connected ? 'connected' : (result.error ? 'error' : 'unknown');
-      this.connectionTest.set({
-        status,
-        error: result.error || '',
-        models: result.models || []
-      });
-    } catch (error: unknown) {
-      this.connectionTest.set({
-        status: 'error',
-        error: error instanceof Error ? error.message : String(error),
-        models: []
-      });
+      const state = await this.openCodeService.getState(session.id);
+      this.hydrate(state);
+      this.connectEvents(session.id);
+    } catch (error) {
+      this.setError(error);
     }
   }
 
-  public getContextHistory(): Conversation[] {
-    const editorContext = this.conversationManager.getCurrentEditorContext();
-    const allConversations = this.conversationManager.conversations();
-    return allConversations.filter(c => c.editorId === editorContext.editorId);
-  }
+  async sendPrompt(): Promise<void> {
+    const session = this.session();
+    const message = this.promptText().trim();
+    if (!session || !message || this.status() === 'busy') return;
 
-  public getContextDisplayName(conversation: Conversation): string {
-    if (conversation.libraryName) {
-      return `CQL: ${conversation.libraryName}`;
-    } else if (conversation.fileName) {
-      return `File: ${conversation.fileName}`;
-    } else {
-      return conversation.title;
-    }
-  }
-
-  public onSwitchToEditorContext(editorId: string): void {
-    this.conversationManager.switchToEditor(editorId);
-  }
-
-  public filterToolResultsFromMessage(content: string): string {
-    return this.aiService.sanitizeMessageContent(content);
-  }
-
-  public shouldPulsate(): boolean {
-    return this.conversationState.isStreaming() || 
-           this.conversationState.pendingToolCalls().length > 0 ||
-           this.conversationState.executingToolCalls().size > 0;
-  }
-
-  public getToolExecutionStatus(): string {
-    const pending = this.conversationState.pendingToolCalls();
-    const executing = this.conversationState.executingToolCalls();
-    
-    if (executing.size > 0) {
-      const tools = Array.from(executing.values()).map(c => c.tool).join(', ');
-      return `Executing: ${tools}`;
-    } else if (pending.length > 0) {
-      const tools = pending.map(c => c.tool).join(', ');
-      return `Pending: ${tools}`;
-    }
-    return '';
-  }
-
-  public onCancelToolExecutions(): void {
-    this.toolExecutionManager.cancelAllExecutions();
-  }
-
-  public onApproveCodeDiff(): void {
-    const diff = this._codeDiffPreview();
-    if (diff) {
-      this.replaceCqlCode.emit(diff.after);
-      this._showDiffPreview.set(false);
-      this._codeDiffPreview.set(null);
-    }
-  }
-
-  public onRejectCodeDiff(): void {
-    this._showDiffPreview.set(false);
-    this._codeDiffPreview.set(null);
-  }
-
-  public toggleMode(): void {
-    if (!this.canToggleMode()) {
+    if (message.startsWith('/')) {
+      await this.runSlashCommand(message);
       return;
     }
-    
-    const conversation = this.activeConversation();
-    if (!conversation) {
-      return;
-    }
-    
-    const newMode: 'plan' | 'act' = conversation.mode === 'plan' ? 'act' : 'plan';
-    this.conversationManager.updateConversationMode(conversation.id, newMode);
-  }
-
-  public onRefreshSuggestions(): void {
-    this.loadSuggestedCommands();
-  }
-
-  public onSuggestedCommandClick(command: string): void {
-    this._currentMessage.set(command);
-    this.onSendMessage();
-  }
-
-  /**
-   * Truncate conversation to before the given user message index, then resend that message.
-   */
-  public onRerunFromMessage(uiMessageIndex: number, content: string): void {
-    const conversationId = this.activeConversationId();
-    const conversation = this.activeConversation();
-    if (!conversationId || !conversation || uiMessageIndex < 0) {
-      return;
-    }
-    if (this._isLoading() || this.conversationState.isStreaming()) {
-      if (this._currentSubscription) {
-        this._currentSubscription.unsubscribe();
-        this._currentSubscription = null;
-      }
-      this._isLoading.set(false);
-      this.conversationState.resetState();
-    }
-    this.conversationManager.truncateConversationToMessageCount(conversationId, uiMessageIndex);
-    this.conversationState.resetState();
-    this._error.set(null);
-    this._currentMessage.set(content ?? '');
-    this.onSendMessage();
-  }
-
-  private handleToolResult(toolCall: ParsedToolCall, result: ToolResult): void {
-    if (toolCall.tool === InsertCodeTool.id || toolCall.tool === ReplaceCodeTool.id) {
-      if (!result.success) {
-        console.warn('[handleToolResult] Skipping code edit for failed tool call', { toolCall, result });
-        return;
-      }
-
-      let code = '';
-      if (toolCall.params && toolCall.params['code']) {
-        code = typeof toolCall.params['code'] === 'string' 
-          ? toolCall.params['code'] 
-          : String(toolCall.params['code']);
-      }
-      
-      if (!code || code.trim().length === 0) {
-        console.warn('[handleToolResult] No code found in tool call params', toolCall);
-        return;
-      }
-
-      if (toolCall.tool === ReplaceCodeTool.id) {
-        const currentCode = this.cqlContent() || '';
-        const autoApply = this.settingsService.settings().autoApplyCodeEdits && 
-                         !this.settingsService.settings().requireDiffPreview;
-        
-        if (autoApply) {
-          this.replaceCqlCode.emit(code);
-        } else {
-          const diff: CodeDiff = {
-            before: currentCode,
-            after: code,
-            title: 'Replace Code',
-            description: 'Code replacement preview'
-          };
-          this._codeDiffPreview.set({ ...diff });
-          this._showDiffPreview.set(true);
-        }
-      } else if (toolCall.tool === InsertCodeTool.id) {
-        const autoApply = this.settingsService.settings().autoApplyCodeEdits && 
-                         !this.settingsService.settings().requireDiffPreview;
-        
-        if (autoApply) {
-          const currentCode = this.cqlContent() || '';
-          this.replaceCqlCode.emit(currentCode + '\n' + code);
-        } else {
-          const currentCode = this.cqlContent() || '';
-          const diff: CodeDiff = {
-            before: currentCode,
-            after: currentCode + '\n' + code,
-            title: 'Insert Code',
-            description: 'Code insertion preview'
-          };
-          this._codeDiffPreview.set({ ...diff });
-          this._showDiffPreview.set(true);
-        }
-      }
-    }
-  }
-
-  public async onSendMessage(): Promise<void> {
-    const message = this._currentMessage().trim();
-    const entries = this._attachedFiles();
-
-    if (this._isLoading()) {
-      return;
-    }
-    if (!message && entries.length === 0) {
-      return;
-    }
-
-    this._suggestedCommands.set([]);
-    this.conversationState.resetState();
-    this.resetContinuationTracking();
-    this._isLoading.set(true);
-    this._error.set(null);
-
-    let messageToSend = message;
-    if (entries.length > 0) {
-      try {
-        const results = await Promise.all(
-          entries.map((e) => this.attachmentParser.parseFile(e.file))
-        );
-        const blocks = results.map(
-          (text, i) => `--- Attached: ${entries[i].file.name} ---\n${text}`
-        );
-        messageToSend = (messageToSend || '') + '\n\n' + blocks.join('\n\n');
-      } catch (err) {
-        this._isLoading.set(false);
-        this._error.set((err as Error).message ?? 'Failed to parse attachments');
-        return;
-      }
-    }
-
-    const editorContext = this.conversationManager.getCurrentEditorContext();
-    const editorId = editorContext?.editorId;
-
-    if (this._currentSubscription) {
-      this._currentSubscription.unsubscribe();
-      this._currentSubscription = null;
-    }
-
-    const mode = this.currentMode();
-    const subscription = this.aiService.sendStreamingMessage(
-      messageToSend,
-      editorId,
-      this.useMCPTools(),
-      this.cqlContent(),
-      undefined,
-      mode
-    );
-
-    this._currentSubscription = subscription.subscribe({
-      next: async (event) => {
-        if (this.destroyed) {
-          return;
-        }
-        if (event.type === 'start') {
-          this.clearAttachments();
-          this.conversationState.startStreaming();
-          this._thinkingAccordionExpanded.set(false);
-        } else if (event.type === 'thinkingChunk') {
-          const content = event.content || '';
-          if (content.length > 0) {
-            this.conversationState.addStreamingThinkingChunk(content);
-          }
-        } else if (event.type === 'chunk') {
-          const chunkContent = event.content || '';
-          if (chunkContent.length > 0) {
-            this.conversationState.addStreamingChunk(chunkContent);
-          }
-        } else if (event.type === 'end') {
-          const finalResponse = (event as { fullResponse?: string }).fullResponse ?? this.conversationState.streamingResponse();
-          await this.handleMainStreamResponse(finalResponse);
-          if (this.destroyed) {
-            return;
-          }
-        }
-      },
-      error: (err: any) => {
-        if (this.destroyed) {
-          return;
-        }
-        console.error('Streaming error:', err);
-        this._isLoading.set(false);
-        
-        let errorMessage = 'Failed to send message';
-        if (err?.message) {
-          errorMessage = err.message;
-        } else if (err instanceof TypeError && err.message === 'Failed to fetch') {
-          errorMessage = 'Unable to connect to Ollama server. Please check your settings and ensure the server is running.';
-        }
-        
-        this.conversationState.setError(errorMessage);
-        this.conversationState.endStreaming();
-        this._error.set(errorMessage);
-        this._currentSubscription = null;
-      },
-      complete: (): void => {
-        this._currentSubscription = null;
-        if (!this.destroyed && (this._isLoading() || this.conversationState.isStreaming())) {
-          this.finishResponse();
-        }
-      }
-    });
-  }
-
-  public onReplaceCode(code: string): void {
-    this.replaceCqlCode.emit(code);
-  }
-
-  private async loadSuggestedCommands(): Promise<void> {
-    const conv = this.activeConversation();
-    if (conv && conv.uiMessages.length > 0) {
-      this._suggestedCommands.set([]);
-      return;
-    }
-
-    this._isLoadingSuggestions.set(true);
-    this._suggestedCommands.set([]);
-
+    this.promptText.set('');
+    this.fileSuggestions.set([]);
+    this.error.set(null);
+    this.repairAttempts.set(0);
+    this.validation.set(null);
+    this.status.set('busy');
     try {
-      const commands = await firstValueFrom(this.aiService.generateSuggestedCommands(this.cqlContent() ?? ''));
-      this._suggestedCommands.set(commands);
-    } catch {
-      this._suggestedCommands.set([]);
-    } finally {
-      this._isLoadingSuggestions.set(false);
-    }
-  }
-
-  private setupScrollSentinelObserver(): void {
-    if (!this.messagesContainer() || !this.scrollSentinel()) {
-      return;
-    }
-
-    const container = this.messagesContainer()!.nativeElement;
-    const sentinel = this.scrollSentinel()?.nativeElement;
-
-    if (!container || !sentinel) {
-      return;
-    }
-
-    container.addEventListener('scroll', this.onUserScroll);
-
-    this._intersectionObserver = new IntersectionObserver(
-      (entries) => {
-        entries.forEach(entry => {
-          const isNearBottom = entry.isIntersecting ||
-                               (entry.boundingClientRect.top - container.clientHeight) < 100;
-
-          if (isNearBottom && !this.conversationState.isStreaming()) {
-            this._userScrolledUp = false;
-          }
-        });
-      },
-      {
-        root: container,
-        rootMargin: '0px 0px 100px 0px',
-        threshold: [0, 1]
-      }
-    );
-
-    this._intersectionObserver.observe(sentinel);
-  }
-  
-  private onUserScroll = (): void => {
-    if (!this.messagesContainer()) {
-      return;
-    }
-    
-    const container = this.messagesContainer()!.nativeElement;
-    const scrollTop = container.scrollTop;
-    const scrollHeight = container.scrollHeight;
-    const clientHeight = container.clientHeight;
-    const isNearBottom = scrollHeight - scrollTop - clientHeight < 50;
-    
-    if (!isNearBottom && this.conversationState.isStreaming()) {
-      this._userScrolledUp = true;
-    } else if (isNearBottom && !this.conversationState.isStreaming()) {
-      this._userScrolledUp = false;
-    }
-  };
-  
-  private scheduleScroll(): void {
-    if (this._scrollRafId !== null) {
-      cancelAnimationFrame(this._scrollRafId);
-    }
-
-    this._scrollRafId = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        this.scrollToBottom();
-        this._scrollRafId = null;
-      });
-    });
-  }
-  
-  private scrollToBottom(): void {
-    const isStreaming = this.conversationState.isStreaming();
-    
-    if (this.scrollSentinel()?.nativeElement) {
-      this.scrollSentinel()!.nativeElement.scrollIntoView({ 
-        behavior: isStreaming ? 'auto' : 'smooth',
-        block: 'end'
-      });
-    } else if (this.messagesContainer) {
-      const element = this.messagesContainer()!.nativeElement;
-      if (isStreaming) {
-        element.scrollTop = element.scrollHeight;
-      } else {
-        element.scrollTop = element.scrollHeight;
-      }
-    }
-  }
-
-  getToolStatusMessage(toolCall: ParsedToolCall): string {
-    const toolName = toolCall.tool;
-    const serverTools = this.aiService.getCachedServerMCPTools();
-    const messages = this.toolPolicyService.getToolStatusMessages(serverTools);
-    return messages[toolName] ?? `Executing ${toolName}...`;
-  }
-
-  private async handleMainStreamResponse(finalResponse: string): Promise<void> {
-    try {
-      const result = await this.streamHandler.processResponse(
-        finalResponse,
-        this.getStreamResponseContext(true)
+      await this.openCodeService.prompt(
+        session.id,
+        message,
+        this.agent(),
+        this.referencesFrom(message),
+        this.reasoningEnabled()
       );
-      this.processStreamResult(result);
-    } catch (err) {
-      console.error('[AI Tab] Error processing main stream response:', err);
-      this.finishResponse();
-    }
-    this._userScrolledUp = false;
-    if (!this._intersectionObserver && this.scrollSentinel()) {
-      this.setupScrollSentinelObserver();
+    } catch (error) {
+      this.setError(error);
     }
   }
 
-  private startContinuationStream(editorId: string, summary: string): void {
-    this.conversationState.startStreaming();
-    this._thinkingAccordionExpanded.set(false);
-    this._isLoading.set(true);
-    if (this._currentSubscription) {
-      this._currentSubscription.unsubscribe();
-      this._currentSubscription = null;
+  onPromptChanged(value: string): void {
+    this.promptText.set(value);
+    const match = value.match(/@([A-Za-z0-9._\/-]*)$/);
+    const session = this.session();
+    if (!match || !session) {
+      this.fileSuggestions.set([]);
+      return;
     }
-    const mode = this.currentMode();
-    this._currentSubscription = this.aiService
-      .sendStreamingMessage('', editorId, this.useMCPTools(), this.cqlContent(), summary, mode)
-      .subscribe({
-        next: async (event) => {
-          if (this.destroyed) {
-            return;
-          }
-          if (event.type === 'thinkingChunk') {
-            const content = event.content || '';
-            if (content.length > 0) this.conversationState.addStreamingThinkingChunk(content);
-          } else if (event.type === 'chunk') {
-            this.conversationState.addStreamingChunk(event.content || '');
-          } else if (event.type === 'end') {
-            const finalResponse = (event as { fullResponse?: string }).fullResponse ?? this.conversationState.streamingResponse();
-            try {
-              const result = await this.streamHandler.processResponse(
-                finalResponse,
-                this.getStreamResponseContext(false)
-              );
-              if (this.destroyed) {
-                return;
-              }
-              this.processStreamResult(result);
-            } catch (err) {
-              if (this.destroyed) {
-                return;
-              }
-              console.error('[AI Tab] Error processing continuation response:', err);
-              this.finishResponse();
-            }
-          }
-        },
-        error: (error: unknown) => {
-          if (this.destroyed) {
-            return;
-          }
-          const err = error as { message?: string };
-          const errorMessage =
-            err?.message ||
-            (error instanceof TypeError && (error as Error).message === 'Failed to fetch'
-              ? 'Unable to connect to Ollama server. Please check your settings and ensure the server is running.'
-              : 'Failed to continue response');
-          this._isLoading.set(false);
-          this.conversationState.setError(errorMessage);
-          this.conversationState.endStreaming();
-          this._error.set(errorMessage);
-          this._currentSubscription = null;
-        },
-        complete: () => {
-          this._currentSubscription = null;
-          if (!this.destroyed && (this._isLoading() || this.conversationState.isStreaming())) {
-            this.finishResponse();
-          }
+    void this.openCodeService.findFiles(session.id, match[1]).then(files => this.fileSuggestions.set(files)).catch(() => {
+      this.fileSuggestions.set([]);
+    });
+  }
+
+  chooseCommand(command: OpenCodeCommand): void {
+    this.promptText.set(`/${command.name}${command.acceptsArguments ? ' ' : ''}`);
+  }
+
+  chooseFile(file: OpenCodeFileReference): void {
+    this.promptText.update(value => value.replace(/@[A-Za-z0-9._\/-]*$/, `@${file.path} `));
+    this.fileSuggestions.set([]);
+  }
+
+  onPromptKeydown(event: KeyboardEvent): void {
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      event.preventDefault();
+      void this.sendPrompt();
+    }
+  }
+
+  async stop(): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    try {
+      await this.openCodeService.abort(session.id);
+      this.status.set('idle');
+      await this.refreshDiff();
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  async refreshDiff(): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    try {
+      this.diffs.set(await this.openCodeService.getDiff(session.id));
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  async refreshValidation(): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    try {
+      await this.processValidation(await this.openCodeService.validate(session.id));
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  async applyAndSave(diff: OpenCodeFileDiff): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    try {
+      const result = await this.openCodeService.validate(session.id);
+      this.validation.set(result);
+      if (!result.valid) {
+        this.error.set('Apply & save is blocked until all CQL validation errors are fixed.');
+        return;
+      }
+      this.applyLibraryChange.emit({ libraryId: diff.libraryId, cqlContent: diff.after, save: true });
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  applyLocally(diff: OpenCodeFileDiff): void {
+    this.applyLibraryChange.emit({ libraryId: diff.libraryId, cqlContent: diff.after, save: false });
+    this.diffs.update(diffs => diffs.filter(candidate => candidate.file !== diff.file));
+  }
+
+  async respondToPermission(permission: OpenCodePermissionRequest, response: 'once' | 'always' | 'reject'): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    try {
+      await this.openCodeService.respondToPermission(session.id, permission.id, response);
+      this.permissions.update(items => items.filter(item => item.id !== permission.id));
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  toggleQuestionAnswer(request: OpenCodeQuestionRequest, index: number, label: string, multiple = false): void {
+    this.questionAnswers.update(current => {
+      const answers = (current[request.id] ?? request.questions.map(() => [])).map(answer => [...answer]);
+      if (multiple) {
+        answers[index] = answers[index].includes(label)
+          ? answers[index].filter(item => item !== label)
+          : [...answers[index], label];
+      } else {
+        answers[index] = [label];
+      }
+      return { ...current, [request.id]: answers };
+    });
+  }
+
+  questionOptionSelected(requestId: string, index: number, label: string): boolean {
+    return Boolean(this.questionAnswers()[requestId]?.[index]?.includes(label));
+  }
+
+  canAnswerQuestion(request: OpenCodeQuestionRequest): boolean {
+    const answers = this.questionAnswers()[request.id] ?? [];
+    return request.questions.every((_question, index) => Boolean(answers[index]?.length));
+  }
+
+  async submitQuestion(request: OpenCodeQuestionRequest): Promise<void> {
+    const session = this.session();
+    const answers = this.questionAnswers()[request.id];
+    if (!session || !answers || !this.canAnswerQuestion(request)) return;
+    try {
+      await this.openCodeService.answerQuestion(session.id, request.id, answers);
+      this.removeQuestion(request.id);
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  async rejectQuestion(request: OpenCodeQuestionRequest): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    try {
+      await this.openCodeService.rejectQuestion(session.id, request.id);
+      this.removeQuestion(request.id);
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  async endSession(): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    this.eventSource?.close();
+    this.eventSource = null;
+    try {
+      await this.openCodeService.endSession(session.id);
+    } catch (error) {
+      this.setError(error);
+    } finally {
+      this.resetConversation();
+      this.session.set(null);
+      this.status.set('idle');
+    }
+  }
+
+  async retryConnection(): Promise<void> {
+    const session = this.session();
+    if (!session) return void this.restoreSession();
+    await this.attachSession(session);
+  }
+
+  activityDuration(activity: OpenCodeActivity): string {
+    if (!activity.startedAt) return '';
+    const end = activity.endedAt ?? Date.now();
+    return `${Math.max(0, (end - activity.startedAt) / 1000).toFixed(1)}s`;
+  }
+
+  private async restoreSession(): Promise<void> {
+    if (!this.isAvailable()) return;
+    const active = this.activeLibrary();
+    try {
+      const sessions = await this.openCodeService.listSessions();
+      this.liveSessions.set(sessions);
+      // The IDE's open-library state is not persisted across a full browser reload.
+      // Reattach the newest owned session in that case so the conversation and diff
+      // remain recoverable while the user reopens the matching Library.
+      const matching = active ? sessions.find(session => session.activeLibraryId === active.id) : sessions[0];
+      if (matching) await this.attachSession(matching);
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  private async loadCommandsAndFiles(): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    const [commands] = await Promise.all([
+      this.openCodeService.getCommands(session.id),
+      this.openCodeService.findFiles(session.id, ''),
+    ]);
+    const names = new Set(WEB_COMMANDS.map(command => command.name));
+    this.commands.set([...WEB_COMMANDS, ...commands.filter(command => !names.has(command.name))]);
+  }
+
+  private async runSlashCommand(value: string): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    const match = value.match(/^\/([a-z0-9_-]+)(?:\s+([\s\S]*))?$/i);
+    if (!match) {
+      this.error.set('Slash command is incomplete.');
+      return;
+    }
+    const [, name, args = ''] = match;
+    this.promptText.set('');
+    switch (name) {
+      case 'help': this.showHelp.update(value => !value); return;
+      case 'details': this.detailsShown.update(value => !value); return;
+      case 'thinking': this.reasoningShown.update(value => !value); return;
+      case 'sessions':
+        this.liveSessions.set(await this.openCodeService.listSessions());
+        this.showSessions.set(true);
+        return;
+      case 'new':
+        this.eventSource?.close();
+        await this.startSession();
+        return;
+      default:
+        this.error.set(null);
+        this.repairAttempts.set(0);
+        this.validation.set(null);
+        this.status.set('busy');
+        try {
+          await this.openCodeService.executeCommand(session.id, name, args, this.reasoningEnabled());
+        } catch (error) {
+          this.setError(error);
         }
+    }
+  }
+
+  private connectEvents(sessionId: string): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.eventSource?.close();
+    this.eventSource = this.openCodeService.events(
+      sessionId,
+      envelope => this.handleEnvelope(envelope),
+      () => {
+        this.streamConnected.set(false);
+        this.eventSource?.close();
+        this.scheduleReconnect(sessionId);
+      },
+      () => {
+        this.streamConnected.set(true);
+        this.errorRetryable.set(false);
+        this.reconnectAttempts = 0;
+      },
+      this.lastEventId
+    );
+  }
+
+  private scheduleReconnect(sessionId: string): void {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    const delay = Math.min(30_000, 1_000 * (2 ** this.reconnectAttempts++));
+    this.reconnectTimer = setTimeout(() => void this.reconnectSession(sessionId), delay);
+  }
+
+  private async reconnectSession(sessionId: string): Promise<void> {
+    if (this.session()?.id !== sessionId) return;
+    try {
+      this.hydrate(await this.openCodeService.getState(sessionId));
+      this.connectEvents(sessionId);
+    } catch (error) {
+      if (error instanceof OpenCodeApiError && ['SESSION_NOT_FOUND', 'SESSION_EXPIRED'].includes(error.code)) {
+        this.resetConversation();
+        this.session.set(null);
+        this.status.set('idle');
+        this.error.set('The OpenCode session ended. Start a new session to continue.');
+        return;
+      }
+      this.errorRetryable.set(true);
+      this.scheduleReconnect(sessionId);
+    }
+  }
+
+  private handleEnvelope(envelope: OpenCodeEventEnvelope): void {
+    this.lastEventId = Math.max(this.lastEventId, envelope.id);
+    this.streamConnected.set(true);
+    this.handleEvent(envelope.event);
+  }
+
+  private handleEvent(event: OpenCodeEvent): void {
+    if (event.type === 'message.updated') {
+      const info = event.properties['info'] as Record<string, unknown> | undefined;
+      this.ingestMessageInfo(info);
+      return;
+    }
+    if (event.type === 'message.part.updated') {
+      this.ingestPart(event.properties['part'] as Record<string, unknown> | undefined);
+      return;
+    }
+    if (event.type === 'permission.updated' || event.type === 'permission.asked') {
+      const raw = event.properties as Record<string, unknown>;
+      const id = String(raw['id'] ?? raw['requestID'] ?? '');
+      if (id) this.permissions.update(items => [...items.filter(item => item.id !== id), { ...raw, id } as unknown as OpenCodePermissionRequest]);
+      return;
+    }
+    if (event.type === 'permission.replied') {
+      const permissionId = event.properties['permissionID'] ?? event.properties['requestID'];
+      if (typeof permissionId === 'string') this.permissions.update(items => items.filter(item => item.id !== permissionId));
+      return;
+    }
+    if (event.type === 'question.asked') {
+      const raw = event.properties as unknown as OpenCodeQuestionRequest;
+      if (raw.id) this.questions.update(items => [...items.filter(item => item.id !== raw.id), raw]);
+      return;
+    }
+    if (event.type === 'question.replied' || event.type === 'question.rejected') {
+      const requestId = event.properties['requestID'];
+      if (typeof requestId === 'string') this.removeQuestion(requestId);
+      return;
+    }
+    if (event.type === 'session.status') {
+      const sessionStatus = event.properties['status'] as { type?: string } | undefined;
+      this.status.set(sessionStatus?.type === 'busy' ? 'busy' : 'idle');
+      return;
+    }
+    if (event.type === 'session.idle') {
+      this.status.set('idle');
+      this.repairInFlight = false;
+      void this.refreshDiff();
+      return;
+    }
+    if (event.type === 'cql.validation.updated') {
+      void this.processValidation(event.properties as unknown as OpenCodeValidation);
+      return;
+    }
+    if (event.type === 'cql.validation.error') {
+      this.activities.update(items => [...items, {
+        id: `validation-error-${Date.now()}`,
+        kind: 'validation', title: 'CQL validation unavailable', status: 'error',
+        detail: String(event.properties['message'] ?? 'Validation failed'),
+      }]);
+      return;
+    }
+    if (event.type === 'session.error' || event.type === 'runner.error') {
+      this.status.set('error');
+      const message = event.properties['message'];
+      this.error.set(typeof message === 'string' ? message : 'The OpenCode session failed.');
+      this.errorRetryable.set(true);
+    }
+  }
+
+  private ingestMessageInfo(info?: Record<string, unknown>): void {
+    const id = typeof info?.['id'] === 'string' ? info['id'] : null;
+    const role = info?.['role'];
+    if (!id || (role !== 'user' && role !== 'assistant')) return;
+    this.messageRoles.set(id, role);
+    const messageError = info?.['error'] as { data?: { message?: string } } | undefined;
+    if (messageError?.data?.message) this.error.set(messageError.data.message);
+    this.rebuildMessages();
+  }
+
+  private ingestPart(part?: Record<string, any>): void {
+    if (!part) return;
+    const messageId = typeof part['messageID'] === 'string' ? part['messageID'] : undefined;
+    const partId = typeof part['id'] === 'string' ? part['id'] : `${part['type']}-${Date.now()}`;
+    if (part['type'] === 'text' && messageId) {
+      const parts = this.messageParts.get(messageId) ?? new Map<string, string>();
+      parts.set(partId, typeof part['text'] === 'string' ? part['text'] : '');
+      this.messageParts.set(messageId, parts);
+      this.rebuildMessages();
+      return;
+    }
+    if (part['type'] === 'reasoning') {
+      this.activityParts.set(partId, {
+        id: partId, messageId, kind: 'reasoning', title: part['time']?.end ? 'Reasoning completed' : 'Reasoning…',
+        status: part['time']?.end ? 'completed' : 'running', detail: String(part['text'] ?? ''),
+        startedAt: part['time']?.start, endedAt: part['time']?.end,
       });
-  }
-
-  public onExecutePlan(): void {
-    const conversation = this.activeConversation();
-    if (!conversation || !conversation.plan) {
-      return;
+    } else if (part['type'] === 'tool') {
+      const state = part['state'] ?? {};
+      this.activityParts.set(partId, {
+        id: partId, messageId, kind: 'tool', title: state.title || part['tool'] || 'Tool',
+        status: state.status || 'pending',
+        detail: this.safeJson(state.input), output: state.output || state.error,
+        startedAt: state.time?.start, endedAt: state.time?.end,
+      });
+    } else if (part['type'] === 'step-finish') {
+      this.activityParts.set(partId, {
+        id: partId, messageId, kind: 'step', title: 'Step completed', status: 'completed',
+        detail: `${part['tokens']?.input ?? 0} input · ${part['tokens']?.output ?? 0} output`,
+        reasoningTokens: part['tokens']?.reasoning,
+      });
+    } else if (part['type'] === 'retry') {
+      this.activityParts.set(partId, { id: partId, messageId, kind: 'retry', title: 'OpenCode retrying', status: 'running', detail: this.safeJson(part['error']) });
+    } else if (part['type'] === 'compaction') {
+      this.activityParts.set(partId, { id: partId, messageId, kind: 'compaction', title: 'Session compacted', status: 'completed' });
     }
-    
-    // Switch to act mode to execute the plan
-    this.conversationManager.updateConversationMode(conversation.id, 'act');
-    
-    // Send a message to execute the plan
-    const planDescription = conversation.plan.description || 'Execute the plan';
-    this._currentMessage.set(`Execute the plan: ${planDescription}`);
-    this.onSendMessage();
+    this.activities.set([...this.activityParts.values()]);
   }
 
-  public onRevisePlan(): void {
-    const conversation = this.activeConversation();
-    if (!conversation || !conversation.plan) {
-      return;
+  private async processValidation(validation: OpenCodeValidation): Promise<void> {
+    this.validation.set(validation);
+    await this.refreshDiff();
+    this.activities.update(items => [
+      ...items.filter(item => item.id !== 'current-validation'),
+      {
+        id: 'current-validation', kind: 'validation',
+        title: validation.valid ? 'CQL validation passed' : 'CQL validation failed',
+        status: validation.valid ? 'completed' : 'error',
+        detail: `${validation.diagnostics.filter(item => item.severity === 'error').length} errors · ${validation.diagnostics.filter(item => item.severity === 'warning').length} warnings`,
+      },
+    ]);
+    if (validation.valid || this.diffs().length === 0 || this.repairInFlight || this.repairAttempts() >= 2) return;
+    const session = this.session();
+    if (!session) return;
+    const attempt = this.repairAttempts() + 1;
+    this.repairAttempts.set(attempt);
+    this.repairInFlight = true;
+    this.activities.update(items => [...items, {
+      id: `repair-${attempt}`, kind: 'repair', title: `Automatic CQL repair ${attempt}/2`, status: 'running',
+      detail: 'OpenCode is repairing compiler errors before changes can be saved.',
+    }]);
+    const diagnostics = validation.diagnostics.filter(item => item.severity === 'error')
+      .map(item => `${item.file ?? ''}:${item.line ?? '?'}:${item.column ?? '?'} ${item.message}`).join('\n');
+    this.status.set('busy');
+    try {
+      await this.openCodeService.prompt(
+        session.id,
+        `The proposed CQL failed validation. Repair only these errors while preserving the user's intent. This is automatic repair attempt ${attempt} of 2.\n\n${diagnostics}`,
+        'build',
+        [session.activeFile],
+        this.reasoningEnabled()
+      );
+    } catch (error) {
+      this.repairInFlight = false;
+      this.setError(error);
     }
-    
-    // Ask user for revision instructions
-    const planDescription = conversation.plan.description || 'the plan';
-    this._currentMessage.set(`Please revise ${planDescription}. What changes would you like to make?`);
-    // Don't auto-send, let user edit the message first
   }
 
+  private hydrate(state: OpenCodeSessionState): void {
+    this.session.set(state.session);
+    this.status.set(state.session.status);
+    this.reasoningEnabled.set(state.session.reasoningEnabled);
+    this.diffs.set(state.diffs);
+    this.validation.set(state.validation);
+    this.permissions.set(state.permissions ?? []);
+    this.questions.set(state.questions ?? []);
+    this.lastEventId = state.lastEventId ?? 0;
+    this.commands.set([...WEB_COMMANDS, ...state.commands.filter(command => !WEB_COMMANDS.some(local => local.name === command.name))]);
+    for (const raw of state.messages as Array<Record<string, any>>) {
+      this.ingestMessageInfo(raw['info']);
+      for (const part of raw['parts'] ?? []) this.ingestPart(part);
+    }
+  }
+
+  private rebuildMessages(): void {
+    const messages: OpenCodeUiMessage[] = [];
+    for (const [id, role] of this.messageRoles) {
+      const text = [...(this.messageParts.get(id)?.values() ?? [])].join('\n');
+      if (text.trim()) messages.push({ id, role, text });
+    }
+    this.messages.set(messages);
+  }
+
+  private referencesFrom(message: string): string[] {
+    return [...message.matchAll(/@((?:libraries|dependencies)\/[A-Za-z0-9._-]+\.cql)\b/g)].map(match => match[1]);
+  }
+
+  private resetConversation(): void {
+    this.eventSource?.close();
+    this.eventSource = null;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.reconnectAttempts = 0;
+    this.lastEventId = 0;
+    this.messages.set([]);
+    this.activities.set([]);
+    this.diffs.set([]);
+    this.validation.set(null);
+    this.permissions.set([]);
+    this.questions.set([]);
+    this.questionAnswers.set({});
+    this.promptText.set('');
+    this.fileSuggestions.set([]);
+    this.messageRoles.clear();
+    this.messageParts.clear();
+    this.activityParts.clear();
+    this.error.set(null);
+    this.errorRetryable.set(false);
+    this.streamConnected.set(false);
+    this.repairAttempts.set(0);
+    this.repairInFlight = false;
+  }
+
+  private removeQuestion(requestId: string): void {
+    this.questions.update(items => items.filter(item => item.id !== requestId));
+    this.questionAnswers.update(current => {
+      const next = { ...current };
+      delete next[requestId];
+      return next;
+    });
+  }
+
+  private snapshot(library: LibraryResource): OpenCodeLibrarySnapshot {
+    return {
+      id: library.id,
+      name: library.name || library.id,
+      version: library.version,
+      canonicalUrl: library.url,
+      cqlContent: library.cqlContent,
+      originalContent: library.originalContent,
+      fhirVersionId: library.library?.meta?.versionId,
+    };
+  }
+
+  private async collectDependencies(active: LibraryResource): Promise<OpenCodeLibrarySnapshot[]> {
+    const openLibraries = this.ideStateService.libraryResources();
+    const byName = new Map(openLibraries.map(library => [library.name.toLowerCase(), library]));
+    const selected = new Map<string, OpenCodeLibrarySnapshot>();
+    const pending = [active.cqlContent];
+    while (pending.length > 0) {
+      for (const includeName of this.includeNames(pending.shift() ?? '')) {
+        const dependency = byName.get(includeName.toLowerCase());
+        if (!dependency || dependency.id === active.id || selected.has(dependency.id)) continue;
+        selected.set(dependency.id, this.snapshot(dependency));
+        pending.push(dependency.cqlContent);
+      }
+    }
+    const needsFhirHelpers = this.includeNames(active.cqlContent).some(name => name.toLowerCase() === 'fhirhelpers');
+    const hasFhirHelpers = [...selected.values()].some(dependency => dependency.name.toLowerCase() === 'fhirhelpers');
+    if (needsFhirHelpers && !hasFhirHelpers) {
+      try {
+        const response = await fetch('/cql/FHIRHelpers-4.0.1.cql');
+        if (response.ok) selected.set('FHIRHelpers', { id: 'FHIRHelpers', name: 'FHIRHelpers', version: '4.0.1', cqlContent: await response.text() });
+      } catch {
+        // Validation will report a missing dependency if the bundled helper is unavailable.
+      }
+    }
+    return [...selected.values()];
+  }
+
+  private includeNames(content: string): string[] {
+    return [...content.matchAll(/^\s*include\s+([A-Za-z][A-Za-z0-9_]*)\b/gim)].map(match => match[1]);
+  }
+
+  private safeJson(value: unknown): string | undefined {
+    if (value == null || (typeof value === 'object' && Object.keys(value as object).length === 0)) return undefined;
+    try { return JSON.stringify(value, null, 2).slice(0, 4_000); } catch { return String(value); }
+  }
+
+  private setError(error: unknown): void {
+    this.status.set('error');
+    this.error.set(error instanceof Error ? error.message : String(error));
+    this.errorRetryable.set(error instanceof OpenCodeApiError && error.retryable);
+  }
 }

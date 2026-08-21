@@ -65,6 +65,7 @@ export class IdePanelComponent {
   dragLeave = output<string>();
   executeAll = output<void>();
   navigateToLine = output<number>();
+  applyLibraryChange = output<{ libraryId: string; cqlContent: string; save?: boolean }>();
 
   panelElement = viewChild<ElementRef<HTMLDivElement>>('panelElement');
   navigationTab = viewChild(NavigationTabComponent);
@@ -395,5 +396,9 @@ export class IdePanelComponent {
 
   onReplaceCqlCode(code: string): void {
     this.replaceCqlCode.emit(code);
+  }
+
+  onApplyLibraryChange(change: { libraryId: string; cqlContent: string; save?: boolean }): void {
+    this.applyLibraryChange.emit(change);
   }
 }
