@@ -45,18 +45,6 @@
     </div>
   } @else {
     <div #messageScroller class="messages flex-grow-1 overflow-auto p-3">
-      @if (showHelp()) {
-        <section class="info-card border rounded p-3 mb-3">
-          <div class="d-flex justify-content-between gap-2"><strong>Commands and references</strong><button class="btn-close" (click)="showHelp.set(false)"></button></div>
-          <p class="small text-body-secondary mt-2 mb-2">Type <code>/</code> for commands or <code>&#64;</code> to attach a CQL library or dependency to the prompt.</p>
-          <div class="command-grid">
-            @for (command of commands(); track command.name) {
-              <button type="button" class="command-help" (click)="chooseCommand(command)"><code>/{{ command.name }}</code><span>{{ command.description }}</span></button>
-            }
-          </div>
-        </section>
-      }
-
       @if (showSessions()) {
         <section class="info-card border rounded p-3 mb-3">
           <div class="d-flex justify-content-between gap-2"><strong>Live sessions</strong><button class="btn-close" (click)="showSessions.set(false)"></button></div>
@@ -96,6 +84,18 @@
             }
           </section>
         }
+      }
+
+      @if (showHelp()) {
+        <section #helpCard class="info-card help-card border rounded p-3 mb-3">
+          <div class="d-flex justify-content-between gap-2"><strong>Commands and references</strong><button type="button" class="btn-close" aria-label="Close command help" (click)="showHelp.set(false)"></button></div>
+          <p class="small text-body-secondary mt-2 mb-2">Type <code>/</code> for commands or <code>&#64;</code> to attach a CQL library or dependency to the prompt.</p>
+          <div class="command-grid">
+            @for (command of commands(); track command.name) {
+              <button type="button" class="command-help" (click)="chooseCommand(command)"><code>/{{ command.name }}</code><span>{{ command.description }}</span></button>
+            }
+          </div>
+        </section>
       }
 
       @if (status() === 'busy') {

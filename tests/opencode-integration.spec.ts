@@ -23,6 +23,10 @@ test.describe('OpenCode browser integration', () => {
     const commands = [
       { name: 'validate', description: 'Validate CQL', source: 'cql-studio', acceptsArguments: false },
       { name: 'review', description: 'Review CQL', source: 'cql-studio', acceptsArguments: false },
+      { name: 'context', description: 'Show active CQL Studio endpoints and capabilities', source: 'cql-studio', acceptsArguments: false },
+      { name: 'fhir', description: 'Read or search the configured FHIR environment', source: 'cql-studio', acceptsArguments: true },
+      { name: 'research', description: 'Research a topic with web search and safe fetching', source: 'cql-studio', acceptsArguments: true },
+      { name: 'terminology', description: 'Research ValueSets, CodeSystems, and expansions', source: 'cql-studio', acceptsArguments: true },
     ];
 
     await page.addInitScript(() => {
@@ -219,6 +223,15 @@ test.describe('OpenCode browser integration', () => {
     const composer = page.locator('.composer textarea');
     await composer.fill('/');
     await expect(page.locator('.suggestion-menu').getByText('/validate')).toBeVisible();
+    await composer.fill('/help');
+    await page.getByRole('button', { name: /Send/ }).click();
+    const helpCard = page.locator('.help-card');
+    await expect(helpCard.getByText('Commands and references')).toBeVisible();
+    await expect(helpCard.getByText('/validate')).toBeVisible();
+    await expect(helpCard.getByText('/context')).toBeVisible();
+    await expect(helpCard.getByText('/research')).toBeVisible();
+    await expect(helpCard.getByText('Commands and references')).toBeInViewport();
+    await helpCard.getByRole('button', { name: 'Close command help' }).click();
     await composer.fill('@FHIR');
     const fhirHelpersSuggestion = page.locator('.suggestion-menu').getByText('@dependencies/FHIRHelpers.cql');
     await expect(fhirHelpersSuggestion).toBeVisible();

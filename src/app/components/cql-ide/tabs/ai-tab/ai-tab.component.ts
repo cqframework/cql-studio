@@ -51,6 +51,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   readonly applyLibraryChange = output<OpenCodeLibraryChange>();
 
   @ViewChild('messageScroller') private messageScroller?: ElementRef<HTMLDivElement>;
+  @ViewChild('helpCard') private helpCard?: ElementRef<HTMLElement>;
 
   private readonly ideStateService = inject(IdeStateService);
   readonly settingsService = inject(SettingsService);
@@ -102,7 +103,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     const match = this.promptText().match(/^\/([a-z0-9_-]*)$/i);
     if (!match) return [];
     const query = match[1].toLowerCase();
-    return this.commands().filter(command => command.name.toLowerCase().includes(query)).slice(0, 12);
+    return this.commands().filter(command => command.name.toLowerCase().includes(query)).slice(0, 24);
   });
   readonly hasValidationErrors = computed(() => Boolean(this.validation()?.diagnostics.some(item => item.severity === 'error')));
   readonly canApplyAndSave = computed(() => Boolean(this.validation()?.valid));
@@ -203,6 +204,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   }
 
   chooseCommand(command: OpenCodeCommand): void {
+    this.showHelp.set(false);
     this.promptText.set(`/${command.name}${command.acceptsArguments ? ' ' : ''}`);
   }
 
@@ -394,7 +396,11 @@ export class AiTabComponent implements OnInit, OnDestroy {
     const [, name, args = ''] = match;
     this.promptText.set('');
     switch (name) {
-      case 'help': this.showHelp.update(value => !value); return;
+      case 'help':
+        this.showSessions.set(false);
+        this.showHelp.set(true);
+        this.queueHelpScroll();
+        return;
       case 'details': this.detailsShown.update(value => !value); return;
       case 'thinking': this.reasoningShown.update(value => !value); return;
       case 'sessions':
@@ -726,6 +732,12 @@ export class AiTabComponent implements OnInit, OnDestroy {
       const element = this.messageScroller?.nativeElement;
       if (element && (force || this.isNearTimelineBottom())) element.scrollTop = element.scrollHeight;
     });
+  }
+
+  private queueHelpScroll(): void {
+    setTimeout(() => requestAnimationFrame(() => {
+      this.helpCard?.nativeElement.scrollIntoView({ block: 'start' });
+    }));
   }
 
   private removeQuestion(requestId: string): void {
