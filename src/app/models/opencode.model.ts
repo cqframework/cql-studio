@@ -1,4 +1,13 @@
 import { CqlEnvironment } from './environment.model';
+import { AiProviderType } from './settings.model';
+
+export interface OpenCodeProviderConfig {
+  type: AiProviderType;
+  model: string;
+  baseUrl?: string;
+  apiKey?: string;
+  name?: string;
+}
 
 export interface OpenCodeLibrarySnapshot {
   id: string;
@@ -12,7 +21,11 @@ export interface OpenCodeLibrarySnapshot {
 
 export interface CreateOpenCodeSessionRequest {
   title?: string;
+  provider?: OpenCodeProviderConfig;
+  providers?: OpenCodeProviderConfig[];
+  /** @deprecated retained for older clients and persisted sessions. */
   ollamaBaseUrl: string;
+  /** @deprecated retained for older clients and persisted sessions. */
   ollamaModel: string;
   activeLibrary: OpenCodeLibrarySnapshot;
   dependencies: OpenCodeLibrarySnapshot[];

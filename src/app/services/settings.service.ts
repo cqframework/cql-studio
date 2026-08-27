@@ -3,7 +3,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Endpoint } from 'fhir/r4';
 import { BUILT_IN_ENVIRONMENT_ID, CqlEnvironment, EndpointHttpContext, EndpointRole } from '../models/environment.model';
-import { Settings, ThemeType } from '../models/settings.model';
+import { AiProviderType, Settings, ThemeType } from '../models/settings.model';
 import { ExamplePaths } from '../constants/example-paths.constants';
 import { buildFhirEndpoint } from './endpoint-config.lib';
 import { EnvironmentService, LegacyEnvironmentFields } from './environment.service';
@@ -107,7 +107,7 @@ export class SettingsService {
   persistEnvironmentToSettings(): void {
     this.settings.update(current => ({
       ...current,
-      settingsVersion: 2,
+      settingsVersion: 3,
       environments: this.environmentService.getEnvironmentsSnapshot(),
       activeEnvironmentId: this.environmentService.getActiveEnvironmentIdSnapshot(),
       activeEnvironmentSource: this.environmentService.getActiveEnvironmentSourceSnapshot(),
@@ -277,6 +277,29 @@ export class SettingsService {
     return settingValue?.trim() ? settingValue : this.getDefaultOllamaModel();
   }
 
+  getEffectiveAiProvider(): AiProviderType {
+    const provider = this.settings().aiProvider;
+    return provider === 'openai' || provider === 'openai-compatible' ? provider : 'ollama';
+  }
+
+  getEffectiveOllamaApiKey(): string { return this.settings().ollamaApiKey?.trim() ?? ''; }
+
+  getDefaultOpenAiModel(): string { return 'gpt-4o-mini'; }
+  getEffectiveOpenAiModel(): string {
+    return this.settings().openaiModel?.trim() || this.getDefaultOpenAiModel();
+  }
+  getEffectiveOpenAiApiKey(): string { return this.settings().openaiApiKey?.trim() ?? ''; }
+  getEffectiveCompatibleProviderName(): string {
+    return this.settings().compatibleProviderName?.trim() || 'My AI Provider';
+  }
+  getEffectiveCompatibleProviderBaseUrl(): string {
+    return (this.settings().compatibleProviderBaseUrl?.trim() || '').replace(/\/+$/, '');
+  }
+  getEffectiveCompatibleProviderModel(): string {
+    return this.settings().compatibleProviderModel?.trim() || 'default';
+  }
+  getEffectiveCompatibleProviderApiKey(): string { return this.settings().compatibleProviderApiKey?.trim() ?? ''; }
+
   getEffectiveServerBaseUrl(): string {
     const settingValue = this.settings().serverBaseUrl;
     return settingValue?.trim() ? settingValue : this.getDefaultServerBaseUrl();
@@ -357,7 +380,7 @@ export class SettingsService {
   private createDefaultSettings(): Settings {
     const settings = new Settings();
     const migrated = this.environmentService.migrateLegacySettings({});
-    settings.settingsVersion = 2;
+    settings.settingsVersion = 3;
     settings.environments = migrated.environments;
     settings.activeEnvironmentId = migrated.activeEnvironmentId;
     settings.activeEnvironmentSource = 'personal';
@@ -388,7 +411,7 @@ export class SettingsService {
       const migratedEnv = this.environmentService.migrateLegacySettings(legacy);
       merged = {
         ...merged,
-        settingsVersion: 2,
+        settingsVersion: 3,
         environments: migratedEnv.environments,
         activeEnvironmentId: this.environmentService.resolveActiveEnvironmentIdForImport(
           parsed.activeEnvironmentId ?? migratedEnv.activeEnvironmentId,

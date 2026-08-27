@@ -10,13 +10,15 @@ export enum ThemeType {
 
 export type ActiveEnvironmentSource = 'personal' | 'workspace';
 
+export type AiProviderType = 'ollama' | 'openai' | 'openai-compatible';
+
 export interface ActiveWorkspaceEnvironmentRef {
     workspaceId: string;
     environmentId: string;
 }
 
 export class Settings {
-    public settingsVersion: number = 2;
+    public settingsVersion: number = 3;
     public experimental: boolean = false;
     public developer: boolean = false;
     public theme_preferred: ThemeType = ThemeType.AUTOMATIC;
@@ -38,8 +40,16 @@ export class Settings {
     public vsacApiPassword: string = '';
     
     // AI Settings
+    public aiProvider: AiProviderType = 'ollama';
     public ollamaBaseUrl: string = '';
     public ollamaModel: string = '';
+    public ollamaApiKey: string = '';
+    public openaiModel: string = '';
+    public openaiApiKey: string = '';
+    public compatibleProviderName: string = '';
+    public compatibleProviderBaseUrl: string = '';
+    public compatibleProviderModel: string = '';
+    public compatibleProviderApiKey: string = '';
     public serverBaseUrl: string = '';
     public searxngBaseUrl: string = '';
     public enableAiAssistant: boolean = false;

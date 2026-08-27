@@ -4,12 +4,13 @@ import { Component, OnInit, viewChild, ElementRef, inject, signal } from '@angul
 import { SettingsService } from '../../services/settings.service';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { ThemeType } from '../../models/settings.model';
+import { AiProviderType, ThemeType } from '../../models/settings.model';
 import { ToastService } from '../../services/toast.service';
 import { ClipboardService } from '../../services/clipboard.service';
 import { SettingsActionsComponent } from './settings-actions/settings-actions.component';
 import { SettingsSectionNavComponent, SettingsSectionId } from './settings-section-nav/settings-section-nav.component';
 import { SettingsEnvironmentsComponent } from './settings-environments/settings-environments.component';
+import { OpenCodeService } from '../../services/opencode.service';
 
 @Component({
   selector: 'app-settings',
@@ -25,8 +26,12 @@ export class SettingsComponent implements OnInit {
   protected readonly route = inject(ActivatedRoute);
   protected readonly toastService = inject(ToastService);
   private readonly clipboardService = inject(ClipboardService);
+  private readonly openCodeService = inject(OpenCodeService);
 
   readonly activeSection = signal<SettingsSectionId>('environments');
+  readonly providerModels = signal<string[]>([]);
+  readonly modelsLoading = signal(false);
+  readonly modelsError = signal<string | null>(null);
 
   ngOnInit() {
     // Do not reload from localStorage on every visit — that discarded live
@@ -68,6 +73,46 @@ export class SettingsComponent implements OnInit {
       queryParamsHandling: 'merge',
       replaceUrl: true
     });
+  }
+
+  onAiProviderChange(value: AiProviderType): void {
+    this.settingsService.patchSettings({ aiProvider: value });
+    this.providerModels.set([]);
+    this.modelsError.set(null);
+  }
+
+  async refreshProviderModels(): Promise<void> {
+    const settings = this.settingsService.settings();
+    const type = this.settingsService.getEffectiveAiProvider();
+    this.modelsLoading.set(true);
+    this.modelsError.set(null);
+    try {
+      const models = await this.openCodeService.listProviderModels({
+        type,
+        ...(type === 'ollama' ? {
+          baseUrl: this.settingsService.getEffectiveOllamaBaseUrl(),
+          apiKey: this.settingsService.getEffectiveOllamaApiKey() || undefined,
+        } : type === 'openai-compatible' ? {
+          baseUrl: this.settingsService.getEffectiveCompatibleProviderBaseUrl(),
+          apiKey: this.settingsService.getEffectiveCompatibleProviderApiKey() || undefined,
+        } : {
+          apiKey: this.settingsService.getEffectiveOpenAiApiKey() || undefined,
+        }),
+      });
+      this.providerModels.set(models);
+      const current = this.settingsService.settings();
+      const currentModel = type === 'ollama' ? current.ollamaModel
+        : type === 'openai' ? current.openaiModel : current.compatibleProviderModel;
+      if (!currentModel.trim() && models.length > 0) {
+        this.settingsService.patchSettings(type === 'ollama'
+          ? { ollamaModel: models[0] }
+          : type === 'openai' ? { openaiModel: models[0] } : { compatibleProviderModel: models[0] });
+      }
+    } catch (error) {
+      this.modelsError.set(error instanceof Error ? error.message : 'Unable to load provider models.');
+    } finally {
+      this.modelsLoading.set(false);
+    }
   }
 
   save() {

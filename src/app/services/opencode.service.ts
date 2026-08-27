@@ -11,8 +11,10 @@ import {
   OpenCodeSession,
   OpenCodeSessionState,
   OpenCodeValidation,
+  OpenCodeProviderConfig,
 } from '../models/opencode.model';
 import { SettingsService } from './settings.service';
+import type { AiProviderType } from '../models/settings.model';
 
 @Injectable({ providedIn: 'root' })
 export class OpenCodeService {
@@ -20,11 +22,16 @@ export class OpenCodeService {
 
   isAvailable(): boolean {
     const settings = this.settingsService.settings();
+    const provider = this.settingsService.getEffectiveAiProvider();
+    const providerReady = provider === 'ollama'
+      ? Boolean(this.settingsService.getEffectiveOllamaBaseUrl() && this.settingsService.getEffectiveOllamaModel())
+      : provider === 'openai'
+        ? Boolean(this.settingsService.getEffectiveOpenAiModel())
+        : Boolean(this.settingsService.getEffectiveCompatibleProviderBaseUrl() && this.settingsService.getEffectiveCompatibleProviderModel());
     return Boolean(
       settings.enableAiAssistant &&
       this.settingsService.getEffectiveServerBaseUrl() &&
-      this.settingsService.getEffectiveOllamaBaseUrl() &&
-      this.settingsService.getEffectiveOllamaModel()
+      providerReady
     );
   }
 
@@ -34,6 +41,17 @@ export class OpenCodeService {
 
   createSession(input: CreateOpenCodeSessionRequest): Promise<OpenCodeSession> {
     return this.request('/sessions', { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  listProviderModels(input: { type: AiProviderType; baseUrl?: string; apiKey?: string }): Promise<string[]> {
+    return this.request('/providers/models', { method: 'POST', body: JSON.stringify(input) });
+  }
+
+  switchModel(sessionId: string, provider: OpenCodeProviderConfig, model: string): Promise<void> {
+    return this.request(`/sessions/${encodeURIComponent(sessionId)}/model`, {
+      method: 'POST',
+      body: JSON.stringify({ provider, model }),
+    }).then(() => undefined);
   }
 
   listSessions(): Promise<OpenCodeSession[]> {
@@ -73,6 +91,9 @@ export class OpenCodeService {
       headers: {
         'content-type': 'application/json',
         'x-ollama-base-url': this.settingsService.getEffectiveOllamaBaseUrl(),
+        ...(this.settingsService.getEffectiveOllamaApiKey()
+          ? { 'x-ollama-api-key': this.settingsService.getEffectiveOllamaApiKey() }
+          : {}),
       },
       body: JSON.stringify({
         model: this.settingsService.getEffectiveOllamaModel(),

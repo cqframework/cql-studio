@@ -158,19 +158,133 @@
                   <label class="form-check-label" for="allowAiWriteOperations"><span class="bi bi-pencil-square"></span> Allow AI write operations</label>
                 </div>
                 <div class="form-floating mb-3 mt-3">
-                  <input type="url" class="form-control" id="ollamaBaseUrl" name="ollamaBaseUrl"
-                    [ngModel]="settingsService.settings().ollamaBaseUrl"
-                    (ngModelChange)="settingsService.patchSettings({ ollamaBaseUrl: $event })"
-                    [placeholder]="settingsService.getDefaultOllamaBaseUrl()">
-                  <label for="ollamaBaseUrl">Ollama Base URL</label>
+                  <select class="form-select" id="aiProvider" name="aiProvider"
+                    [ngModel]="settingsService.settings().aiProvider"
+                    (ngModelChange)="onAiProviderChange($event)">
+                    <option value="ollama">Ollama</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="openai-compatible">OpenAI-compatible provider</option>
+                  </select>
+                  <label for="aiProvider">AI Provider</label>
                 </div>
-                <div class="form-floating mb-3">
-                  <input type="text" class="form-control" id="ollamaModel" name="ollamaModel"
-                    [ngModel]="settingsService.settings().ollamaModel"
-                    (ngModelChange)="settingsService.patchSettings({ ollamaModel: $event })"
-                    [placeholder]="settingsService.getDefaultOllamaModel()">
-                  <label for="ollamaModel">Ollama Model</label>
-                </div>
+                @if (settingsService.settings().aiProvider === 'ollama') {
+                  <div class="form-floating mb-3">
+                    <input type="url" class="form-control" id="ollamaBaseUrl" name="ollamaBaseUrl"
+                      [ngModel]="settingsService.settings().ollamaBaseUrl"
+                      (ngModelChange)="settingsService.patchSettings({ ollamaBaseUrl: $event })"
+                      (change)="refreshProviderModels()"
+                      [placeholder]="settingsService.getDefaultOllamaBaseUrl()">
+                    <label for="ollamaBaseUrl">Ollama Base URL</label>
+                  </div>
+                  <div class="form-floating mb-3">
+                    <input type="password" class="form-control" id="ollamaApiKey" name="ollamaApiKey" autocomplete="off"
+                      [ngModel]="settingsService.settings().ollamaApiKey"
+                      (ngModelChange)="settingsService.patchSettings({ ollamaApiKey: $event })"
+                      (change)="refreshProviderModels()"
+                      placeholder="Optional API key">
+                    <label for="ollamaApiKey">Ollama API Key (Optional)</label>
+                  </div>
+                  <small class="form-text text-muted d-block mb-3">Most Ollama installations do not require a key. The key is sent to OpenCode for this session only.</small>
+                  <div class="d-flex align-items-center gap-2 mb-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" (click)="refreshProviderModels()" [disabled]="modelsLoading()">
+                      <span class="bi bi-arrow-repeat me-1"></span>{{ modelsLoading() ? 'Loading models…' : 'Load models' }}
+                    </button>
+                    @if (providerModels().length > 0) { <small class="text-muted">{{ providerModels().length }} models loaded</small> }
+                    @if (modelsError()) { <small class="text-danger">{{ modelsError() }}</small> }
+                  </div>
+                  <div class="form-floating mb-3">
+                    <select class="form-select" id="ollamaModel" name="ollamaModel"
+                      [ngModel]="settingsService.settings().ollamaModel"
+                      (ngModelChange)="settingsService.patchSettings({ ollamaModel: $event })">
+                      @if (!settingsService.settings().ollamaModel && providerModels().length === 0) {
+                        <option value="" disabled>Load models to choose a model</option>
+                      }
+                      @if (settingsService.settings().ollamaModel && !providerModels().includes(settingsService.settings().ollamaModel)) {
+                        <option [value]="settingsService.settings().ollamaModel">{{ settingsService.settings().ollamaModel }}</option>
+                      }
+                      @for (model of providerModels(); track model) { <option [value]="model">{{ model }}</option> }
+                    </select>
+                    <label for="ollamaModel">Ollama Model</label>
+                  </div>
+                }
+                @if (settingsService.settings().aiProvider === 'openai') {
+                  <div class="form-floating mb-3">
+                    <input type="password" class="form-control" id="openaiApiKey" name="openaiApiKey" autocomplete="off"
+                      [ngModel]="settingsService.settings().openaiApiKey"
+                      (ngModelChange)="settingsService.patchSettings({ openaiApiKey: $event })"
+                      (change)="refreshProviderModels()"
+                      placeholder="sk-...">
+                    <label for="openaiApiKey">OpenAI API Key</label>
+                  </div>
+                  <div class="d-flex align-items-center gap-2 mb-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" (click)="refreshProviderModels()" [disabled]="modelsLoading()">
+                      <span class="bi bi-arrow-repeat me-1"></span>{{ modelsLoading() ? 'Loading models…' : 'Load models' }}
+                    </button>
+                    @if (providerModels().length > 0) { <small class="text-muted">{{ providerModels().length }} models loaded</small> }
+                    @if (modelsError()) { <small class="text-danger">{{ modelsError() }}</small> }
+                  </div>
+                  <div class="form-floating mb-3">
+                    <select class="form-select" id="openaiModel" name="openaiModel"
+                      [ngModel]="settingsService.settings().openaiModel"
+                      (ngModelChange)="settingsService.patchSettings({ openaiModel: $event })">
+                      @if (!settingsService.settings().openaiModel && providerModels().length === 0) {
+                        <option value="" disabled>Load models to choose a model</option>
+                      }
+                      @if (settingsService.settings().openaiModel && !providerModels().includes(settingsService.settings().openaiModel)) {
+                        <option [value]="settingsService.settings().openaiModel">{{ settingsService.settings().openaiModel }}</option>
+                      }
+                      @for (model of providerModels(); track model) { <option [value]="model">{{ model }}</option> }
+                    </select>
+                    <label for="openaiModel">OpenAI Model</label>
+                  </div>
+                  <small class="form-text text-muted d-block mb-3">OpenAI uses the official https://api.openai.com/v1 endpoint.</small>
+                }
+                @if (settingsService.settings().aiProvider === 'openai-compatible') {
+                  <div class="form-floating mb-3">
+                    <input type="url" class="form-control" id="compatibleProviderBaseUrl" name="compatibleProviderBaseUrl"
+                      [ngModel]="settingsService.settings().compatibleProviderBaseUrl"
+                      (ngModelChange)="settingsService.patchSettings({ compatibleProviderBaseUrl: $event })"
+                      (change)="refreshProviderModels()"
+                      placeholder="https://api.example.com/v1">
+                    <label for="compatibleProviderBaseUrl">Provider Base URL</label>
+                  </div>
+                  <div class="form-floating mb-3">
+                    <input type="password" class="form-control" id="compatibleProviderApiKey" name="compatibleProviderApiKey" autocomplete="off"
+                      [ngModel]="settingsService.settings().compatibleProviderApiKey"
+                      (ngModelChange)="settingsService.patchSettings({ compatibleProviderApiKey: $event })"
+                      (change)="refreshProviderModels()"
+                      placeholder="Optional API key">
+                    <label for="compatibleProviderApiKey">Provider API Key (Optional)</label>
+                  </div>
+                  <div class="d-flex align-items-center gap-2 mb-3">
+                    <button type="button" class="btn btn-outline-secondary btn-sm" (click)="refreshProviderModels()" [disabled]="modelsLoading()">
+                      <span class="bi bi-arrow-repeat me-1"></span>{{ modelsLoading() ? 'Loading models…' : 'Load models' }}
+                    </button>
+                    @if (providerModels().length > 0) { <small class="text-muted">{{ providerModels().length }} models loaded</small> }
+                    @if (modelsError()) { <small class="text-danger">{{ modelsError() }}</small> }
+                  </div>
+                  <div class="form-floating mb-3">
+                    <select class="form-select" id="compatibleProviderModel" name="compatibleProviderModel"
+                      [ngModel]="settingsService.settings().compatibleProviderModel"
+                      (ngModelChange)="settingsService.patchSettings({ compatibleProviderModel: $event })">
+                      @if (!settingsService.settings().compatibleProviderModel && providerModels().length === 0) {
+                        <option value="" disabled>Load models to choose a model</option>
+                      }
+                      @if (settingsService.settings().compatibleProviderModel && !providerModels().includes(settingsService.settings().compatibleProviderModel)) {
+                        <option [value]="settingsService.settings().compatibleProviderModel">{{ settingsService.settings().compatibleProviderModel }}</option>
+                      }
+                      @for (model of providerModels(); track model) { <option [value]="model">{{ model }}</option> }
+                    </select>
+                    <label for="compatibleProviderModel">Provider Model</label>
+                  </div>
+                  <div class="form-floating mb-3">
+                    <input type="text" class="form-control" id="compatibleProviderName" name="compatibleProviderName"
+                      [ngModel]="settingsService.settings().compatibleProviderName"
+                      (ngModelChange)="settingsService.patchSettings({ compatibleProviderName: $event })"
+                      placeholder="My AI Provider">
+                    <label for="compatibleProviderName">Provider Name</label>
+                  </div>
+                }
                 <div class="form-check form-switch mt-3 ms-1">
                   <input id="autoApplyCodeEdits" class="form-check-input" type="checkbox" name="autoApplyCodeEdits"
                     [ngModel]="settingsService.settings().autoApplyCodeEdits"

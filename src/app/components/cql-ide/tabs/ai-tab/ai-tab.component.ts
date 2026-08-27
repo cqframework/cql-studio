@@ -23,6 +23,7 @@ import { OpenCodeApiError, OpenCodeService } from '../../../../services/opencode
 import { SettingsService } from '../../../../services/settings.service';
 import { OpenCodeEditorBridgeService } from '../../../../services/opencode-editor-bridge.service';
 import { LibraryResource } from '../../shared/ide-types';
+import type { AiProviderType } from '../../../../models/settings.model';
 
 type OpenCodeTimelineItem =
   | { kind: 'message'; id: string; order: number; message: OpenCodeUiMessage }
@@ -34,6 +35,8 @@ const WEB_COMMANDS: OpenCodeCommand[] = [
   { name: 'sessions', description: 'Open the live session picker', source: 'web', acceptsArguments: false },
   { name: 'details', description: 'Toggle detailed tool input and output', source: 'web', acceptsArguments: false },
   { name: 'thinking', description: 'Toggle display of reasoning content', source: 'web', acceptsArguments: false },
+  { name: 'model', description: 'Switch the active provider model, or list available models', source: 'web', acceptsArguments: true },
+  { name: 'provider', description: 'Switch between Ollama, OpenAI, and the configured compatible provider', source: 'web', acceptsArguments: true },
   { name: 'compact', description: 'Compact this OpenCode session', source: 'opencode', acceptsArguments: false },
 ];
 
@@ -69,6 +72,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   private readonly liveBaselines = new Map<string, string>();
   private readonly savedDiffFiles = signal<Set<string>>(new Set());
   private readonly savingDiffFiles = signal<Set<string>>(new Set());
+  private readonly selectedModels = new Map<AiProviderType, string>();
 
   readonly session = signal<OpenCodeSession | null>(null);
   readonly liveSessions = signal<OpenCodeSession[]>([]);
@@ -90,6 +94,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   readonly detailsShown = signal(false);
   readonly reasoningShown = signal(false);
   readonly reasoningEnabled = signal(false);
+  readonly activeProvider = signal<AiProviderType>('ollama');
   readonly liveEditsEnabled = signal(false);
   readonly liveConflict = signal<string | null>(null);
   readonly inlineContext = signal<OpenCodeEditorContext | null>(null);
@@ -103,7 +108,11 @@ export class AiTabComponent implements OnInit, OnDestroy {
 
   readonly isAvailable = computed(() => this.openCodeService.isAvailable());
   readonly activeLibrary = computed(() => this.ideStateService.getActiveLibraryResource());
-  readonly canStart = computed(() => this.isAvailable() && Boolean(this.activeLibrary()) && this.status() !== 'starting');
+  readonly canStart = computed(() => {
+    const library = this.activeLibrary();
+    return this.isAvailable() && Boolean(library) && !library?.contentLoading && !library?.contentLoadError
+      && Boolean(this.contentForLibrary(library!).trim()) && this.status() !== 'starting';
+  });
   readonly canSend = computed(() => Boolean(this.session()) && this.promptText().trim().length > 0 && this.status() !== 'busy');
   readonly visibleCommands = computed(() => {
     const match = this.promptText().match(/^\/([a-z0-9_-]*)$/i);
@@ -136,6 +145,10 @@ export class AiTabComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.liveEditsEnabled.set(this.settingsService.settings().autoApplyCodeEdits);
+    this.activeProvider.set(this.settingsService.getEffectiveAiProvider());
+    this.selectedModels.set('ollama', this.settingsService.getEffectiveOllamaModel());
+    this.selectedModels.set('openai', this.settingsService.getEffectiveOpenAiModel());
+    this.selectedModels.set('openai-compatible', this.settingsService.getEffectiveCompatibleProviderModel());
     setTimeout(() => void this.restoreSession(), 0);
   }
 
@@ -150,15 +163,44 @@ export class AiTabComponent implements OnInit, OnDestroy {
       this.error.set('Open or create a CQL library before starting OpenCode.');
       return;
     }
+    if (active.contentLoading) {
+      this.error.set('Wait for the active library CQL to finish loading before starting OpenCode.');
+      return;
+    }
+    if (active.contentLoadError) {
+      this.error.set(`The active library CQL could not be loaded: ${active.contentLoadError}`);
+      return;
+    }
+    const cqlContent = this.contentForLibrary(active);
+    if (!cqlContent.trim()) {
+      this.error.set('The active library has no CQL content. Open or create a CQL library, then try again.');
+      return;
+    }
+    // Settings can be changed while the IDE/AI tab remains mounted. Refresh the
+    // provider signal here so a stale tab selection cannot submit (for example)
+    // an empty compatible-provider config after the user switched back to Ollama.
+    const configuredProvider = this.settingsService.getEffectiveAiProvider();
+    this.activeProvider.set(configuredProvider);
+    const provider = this.providerConfig(configuredProvider);
+    if (!provider.model?.trim()) {
+      this.error.set(`Choose a model for the ${provider.type} provider in Settings before starting OpenCode.`);
+      return;
+    }
+    if (provider.type !== 'openai' && !provider.baseUrl?.trim()) {
+      this.error.set(`Enter a base URL for the ${provider.type} provider in Settings before starting OpenCode.`);
+      return;
+    }
     this.resetConversation();
     this.status.set('starting');
     try {
       const session = await this.openCodeService.createSession({
         title: `${active.name} in CQL Studio`,
+        provider,
+        providers: this.allProviderConfigs(),
         ollamaBaseUrl: this.settingsService.getEffectiveOllamaBaseUrl(),
         ollamaModel: this.settingsService.getEffectiveOllamaModel(),
-        activeLibrary: this.snapshot(active),
-        dependencies: await this.collectDependencies(active),
+        activeLibrary: { ...this.snapshot(active), cqlContent },
+        dependencies: await this.collectDependencies(active, cqlContent),
         environment: this.settingsService.getActiveEnvironment(),
         toolContext: {
           vsacFhirBaseUrl: this.settingsService.getEffectiveVsacFhirBaseUrl(),
@@ -168,6 +210,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
         },
       });
       this.session.set(session);
+      this.activeProvider.set(this.settingsService.getEffectiveAiProvider());
       this.status.set(session.status === 'error' ? 'error' : 'idle');
       await this.loadCommandsAndFiles();
       this.connectEvents(session.id);
@@ -176,10 +219,43 @@ export class AiTabComponent implements OnInit, OnDestroy {
     }
   }
 
+  private providerConfig(provider = this.activeProvider()) {
+    if (provider === 'openai') {
+      return {
+        type: provider,
+        model: this.settingsService.getEffectiveOpenAiModel(),
+        apiKey: this.settingsService.getEffectiveOpenAiApiKey() || undefined,
+      } as const;
+    }
+    if (provider === 'openai-compatible') {
+      return {
+        type: provider,
+        model: this.settingsService.getEffectiveCompatibleProviderModel(),
+        baseUrl: this.settingsService.getEffectiveCompatibleProviderBaseUrl(),
+        apiKey: this.settingsService.getEffectiveCompatibleProviderApiKey() || undefined,
+        name: this.settingsService.getEffectiveCompatibleProviderName(),
+      } as const;
+    }
+    return {
+      type: 'ollama' as const,
+      model: this.settingsService.getEffectiveOllamaModel(),
+      baseUrl: this.settingsService.getEffectiveOllamaBaseUrl(),
+      apiKey: this.settingsService.getEffectiveOllamaApiKey() || undefined,
+    };
+  }
+
+  private allProviderConfigs() {
+    const providers = [this.providerConfig('ollama'), this.providerConfig('openai')];
+    const compatible = this.providerConfig('openai-compatible');
+    if (compatible.baseUrl) providers.push(compatible);
+    return providers;
+  }
+
   async attachSession(session: OpenCodeSession): Promise<void> {
     this.showSessions.set(false);
     this.resetConversation();
     this.status.set('starting');
+    this.activeProvider.set(session.model.startsWith('openai/') ? 'openai' : session.model.startsWith('ollama/') ? 'ollama' : 'openai-compatible');
     try {
       const state = await this.openCodeService.getState(session.id);
       this.hydrate(state);
@@ -512,6 +588,12 @@ export class AiTabComponent implements OnInit, OnDestroy {
         return;
       case 'details': this.detailsShown.update(value => !value); return;
       case 'thinking': this.reasoningShown.update(value => !value); return;
+      case 'provider':
+        await this.handleProviderCommand(args);
+        return;
+      case 'model':
+        await this.handleModelCommand(args);
+        return;
       case 'sessions':
         this.liveSessions.set(await this.openCodeService.listSessions());
         this.showSessions.set(true);
@@ -536,6 +618,68 @@ export class AiTabComponent implements OnInit, OnDestroy {
           this.setError(error);
         }
     }
+  }
+
+  private async handleProviderCommand(rawProvider: string): Promise<void> {
+    const session = this.session();
+    const provider = rawProvider.trim().toLowerCase();
+    if (!session) return;
+    if (!provider) {
+      this.error.set('Available providers: ollama, openai, openai-compatible. Use /provider <name>.');
+      return;
+    }
+    const target: AiProviderType = provider === 'ollama' ? 'ollama'
+      : provider === 'openai' ? 'openai'
+        : provider === 'openai-compatible' || provider === 'compatible' ? 'openai-compatible' : 'ollama';
+    if (target === 'ollama' && provider !== 'ollama' || target === 'openai' && provider !== 'openai' || target === 'openai-compatible' && provider !== 'openai-compatible' && provider !== 'compatible') {
+      this.error.set(`Unknown provider: ${rawProvider}. Use /provider ollama, /provider openai, or /provider openai-compatible.`);
+      return;
+    }
+    const config = this.providerConfig(target);
+    if (target === 'openai-compatible' && !config.baseUrl) {
+      this.error.set('Configure an OpenAI-compatible provider URL in Settings before switching to it.');
+      return;
+    }
+    try {
+      const model = this.selectedModels.get(target) || config.model;
+      await this.openCodeService.switchModel(session.id, config, model);
+      this.activeProvider.set(target);
+      this.selectedModels.set(target, model);
+      this.session.update(current => current ? { ...current, model: `${this.providerId(config)}/${model}` } : current);
+      this.error.set(null);
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  private async handleModelCommand(rawModel: string): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    const config = this.providerConfig();
+    let model = rawModel.trim();
+    try {
+      if (!model) {
+        const models = await this.openCodeService.listProviderModels({
+          type: config.type,
+          ...(config.baseUrl ? { baseUrl: config.baseUrl } : {}),
+          ...(config.apiKey ? { apiKey: config.apiKey } : {}),
+        });
+        this.error.set(models.length ? `Models for ${config.type}: ${models.join(', ')}` : `No models found for ${config.type}.`);
+        return;
+      }
+      await this.openCodeService.switchModel(session.id, config, model);
+      this.selectedModels.set(this.activeProvider(), model);
+      this.session.update(current => current ? { ...current, model: `${this.providerId(config)}/${model}` } : current);
+      this.error.set(null);
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  private providerId(provider: { type: AiProviderType; name?: string }): string {
+    if (provider.type === 'ollama' || provider.type === 'openai') return provider.type;
+    const id = (provider.name || 'custom').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+    return id || 'custom';
   }
 
   private connectEvents(sessionId: string): void {
@@ -928,11 +1072,16 @@ export class AiTabComponent implements OnInit, OnDestroy {
     };
   }
 
-  private async collectDependencies(active: LibraryResource): Promise<OpenCodeLibrarySnapshot[]> {
+  private contentForLibrary(library: LibraryResource): string {
+    const document = this.editorBridge.document();
+    return document?.libraryId === library.id ? document.content : library.cqlContent;
+  }
+
+  private async collectDependencies(active: LibraryResource, activeContent = this.contentForLibrary(active)): Promise<OpenCodeLibrarySnapshot[]> {
     const openLibraries = this.ideStateService.libraryResources();
     const byName = new Map(openLibraries.map(library => [library.name.toLowerCase(), library]));
     const selected = new Map<string, OpenCodeLibrarySnapshot>();
-    const pending = [active.cqlContent];
+    const pending = [activeContent];
     while (pending.length > 0) {
       for (const includeName of this.includeNames(pending.shift() ?? '')) {
         const dependency = byName.get(includeName.toLowerCase());
@@ -941,7 +1090,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
         pending.push(dependency.cqlContent);
       }
     }
-    const needsFhirHelpers = this.includeNames(active.cqlContent).some(name => name.toLowerCase() === 'fhirhelpers');
+    const needsFhirHelpers = this.includeNames(activeContent).some(name => name.toLowerCase() === 'fhirhelpers');
     const hasFhirHelpers = [...selected.values()].some(dependency => dependency.name.toLowerCase() === 'fhirhelpers');
     if (needsFhirHelpers && !hasFhirHelpers) {
       try {
