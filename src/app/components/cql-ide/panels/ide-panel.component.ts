@@ -26,6 +26,7 @@ import { AiTabComponent } from '../tabs/ai-tab/ai-tab.component';
 import { ClipboardTabComponent } from '../tabs/clipboard-tab/clipboard-tab.component';
 import { ReferencesTabComponent } from '../tabs/references-tab/references-tab.component';
 import { ValuesetPeekTabComponent } from '../tabs/valueset-peek-tab/valueset-peek-tab.component';
+import { OpenCodeLibraryChange } from '../../../models/opencode.model';
 
 @Component({
   selector: 'app-ide-panel',
@@ -65,7 +66,7 @@ export class IdePanelComponent {
   dragLeave = output<string>();
   executeAll = output<void>();
   navigateToLine = output<number>();
-  applyLibraryChange = output<{ libraryId: string; cqlContent: string; save?: boolean }>();
+  applyLibraryChange = output<OpenCodeLibraryChange>();
 
   panelElement = viewChild<ElementRef<HTMLDivElement>>('panelElement');
   navigationTab = viewChild(NavigationTabComponent);
@@ -398,7 +399,7 @@ export class IdePanelComponent {
     this.replaceCqlCode.emit(code);
   }
 
-  onApplyLibraryChange(change: { libraryId: string; cqlContent: string; save?: boolean }): void {
+  onApplyLibraryChange(change: OpenCodeLibraryChange): void {
     this.applyLibraryChange.emit(change);
   }
 }

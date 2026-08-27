@@ -17,6 +17,8 @@ import { LibraryTranslationContextBuilder } from '../../services/library-transla
 import { CqlExecutionService } from '../../services/cql-execution.service';
 import { SettingsService } from '../../services/settings.service';
 import { OpenCodeService } from '../../services/opencode.service';
+import { OpenCodeEditorBridgeService } from '../../services/opencode-editor-bridge.service';
+import { OpenCodeEditorContext, OpenCodeLibraryChange } from '../../models/opencode.model';
 import { CqlValidationService } from '../../services/cql-validation.service';
 import { ToastService } from '../../services/toast.service';
 import { CqlIdeLibraryOpenerService } from '../../services/cql-ide-library-opener.service';
@@ -72,11 +74,25 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   private cqlExecutionService = inject(CqlExecutionService);
   public settingsService = inject(SettingsService);
   private openCodeService = inject(OpenCodeService);
+  private openCodeEditorBridge = inject(OpenCodeEditorBridgeService);
   private cqlValidationService = inject(CqlValidationService);
   private toastService = inject(ToastService);
   private libraryOpenerService = inject(CqlIdeLibraryOpenerService);
 
   constructor() {
+    effect(() => {
+      const activeId = this.ideStateService.activeLibraryId();
+      const active = this.ideStateService.libraryResources().find(library => library.id === activeId);
+      if (!active) return;
+      untracked(() => {
+        const current = this.openCodeEditorBridge.document();
+        const revision = current?.libraryId === active.id ? current.userRevision : 0;
+        if (current?.libraryId !== active.id || current.content !== active.cqlContent) {
+          this.openCodeEditorBridge.recordDocument(active.id, active.cqlContent, revision);
+        }
+      });
+    });
+
     // Watch for editor action requests from tool orchestrator (effect must be in constructor)
     effect(() => {
       const lineNumber = this.ideStateService.navigateToLineRequest();
@@ -622,14 +638,27 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     }
   }
 
-  async onApplyOpenCodeChange(change: { libraryId: string; cqlContent: string; save?: boolean }): Promise<void> {
+  async onApplyOpenCodeChange(change: OpenCodeLibraryChange): Promise<void> {
     const library = this.ideStateService.libraryResources().find(item => item.id === change.libraryId);
     if (!library) {
+      change.onSaveComplete?.(false);
       this.toastService.showError('The library changed by OpenCode is no longer open.', 'OpenCode');
       return;
     }
     if (library.isReadOnly) {
+      change.onSaveComplete?.(false);
       this.toastService.showError(`Library "${library.name}" is read-only.`, 'OpenCode');
+      return;
+    }
+
+    if (change.mode === 'live' || change.mode === 'revert') {
+      this.ideStateService.selectLibraryResource(library.id);
+      const editor = this.cqlEditors().find(candidate => candidate.libraryId() === library.id);
+      if (!editor) {
+        this.toastService.showError('The active CQL editor is not available for live OpenCode edits.', 'OpenCode');
+        return;
+      }
+      editor.applyAiContent(change.cqlContent);
       return;
     }
 
@@ -649,6 +678,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
           translation.errors.join('\n') || 'CQL translation did not produce ELM.',
           'error'
         );
+        change.onSaveComplete?.(false);
         return;
       }
     }
@@ -667,13 +697,15 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
     const saved = this.ideStateService.libraryResources().find(item => item.id === library.id);
     if (saved?.isDirty) {
+      change.onSaveComplete?.(false);
       this.toastService.showWarning('The OpenCode change was applied locally, but the library was not saved.', 'OpenCode');
     } else {
+      change.onSaveComplete?.(true);
       this.toastService.showSuccess(`Applied and saved OpenCode changes to ${library.name}.`, 'OpenCode');
     }
   }
 
-  onEditorContentChange(event: { cursorPosition: { line: number; column: number }, wordCount: number, content: string }, libraryId: string): void {
+  onEditorContentChange(event: { cursorPosition: { line: number; column: number }, wordCount: number, content: string, source: 'user' | 'ai', userRevision: number }, libraryId: string): void {
     this.ideStateService.updateEditorState({
       cursorPosition: event.cursorPosition,
       wordCount: event.wordCount
@@ -690,7 +722,20 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
         cqlContent: currentContent,
         isDirty: isDirty
       });
+      if (this.ideStateService.activeLibraryId() === libraryId) {
+        this.openCodeEditorBridge.recordDocument(libraryId, currentContent, event.userRevision);
+      }
     }
+  }
+
+  onEditorSelectionChange(context: OpenCodeEditorContext | null, libraryId: string): void {
+    if (this.ideStateService.activeLibraryId() !== libraryId) return;
+    this.openCodeEditorBridge.recordSelection(context);
+  }
+
+  onInlineAiEditRequested(context: OpenCodeEditorContext): void {
+    this.openCodeEditorBridge.requestInlineEdit(context);
+    this.ideStateService.activateOpenCodeTab();
   }
 
   onEditorSyntaxErrors(errors: string[], libraryId: string): void {

@@ -46,6 +46,7 @@ export class Settings {
     public useMCPTools: boolean = false;
     public allowAiWriteOperations: boolean = false;
     public autoApplyCodeEdits: boolean = false;
+    public enableAiCodePrediction: boolean = false;
     public requireDiffPreview: boolean = false;
     public planActSeparateModels: boolean = false;
 

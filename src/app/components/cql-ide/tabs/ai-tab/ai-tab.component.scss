@@ -243,6 +243,26 @@
   position: relative;
 }
 
+.editor-context-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.3rem 0.55rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 999px;
+  color: var(--bs-secondary-color);
+  background: var(--bs-secondary-bg);
+  font-size: 0.75rem;
+}
+
+.editor-context-chip.inline-context {
+  color: var(--bs-primary-text-emphasis);
+  border-color: var(--bs-primary-border-subtle);
+  background: var(--bs-primary-bg-subtle);
+}
+
 .suggestion-menu {
   position: absolute;
   z-index: 20;

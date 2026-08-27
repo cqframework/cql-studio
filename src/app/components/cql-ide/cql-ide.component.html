@@ -48,6 +48,8 @@
               [contentLoadError]="library.contentLoadError ?? null"
               [isNewLibrary]="!library.library"
               (contentChange)="onEditorContentChange($event, library.id)"
+              (selectionChange)="onEditorSelectionChange($event, library.id)"
+              (inlineAiEditRequested)="onInlineAiEditRequested($event)"
               (syntaxErrors)="onEditorSyntaxErrors($event, library.id)"
               (findReferencesResultChange)="onFindReferencesResult($event)"
               (valuesetPeekResultChange)="onValuesetPeekResult($event)"

@@ -5,6 +5,7 @@ import {
   OpenCodeCommand,
   OpenCodeEventEnvelope,
   OpenCodeEvent,
+  OpenCodeEditorContext,
   OpenCodeFileDiff,
   OpenCodeFileReference,
   OpenCodeSession,
@@ -48,12 +49,45 @@ export class OpenCodeService {
     message: string,
     agent: 'plan' | 'build',
     references: string[] = [],
-    reasoning = false
+    reasoning = false,
+    editorContext?: OpenCodeEditorContext
   ): Promise<void> {
     return this.request(`/sessions/${encodeURIComponent(sessionId)}/prompt`, {
       method: 'POST',
-      body: JSON.stringify({ message, agent, references, reasoning }),
+      body: JSON.stringify({ message, agent, references, reasoning, editorContext }),
     }).then(() => undefined);
+  }
+
+  syncActiveFile(sessionId: string, content: string, documentRevision: number): Promise<void> {
+    return this.request(`/sessions/${encodeURIComponent(sessionId)}/active-file`, {
+      method: 'PUT',
+      body: JSON.stringify({ content, documentRevision }),
+    }).then(() => undefined);
+  }
+
+  async predictCql(prefix: string, suffix: string, signal: AbortSignal): Promise<string> {
+    const response = await fetch(`${this.settingsService.getEffectiveServerBaseUrl().replace(/\/+$/, '')}/api/ollama/generate`, {
+      method: 'POST',
+      credentials: 'include',
+      signal,
+      headers: {
+        'content-type': 'application/json',
+        'x-ollama-base-url': this.settingsService.getEffectiveOllamaBaseUrl(),
+      },
+      body: JSON.stringify({
+        model: this.settingsService.getEffectiveOllamaModel(),
+        stream: false,
+        prompt: [
+          'Continue the CQL at <CURSOR>. Return only the exact text to insert: no markdown, explanation, or repetition.',
+          'Keep the completion short (usually one expression fragment or line) and valid CQL.',
+          `<PREFIX>${prefix}</PREFIX><CURSOR><SUFFIX>${suffix}</SUFFIX>`,
+        ].join('\n'),
+        options: { temperature: 0.1, num_predict: 128 },
+      }),
+    });
+    if (!response.ok) throw new Error(`CQL prediction failed with HTTP ${response.status}`);
+    const payload = await response.json() as { response?: unknown };
+    return typeof payload.response === 'string' ? payload.response : '';
   }
 
   abort(sessionId: string): Promise<void> {

@@ -71,9 +71,11 @@ In Settings, enable the AI assistant and configure:
 - Ollama Base URL
 - Ollama model name
 
-Starting OpenCode snapshots the active library's current editor text, including unsaved changes. Open CQL libraries referenced through `include` are copied into the session as read-only dependencies. OpenCode cannot directly save a FHIR Library: it proposes a filesystem diff, the user reviews it in the tab, and **Apply & save** returns the accepted text to the editor's existing translate-and-save workflow.
+Starting OpenCode snapshots the active library's current editor text, including unsaved changes. Before every prompt or model-backed slash command, the browser re-synchronizes the active draft and its user-edit revision into the isolated workspace. Open CQL libraries referenced through `include` are copied into the session as read-only dependencies. OpenCode cannot directly save a FHIR Library: it proposes a filesystem diff, the user reviews it in the tab, and **Apply & save** returns the accepted text to the editor's existing translate-and-save workflow.
 
 Inside the tab, type `/` to discover browser, OpenCode, and CQL workflow commands, including `/validate`, `/review`, `/explain`, `/dependencies`, `/library`, and `/valueset`. Type `@` to attach the active CQL file or a read-only dependency as an SDK file part. Tool calls, reasoning (opt-in), retries, validation, repair attempts, permission prompts, and OpenCode questions are visible in the activity stream. Sessions reconnect with event replay and can be reattached after a browser reload.
+
+Highlighted CQL is attached as structured context to the next prompt. `Cmd+I` on macOS or `Ctrl+I` elsewhere opens a focused inline-edit prompt for the selection (or current line). The **Live edits** switch can mirror OpenCode's workspace writes into CodeMirror as unsaved, highlighted changes; revision conflicts pause mirroring and leave the diff for review. Live edits never invoke FHIR persistence. Optional inline code prediction is enabled separately in Settings, uses the configured Ollama model through the existing server proxy, and supports **Tab** to accept or **Escape** to dismiss.
 
 Run the deterministic end-to-end workflow with:
 

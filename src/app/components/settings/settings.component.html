@@ -175,7 +175,13 @@
                   <input id="autoApplyCodeEdits" class="form-check-input" type="checkbox" name="autoApplyCodeEdits"
                     [ngModel]="settingsService.settings().autoApplyCodeEdits"
                     (ngModelChange)="settingsService.patchSettings({ autoApplyCodeEdits: $event })" />
-                  <label class="form-check-label" for="autoApplyCodeEdits"><span class="bi bi-lightning-charge"></span> Auto-Apply Code Edits</label>
+                  <label class="form-check-label" for="autoApplyCodeEdits"><span class="bi bi-lightning-charge"></span> Show OpenCode edits live in the CQL editor</label>
+                </div>
+                <div class="form-check form-switch mt-3 ms-1">
+                  <input id="enableAiCodePrediction" class="form-check-input" type="checkbox" name="enableAiCodePrediction"
+                    [ngModel]="settingsService.settings().enableAiCodePrediction"
+                    (ngModelChange)="settingsService.patchSettings({ enableAiCodePrediction: $event })" />
+                  <label class="form-check-label" for="enableAiCodePrediction"><span class="bi bi-stars"></span> Enable inline CQL code prediction</label>
                 </div>
                 <div class="form-check form-switch mt-3 ms-1">
                   <input id="requireDiffPreview" class="form-check-input" type="checkbox" name="requireDiffPreview"

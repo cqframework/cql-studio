@@ -1,10 +1,74 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('OpenCode browser integration', () => {
+  test('offers opt-in Ollama CQL predictions and accepts them with Tab', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('cql_tests_ui_settings', JSON.stringify({
+        settingsVersion: 2,
+        enableAiAssistant: true,
+        enableAiCodePrediction: true,
+        serverBaseUrl: 'http://localhost:3003',
+        ollamaBaseUrl: 'http://ollama.test:11434',
+        ollamaModel: 'qwen3.8:27b-mlx',
+        environments: [],
+        activeEnvironmentId: 'default',
+        activeEnvironmentSource: 'personal',
+      }));
+    });
+    const cors = {
+      'access-control-allow-origin': 'http://localhost:4200',
+      'access-control-allow-credentials': 'true',
+      'access-control-allow-headers': 'content-type,x-ollama-base-url',
+      'access-control-allow-methods': 'GET,POST,OPTIONS',
+    };
+    await page.route('http://localhost:3003/api/ollama/generate', async route => {
+      if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: cors });
+      await route.fulfill({
+        status: 200,
+        headers: cors,
+        contentType: 'application/json',
+        body: JSON.stringify({ response: 'define PredictedByOllama: true' }),
+      });
+    });
+    await page.route('http://localhost:3003/api/opencode/sessions', route => route.fulfill({
+      status: 200, headers: cors, contentType: 'application/json', body: '[]',
+    }));
+    await page.route('http://localhost:8080/fhir/**', route => {
+      if (new URL(route.request().url()).pathname.endsWith('/Library/PredictionVerify')) {
+        return route.fulfill({
+          status: 404,
+          contentType: 'application/fhir+json',
+          body: JSON.stringify({ resourceType: 'OperationOutcome', issue: [{ severity: 'error', code: 'not-found' }] }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/fhir+json',
+        body: JSON.stringify({ resourceType: 'Bundle', type: 'searchset', total: 0, entry: [] }),
+      });
+    });
+
+    await page.goto('/ide');
+    await page.getByRole('button', { name: 'Create New Library' }).click();
+    await page.locator('#new-library-title-input').fill('PredictionVerify');
+    await page.locator('#new-library-modal-submit').click();
+    const editor = page.locator('.cm-content');
+    await editor.click();
+    await editor.press('End');
+    await editor.press('Enter');
+    const prediction = page.locator('.cm-ai-prediction');
+    await expect(prediction).toContainText('define PredictedByOllama: true');
+    await editor.press('Tab');
+    await expect(prediction).toHaveCount(0);
+    await expect(editor).toContainText('define PredictedByOllama: true');
+  });
+
   test('supports sessions, slash commands, file references, activity, reasoning, and reattachment', async ({ page }) => {
     let created = false;
     let fhirSaved = false;
     let questionAnswered = false;
+    let activeFileSync: Record<string, unknown> | null = null;
+    let promptRequest: Record<string, unknown> | null = null;
     const now = new Date().toISOString();
     const session = {
       id: 'browser-session-1',
@@ -75,7 +139,7 @@ test.describe('OpenCode browser integration', () => {
         'access-control-allow-credentials': 'true',
       };
       if (request.method() === 'OPTIONS') {
-        await route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,POST,DELETE' } });
+        await route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,POST,PUT,DELETE' } });
       } else if (path.endsWith('/sessions') && request.method() === 'GET') {
         await route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify(created ? [session] : []) });
       } else if (path.endsWith('/sessions') && request.method() === 'POST') {
@@ -117,6 +181,12 @@ test.describe('OpenCode browser integration', () => {
         }]) });
       } else if (path.endsWith('/validate') && request.method() === 'POST') {
         await route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ valid: true, diagnostics: [], checkedAt: now }) });
+      } else if (path.endsWith('/active-file') && request.method() === 'PUT') {
+        activeFileSync = request.postDataJSON() as Record<string, unknown>;
+        await route.fulfill({ status: 204, headers: cors });
+      } else if (path.endsWith('/prompt') && request.method() === 'POST') {
+        promptRequest = request.postDataJSON() as Record<string, unknown>;
+        await route.fulfill({ status: 202, headers: cors, contentType: 'application/json', body: JSON.stringify({ accepted: true }) });
       } else if (path.includes('/questions/') && request.method() === 'POST') {
         questionAnswered = true;
         await route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ accepted: true }) });
@@ -250,6 +320,22 @@ test.describe('OpenCode browser integration', () => {
     await expect(page.getByRole('button', { name: 'Apply & save' })).toBeEnabled();
     await page.getByRole('button', { name: 'Apply & save' }).click();
     await expect.poll(() => fhirSaved).toBe(true);
+    const savedButton = page.getByRole('button', { name: 'Saved' });
+    await expect(savedButton).toBeDisabled();
+
+    await page.locator('.cm-content').click();
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+i' : 'Control+i');
+    await expect(page.getByText('Inline edit', { exact: true })).toBeVisible();
+    await composer.fill('make this expression easier to read');
+    await page.getByRole('button', { name: /Send/ }).click();
+    await expect.poll(() => activeFileSync).not.toBeNull();
+    await expect.poll(() => promptRequest).not.toBeNull();
+    expect(activeFileSync?.['content']).toContain('library BrowserOpenCode');
+    expect(promptRequest?.['editorContext']).toMatchObject({
+      file: 'libraries/BrowserOpenCode.cql',
+      mode: 'inline',
+      documentRevision: 0,
+    });
 
     await page.reload();
     await expect(page.getByText('qwen3.8:27b-mlx')).toBeVisible();

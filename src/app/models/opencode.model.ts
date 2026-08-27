@@ -51,6 +51,27 @@ export interface OpenCodeFileDiff {
   deletions: number;
 }
 
+export interface OpenCodeEditorContext {
+  libraryId: string;
+  file: string;
+  selectedText: string;
+  startLine: number;
+  startColumn: number;
+  endLine: number;
+  endColumn: number;
+  documentRevision: number;
+  mode: 'selection' | 'inline';
+}
+
+export interface OpenCodeLibraryChange {
+  libraryId: string;
+  cqlContent: string;
+  save?: boolean;
+  mode?: 'review' | 'live' | 'revert';
+  baseRevision?: number;
+  onSaveComplete?: (saved: boolean) => void;
+}
+
 export interface OpenCodeEvent {
   type: string;
   properties: Record<string, unknown>;
