@@ -239,6 +239,27 @@
   max-height: 14rem;
 }
 
+.command-argument-help {
+  font-size: 0.8rem;
+}
+
+.command-argument-help code {
+  white-space: nowrap;
+}
+
+.command-argument-help span {
+  color: var(--bs-secondary-color);
+}
+
+.command-argument-options button {
+  font-size: 0.75rem;
+}
+
+.command-argument-options {
+  max-height: 6rem;
+  overflow-y: auto;
+}
+
 .composer-input {
   position: relative;
 }

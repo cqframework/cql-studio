@@ -245,6 +245,27 @@
         </div>
       }
       <div class="composer-input">
+        @if (commandArgumentHelp(); as help) {
+          <div class="command-argument-help info-card border rounded p-2 mb-2">
+            <div class="d-flex align-items-baseline gap-2">
+              <code>{{ help.usage }}</code><span>{{ help.description }}</span>
+            </div>
+            <small class="text-body-secondary d-block mt-1">{{ help.hint }}</small>
+            @if (commandHelpLoading()) {
+              <small class="text-body-secondary d-block mt-1"><span class="spinner-border spinner-border-sm me-1"></span>Loading available options…</small>
+            }
+            @if (commandHelpError(); as helpError) {
+              <small class="text-danger d-block mt-1">{{ helpError }}</small>
+            }
+            @if (help.options.length) {
+              <div class="command-argument-options d-flex flex-wrap gap-1 mt-2">
+                @for (option of help.options; track option) {
+                  <button type="button" class="btn btn-sm btn-outline-secondary" (click)="chooseCommandArgument(option)">{{ option }}</button>
+                }
+              </div>
+            }
+          </div>
+        }
         <textarea #promptInput class="form-control" rows="3" [ngModel]="promptText()" (ngModelChange)="onPromptChanged($event)" (keydown)="onPromptKeydown($event)" [disabled]="status() === 'busy'" [placeholder]="inlineContext() ? 'Describe the focused inline edit…' : 'Ask OpenCode… Type / for commands or @ for CQL files'"></textarea>
         @if (visibleCommands().length) {
           <div class="suggestion-menu">

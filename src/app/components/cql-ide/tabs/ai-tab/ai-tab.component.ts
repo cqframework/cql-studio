@@ -29,6 +29,14 @@ type OpenCodeTimelineItem =
   | { kind: 'message'; id: string; order: number; message: OpenCodeUiMessage }
   | { kind: 'activity'; id: string; order: number; activity: OpenCodeActivity };
 
+interface OpenCodeCommandArgumentHelp {
+  name: string;
+  usage: string;
+  description: string;
+  hint: string;
+  options: string[];
+}
+
 const WEB_COMMANDS: OpenCodeCommand[] = [
   { name: 'help', description: 'Show supported OpenCode web commands', source: 'web', acceptsArguments: false },
   { name: 'new', description: 'Start a new workspace for the active library', source: 'web', acceptsArguments: false },
@@ -73,6 +81,8 @@ export class AiTabComponent implements OnInit, OnDestroy {
   private readonly savedDiffFiles = signal<Set<string>>(new Set());
   private readonly savingDiffFiles = signal<Set<string>>(new Set());
   private readonly selectedModels = new Map<AiProviderType, string>();
+  private commandHelpKey = '';
+  private commandHelpRequest = 0;
 
   readonly session = signal<OpenCodeSession | null>(null);
   readonly liveSessions = signal<OpenCodeSession[]>([]);
@@ -101,6 +111,9 @@ export class AiTabComponent implements OnInit, OnDestroy {
   readonly showHelp = signal(false);
   readonly showSessions = signal(false);
   readonly repairAttempts = signal(0);
+  readonly commandArgumentHelp = signal<OpenCodeCommandArgumentHelp | null>(null);
+  readonly commandHelpLoading = signal(false);
+  readonly commandHelpError = signal<string | null>(null);
   readonly timeline = computed<OpenCodeTimelineItem[]>(() => this.orderTimeline([
     ...this.messages().map(message => ({ kind: 'message' as const, id: message.id, order: message.order, message })),
     ...this.activities().map(activity => ({ kind: 'activity' as const, id: activity.id, order: activity.order, activity })),
@@ -302,6 +315,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
 
   onPromptChanged(value: string): void {
     this.promptText.set(value);
+    this.refreshCommandArgumentHelp(value);
     const match = value.match(/@([A-Za-z0-9._\/-]*)$/);
     const session = this.session();
     if (!match || !session) {
@@ -315,7 +329,18 @@ export class AiTabComponent implements OnInit, OnDestroy {
 
   chooseCommand(command: OpenCodeCommand): void {
     this.showHelp.set(false);
-    this.promptText.set(`/${command.name}${command.acceptsArguments ? ' ' : ''}`);
+    const next = `/${command.name}${command.acceptsArguments ? ' ' : ''}`;
+    this.promptText.set(next);
+    this.refreshCommandArgumentHelp(next);
+  }
+
+  chooseCommandArgument(option: string): void {
+    const match = this.promptText().match(/^\/([a-z0-9_-]+)/i);
+    if (!match) return;
+    const next = `/${match[1]} ${option} `;
+    this.promptText.set(next);
+    this.refreshCommandArgumentHelp(next);
+    this.promptInput?.nativeElement.focus();
   }
 
   chooseFile(file: OpenCodeFileReference): void {
@@ -324,6 +349,16 @@ export class AiTabComponent implements OnInit, OnDestroy {
   }
 
   onPromptKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Tab') {
+      const command = this.visibleCommands()[0];
+      const option = this.commandArgumentHelp()?.options[0];
+      if (command || option) {
+        event.preventDefault();
+        if (command) this.chooseCommand(command);
+        else this.chooseCommandArgument(option!);
+        return;
+      }
+    }
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
       void this.sendPrompt();
@@ -568,6 +603,94 @@ export class AiTabComponent implements OnInit, OnDestroy {
     ]);
     const names = new Set(WEB_COMMANDS.map(command => command.name));
     this.commands.set([...WEB_COMMANDS, ...commands.filter(command => !names.has(command.name))]);
+  }
+
+  private refreshCommandArgumentHelp(value: string): void {
+    const match = value.match(/^\/([a-z0-9_-]+)\s*$/i);
+    if (!match) {
+      this.commandHelpKey = '';
+      this.commandHelpRequest += 1;
+      this.commandHelpLoading.set(false);
+      this.commandHelpError.set(null);
+      this.commandArgumentHelp.set(null);
+      return;
+    }
+
+    const name = match[1].toLowerCase();
+    const command = this.commands().find(item => item.name.toLowerCase() === name);
+    if (!command) {
+      this.commandHelpKey = '';
+      this.commandHelpRequest += 1;
+      this.commandHelpLoading.set(false);
+      this.commandHelpError.set(null);
+      this.commandArgumentHelp.set(null);
+      return;
+    }
+
+    const baseHelp = (options: string[] = []): OpenCodeCommandArgumentHelp => ({
+      name: command.name,
+      usage: command.acceptsArguments ? `/${command.name} <arguments>` : `/${command.name}`,
+      description: command.description,
+      hint: command.acceptsArguments ? 'Add an argument after the command.' : 'No arguments are required.',
+      options,
+    });
+
+    if (name === 'provider') {
+      const options = this.providerCommandOptions();
+      this.commandHelpKey = `provider:${options.join(',')}`;
+      this.commandHelpRequest += 1;
+      this.commandHelpLoading.set(false);
+      this.commandHelpError.set(null);
+      this.commandArgumentHelp.set({
+        ...baseHelp(options),
+        usage: '/provider <provider>',
+        hint: 'Choose the provider to use for subsequent prompts.',
+      });
+      return;
+    }
+
+    if (name !== 'model') {
+      this.commandHelpKey = `command:${name}`;
+      this.commandHelpRequest += 1;
+      this.commandHelpLoading.set(false);
+      this.commandHelpError.set(null);
+      this.commandArgumentHelp.set(baseHelp());
+      return;
+    }
+
+    const provider = this.providerConfig();
+    const key = `model:${provider.type}:${provider.baseUrl ?? ''}:${provider.apiKey ?? ''}`;
+    if (this.commandHelpKey === key) return;
+    this.commandHelpKey = key;
+    this.commandHelpError.set(null);
+    this.commandHelpLoading.set(true);
+    this.commandArgumentHelp.set({
+      ...baseHelp(),
+      usage: '/model <model>',
+      hint: `Choose a model for the ${provider.type} provider.`,
+      options: [],
+    });
+    const request = ++this.commandHelpRequest;
+    void this.openCodeService.listProviderModels({
+      type: provider.type,
+      ...(provider.baseUrl ? { baseUrl: provider.baseUrl } : {}),
+      ...(provider.apiKey ? { apiKey: provider.apiKey } : {}),
+    }).then(models => {
+      const current = this.promptText().match(/^\/([a-z0-9_-]+)\s*$/i)?.[1].toLowerCase();
+      if (request !== this.commandHelpRequest || current !== 'model') return;
+      this.commandHelpLoading.set(false);
+      this.commandArgumentHelp.update(help => help?.name.toLowerCase() === 'model' ? { ...help, options: models } : help);
+    }).catch(error => {
+      if (request !== this.commandHelpRequest) return;
+      this.commandHelpLoading.set(false);
+      this.commandHelpError.set(error instanceof Error ? error.message : 'Models could not be loaded.');
+    });
+  }
+
+  private providerCommandOptions(): string[] {
+    const options: string[] = ['ollama', 'openai'];
+    if (this.providerConfig('openai-compatible').baseUrl) options.push('openai-compatible');
+    return options;
   }
 
   private async runSlashCommand(value: string): Promise<void> {
