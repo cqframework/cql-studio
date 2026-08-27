@@ -112,6 +112,7 @@ export interface OpenCodeActivity {
   startedAt?: number;
   endedAt?: number;
   reasoningTokens?: number;
+  order: number;
 }
 
 export interface OpenCodeApiErrorBody {
@@ -144,4 +145,5 @@ export interface OpenCodeUiMessage {
   id: string;
   role: 'user' | 'assistant';
   text: string;
+  order: number;
 }

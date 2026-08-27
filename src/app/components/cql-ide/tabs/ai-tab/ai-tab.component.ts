@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, OnInit, computed, inject, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, OnInit, ViewChild, computed, inject, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { MarkdownComponent } from 'ngx-markdown';
 import {
@@ -27,6 +27,10 @@ interface OpenCodeLibraryChange {
   save?: boolean;
 }
 
+type OpenCodeTimelineItem =
+  | { kind: 'message'; id: string; order: number; message: OpenCodeUiMessage }
+  | { kind: 'activity'; id: string; order: number; activity: OpenCodeActivity };
+
 const WEB_COMMANDS: OpenCodeCommand[] = [
   { name: 'help', description: 'Show supported OpenCode web commands', source: 'web', acceptsArguments: false },
   { name: 'new', description: 'Start a new workspace for the active library', source: 'web', acceptsArguments: false },
@@ -46,10 +50,13 @@ const WEB_COMMANDS: OpenCodeCommand[] = [
 export class AiTabComponent implements OnInit, OnDestroy {
   readonly applyLibraryChange = output<OpenCodeLibraryChange>();
 
+  @ViewChild('messageScroller') private messageScroller?: ElementRef<HTMLDivElement>;
+
   private readonly ideStateService = inject(IdeStateService);
   readonly settingsService = inject(SettingsService);
   private readonly openCodeService = inject(OpenCodeService);
   private readonly messageRoles = new Map<string, 'user' | 'assistant'>();
+  private readonly messageOrders = new Map<string, number>();
   private readonly messageParts = new Map<string, Map<string, string>>();
   private readonly activityParts = new Map<string, OpenCodeActivity>();
   private eventSource: EventSource | null = null;
@@ -57,6 +64,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   private reconnectAttempts = 0;
   private lastEventId = 0;
   private repairInFlight = false;
+  private timelineSequence = 0;
 
   readonly session = signal<OpenCodeSession | null>(null);
   readonly liveSessions = signal<OpenCodeSession[]>([]);
@@ -81,6 +89,10 @@ export class AiTabComponent implements OnInit, OnDestroy {
   readonly showHelp = signal(false);
   readonly showSessions = signal(false);
   readonly repairAttempts = signal(0);
+  readonly timeline = computed<OpenCodeTimelineItem[]>(() => this.orderTimeline([
+    ...this.messages().map(message => ({ kind: 'message' as const, id: message.id, order: message.order, message })),
+    ...this.activities().map(activity => ({ kind: 'activity' as const, id: activity.id, order: activity.order, activity })),
+  ].sort((left, right) => left.order - right.order)));
 
   readonly isAvailable = computed(() => this.openCodeService.isAvailable());
   readonly activeLibrary = computed(() => this.ideStateService.getActiveLibraryResource());
@@ -452,9 +464,11 @@ export class AiTabComponent implements OnInit, OnDestroy {
   }
 
   private handleEnvelope(envelope: OpenCodeEventEnvelope): void {
+    const followOutput = this.isNearTimelineBottom();
     this.lastEventId = Math.max(this.lastEventId, envelope.id);
     this.streamConnected.set(true);
     this.handleEvent(envelope.event);
+    if (followOutput) this.queueTimelineScroll(true);
   }
 
   private handleEvent(event: OpenCodeEvent): void {
@@ -504,11 +518,11 @@ export class AiTabComponent implements OnInit, OnDestroy {
       return;
     }
     if (event.type === 'cql.validation.error') {
-      this.activities.update(items => [...items, {
+      this.upsertActivity({
         id: `validation-error-${Date.now()}`,
         kind: 'validation', title: 'CQL validation unavailable', status: 'error',
         detail: String(event.properties['message'] ?? 'Validation failed'),
-      }]);
+      });
       return;
     }
     if (event.type === 'session.error' || event.type === 'runner.error') {
@@ -524,6 +538,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     const role = info?.['role'];
     if (!id || (role !== 'user' && role !== 'assistant')) return;
     this.messageRoles.set(id, role);
+    if (!this.messageOrders.has(id)) this.messageOrders.set(id, this.nextTimelineOrder());
     const messageError = info?.['error'] as { data?: { message?: string } } | undefined;
     if (messageError?.data?.message) this.error.set(messageError.data.message);
     this.rebuildMessages();
@@ -541,55 +556,51 @@ export class AiTabComponent implements OnInit, OnDestroy {
       return;
     }
     if (part['type'] === 'reasoning') {
-      this.activityParts.set(partId, {
+      this.upsertActivity({
         id: partId, messageId, kind: 'reasoning', title: part['time']?.end ? 'Reasoning completed' : 'Reasoning…',
         status: part['time']?.end ? 'completed' : 'running', detail: String(part['text'] ?? ''),
         startedAt: part['time']?.start, endedAt: part['time']?.end,
       });
     } else if (part['type'] === 'tool') {
       const state = part['state'] ?? {};
-      this.activityParts.set(partId, {
+      this.upsertActivity({
         id: partId, messageId, kind: 'tool', title: state.title || part['tool'] || 'Tool',
         status: state.status || 'pending',
         detail: this.safeJson(state.input), output: state.output || state.error,
         startedAt: state.time?.start, endedAt: state.time?.end,
       });
     } else if (part['type'] === 'step-finish') {
-      this.activityParts.set(partId, {
+      this.upsertActivity({
         id: partId, messageId, kind: 'step', title: 'Step completed', status: 'completed',
         detail: `${part['tokens']?.input ?? 0} input · ${part['tokens']?.output ?? 0} output`,
         reasoningTokens: part['tokens']?.reasoning,
       });
     } else if (part['type'] === 'retry') {
-      this.activityParts.set(partId, { id: partId, messageId, kind: 'retry', title: 'OpenCode retrying', status: 'running', detail: this.safeJson(part['error']) });
+      this.upsertActivity({ id: partId, messageId, kind: 'retry', title: 'OpenCode retrying', status: 'running', detail: this.safeJson(part['error']) });
     } else if (part['type'] === 'compaction') {
-      this.activityParts.set(partId, { id: partId, messageId, kind: 'compaction', title: 'Session compacted', status: 'completed' });
+      this.upsertActivity({ id: partId, messageId, kind: 'compaction', title: 'Session compacted', status: 'completed' });
     }
-    this.activities.set([...this.activityParts.values()]);
   }
 
   private async processValidation(validation: OpenCodeValidation): Promise<void> {
     this.validation.set(validation);
     await this.refreshDiff();
-    this.activities.update(items => [
-      ...items.filter(item => item.id !== 'current-validation'),
-      {
-        id: 'current-validation', kind: 'validation',
-        title: validation.valid ? 'CQL validation passed' : 'CQL validation failed',
-        status: validation.valid ? 'completed' : 'error',
-        detail: `${validation.diagnostics.filter(item => item.severity === 'error').length} errors · ${validation.diagnostics.filter(item => item.severity === 'warning').length} warnings`,
-      },
-    ]);
+    this.upsertActivity({
+      id: 'current-validation', kind: 'validation',
+      title: validation.valid ? 'CQL validation passed' : 'CQL validation failed',
+      status: validation.valid ? 'completed' : 'error',
+      detail: `${validation.diagnostics.filter(item => item.severity === 'error').length} errors · ${validation.diagnostics.filter(item => item.severity === 'warning').length} warnings`,
+    }, true);
     if (validation.valid || this.diffs().length === 0 || this.repairInFlight || this.repairAttempts() >= 2) return;
     const session = this.session();
     if (!session) return;
     const attempt = this.repairAttempts() + 1;
     this.repairAttempts.set(attempt);
     this.repairInFlight = true;
-    this.activities.update(items => [...items, {
+    this.upsertActivity({
       id: `repair-${attempt}`, kind: 'repair', title: `Automatic CQL repair ${attempt}/2`, status: 'running',
       detail: 'OpenCode is repairing compiler errors before changes can be saved.',
-    }]);
+    });
     const diagnostics = validation.diagnostics.filter(item => item.severity === 'error')
       .map(item => `${item.file ?? ''}:${item.line ?? '?'}:${item.column ?? '?'} ${item.message}`).join('\n');
     this.status.set('busy');
@@ -621,13 +632,14 @@ export class AiTabComponent implements OnInit, OnDestroy {
       this.ingestMessageInfo(raw['info']);
       for (const part of raw['parts'] ?? []) this.ingestPart(part);
     }
+    this.queueTimelineScroll(true);
   }
 
   private rebuildMessages(): void {
     const messages: OpenCodeUiMessage[] = [];
     for (const [id, role] of this.messageRoles) {
       const text = [...(this.messageParts.get(id)?.values() ?? [])].join('\n');
-      if (text.trim()) messages.push({ id, role, text });
+      if (text.trim()) messages.push({ id, role, text, order: this.messageOrders.get(id) ?? this.nextTimelineOrder() });
     }
     this.messages.set(messages);
   }
@@ -653,6 +665,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.promptText.set('');
     this.fileSuggestions.set([]);
     this.messageRoles.clear();
+    this.messageOrders.clear();
     this.messageParts.clear();
     this.activityParts.clear();
     this.error.set(null);
@@ -660,6 +673,59 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.streamConnected.set(false);
     this.repairAttempts.set(0);
     this.repairInFlight = false;
+    this.timelineSequence = 0;
+  }
+
+  private nextTimelineOrder(): number {
+    this.timelineSequence += 1;
+    return this.timelineSequence;
+  }
+
+  private orderTimeline(items: OpenCodeTimelineItem[]): OpenCodeTimelineItem[] {
+    const ordered: OpenCodeTimelineItem[] = [];
+    let turn: OpenCodeTimelineItem[] = [];
+    const flushTurn = (): void => {
+      if (turn.length === 0) return;
+      let finalMessageIndex = -1;
+      for (let index = 0; index < turn.length; index += 1) {
+        const item = turn[index];
+        if (item.kind === 'message' && item.message.role === 'assistant') finalMessageIndex = index;
+      }
+      if (finalMessageIndex < 0) {
+        ordered.push(...turn);
+      } else {
+        const finalMessage = turn[finalMessageIndex];
+        ordered.push(...turn.filter((_item, index) => index !== finalMessageIndex), finalMessage);
+      }
+      turn = [];
+    };
+    for (const item of items) {
+      if (item.kind === 'message' && item.message.role === 'user') flushTurn();
+      turn.push(item);
+    }
+    flushTurn();
+    return ordered;
+  }
+
+  private upsertActivity(activity: Omit<OpenCodeActivity, 'order'>, moveToEnd = false): void {
+    const existing = this.activityParts.get(activity.id);
+    this.activityParts.set(activity.id, {
+      ...activity,
+      order: moveToEnd || !existing ? this.nextTimelineOrder() : existing.order,
+    });
+    this.activities.set([...this.activityParts.values()]);
+  }
+
+  private isNearTimelineBottom(): boolean {
+    const element = this.messageScroller?.nativeElement;
+    return !element || element.scrollHeight - element.scrollTop - element.clientHeight < 120;
+  }
+
+  private queueTimelineScroll(force = false): void {
+    setTimeout(() => {
+      const element = this.messageScroller?.nativeElement;
+      if (element && (force || this.isNearTimelineBottom())) element.scrollTop = element.scrollHeight;
+    });
   }
 
   private removeQuestion(requestId: string): void {

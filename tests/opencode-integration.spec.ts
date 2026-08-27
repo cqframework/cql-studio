@@ -100,7 +100,7 @@ test.describe('OpenCode browser integration', () => {
           validation: { valid: true, diagnostics: [], checkedAt: now },
           permissions: [],
           questions: [],
-          lastEventId: 6,
+          lastEventId: 8,
         }) });
       } else if (path.endsWith('/diff') && request.method() === 'GET') {
         await route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify([{
@@ -142,8 +142,6 @@ test.describe('OpenCode browser integration', () => {
               },
             },
           },
-          { id: 4, sessionId: session.id, emittedAt: now, event: { type: 'session.idle', properties: { sessionID: session.openCodeSessionId } } },
-          { id: 5, sessionId: session.id, emittedAt: now, event: { type: 'cql.validation.updated', properties: { valid: true, diagnostics: [], checkedAt: now } } },
           {
             id: 3,
             sessionId: session.id,
@@ -161,8 +159,20 @@ test.describe('OpenCode browser integration', () => {
               },
             },
           },
+          { id: 4, sessionId: session.id, emittedAt: now, event: { type: 'message.updated', properties: { info: { id: 'assistant-final', role: 'assistant' } } } },
+          {
+            id: 5,
+            sessionId: session.id,
+            emittedAt: now,
+            event: {
+              type: 'message.part.updated',
+              properties: { part: { id: 'final-text', messageID: 'assistant-final', type: 'text', text: 'Final validation summary.' } },
+            },
+          },
+          { id: 6, sessionId: session.id, emittedAt: now, event: { type: 'session.idle', properties: { sessionID: session.openCodeSessionId } } },
+          { id: 7, sessionId: session.id, emittedAt: now, event: { type: 'cql.validation.updated', properties: { valid: true, diagnostics: [], checkedAt: now } } },
           ...(!questionAnswered ? [{
-            id: 6,
+            id: 8,
             sessionId: session.id,
             emittedAt: now,
             event: {
@@ -217,6 +227,12 @@ test.describe('OpenCode browser integration', () => {
     await page.getByLabel('Reasoning').check();
     await page.getByTitle('Reasoning details').click();
     await expect(page.getByText('Checking the library and dependencies.')).toBeVisible();
+    await expect(page.getByText('Final validation summary.')).toBeVisible();
+    const chronologicalItems = await page.locator('.messages > .activity-card, .messages > .message').allTextContents();
+    const finalMessageIndex = chronologicalItems.findIndex(text => text.includes('Final validation summary.'));
+    expect(chronologicalItems.findIndex(text => text.includes('Validate CQL'))).toBeLessThan(finalMessageIndex);
+    expect(chronologicalItems.findIndex(text => text.includes('Step completed'))).toBeLessThan(finalMessageIndex);
+    expect(finalMessageIndex).toBe(chronologicalItems.length - 1);
 
     await expect(page.getByRole('button', { name: 'Apply & save' })).toBeEnabled();
     await page.getByRole('button', { name: 'Apply & save' }).click();

@@ -44,7 +44,7 @@
       <small class="text-body-secondary">Only the active CQL file is writable. Dependencies and every MCP integration are read-only.</small>
     </div>
   } @else {
-    <div class="messages flex-grow-1 overflow-auto p-3">
+    <div #messageScroller class="messages flex-grow-1 overflow-auto p-3">
       @if (showHelp()) {
         <section class="info-card border rounded p-3 mb-3">
           <div class="d-flex justify-content-between gap-2"><strong>Commands and references</strong><button class="btn-close" (click)="showHelp.set(false)"></button></div>
@@ -72,29 +72,27 @@
         <div class="text-center text-body-secondary py-4">Ask OpenCode to explain, plan, validate, review, or edit the active CQL library.</div>
       }
 
-      @for (message of messages(); track message.id) {
-        <article class="message" [class.user]="message.role === 'user'" [class.assistant]="message.role === 'assistant'">
-          <div class="message-role">{{ message.role === 'user' ? 'You' : 'OpenCode' }}</div>
-          <markdown [data]="message.text"></markdown>
-        </article>
-      }
-
-      @for (activity of activities(); track activity.id) {
-        @if (activity.kind !== 'reasoning' || reasoningShown()) {
-          <section class="activity-card border rounded mb-2" [class.activity-error]="activity.status === 'error'">
+      @for (item of timeline(); track item.kind + '-' + item.id) {
+        @if (item.kind === 'message') {
+          <article class="message" [class.user]="item.message.role === 'user'" [class.assistant]="item.message.role === 'assistant'">
+            <div class="message-role">{{ item.message.role === 'user' ? 'You' : 'OpenCode' }}</div>
+            <markdown [data]="item.message.text"></markdown>
+          </article>
+        } @else if (item.activity.kind !== 'reasoning' || reasoningShown()) {
+          <section class="activity-card border rounded mb-2" [class.activity-error]="item.activity.status === 'error'">
             <div class="activity-summary">
-              @if (activity.status === 'running' || activity.status === 'pending') { <span class="spinner-border spinner-border-sm"></span> }
-              @else if (activity.status === 'error') { <i class="bi bi-exclamation-triangle text-danger"></i> }
+              @if (item.activity.status === 'running' || item.activity.status === 'pending') { <span class="spinner-border spinner-border-sm"></span> }
+              @else if (item.activity.status === 'error') { <i class="bi bi-exclamation-triangle text-danger"></i> }
               @else { <i class="bi bi-check2 text-success"></i> }
-              <strong>{{ activity.title }}</strong>
-              @if (activityDuration(activity)) { <small>{{ activityDuration(activity) }}</small> }
-              @if (activity.reasoningTokens != null) { <small>{{ activity.reasoningTokens }} reasoning tokens</small> }
+              <strong>{{ item.activity.title }}</strong>
+              @if (activityDuration(item.activity)) { <small>{{ activityDuration(item.activity) }}</small> }
+              @if (item.activity.reasoningTokens != null) { <small>{{ item.activity.reasoningTokens }} reasoning tokens</small> }
             </div>
-            @if (activity.detail && (detailsShown() || activity.kind === 'validation' || activity.kind === 'repair' || activity.kind === 'reasoning')) {
-              <pre class="activity-detail">{{ activity.detail }}</pre>
+            @if (item.activity.detail && (detailsShown() || item.activity.kind === 'validation' || item.activity.kind === 'repair' || item.activity.kind === 'reasoning')) {
+              <pre class="activity-detail">{{ item.activity.detail }}</pre>
             }
-            @if (activity.output && detailsShown()) {
-              <details><summary>Tool output</summary><pre class="activity-detail">{{ activity.output }}</pre></details>
+            @if (item.activity.output && detailsShown()) {
+              <details><summary>Tool output</summary><pre class="activity-detail">{{ item.activity.output }}</pre></details>
             }
           </section>
         }
