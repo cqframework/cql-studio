@@ -298,7 +298,6 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.fileSuggestions.set([]);
     this.error.set(null);
     this.repairAttempts.set(0);
-    this.validation.set(null);
     this.status.set('busy');
     try {
       await this.syncActiveEditor(session);
@@ -764,7 +763,6 @@ export class AiTabComponent implements OnInit, OnDestroy {
       default:
         this.error.set(null);
         this.repairAttempts.set(0);
-        this.validation.set(null);
         this.status.set('busy');
         try {
           await this.syncActiveEditor(session);
@@ -896,6 +894,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
 
   private handleEvent(event: OpenCodeEvent): void {
     if (event.type === 'cql.workspace.changed') {
+      this.validation.set(null);
       this.handleWorkspaceChange(event.properties);
       return;
     }
