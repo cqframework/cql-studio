@@ -55,6 +55,8 @@ docker compose -f docker-compose.development.yml up -d
 
 ## OpenCode assistant
 
+*This will be changed as opencode will eventually be merged into server but is a seperated container for now*
+
 The IDE's OpenCode tab uses the official TypeScript SDK through a dedicated runner container. Start the runner together with the normal CQL Studio Server process:
 
 ```bash
