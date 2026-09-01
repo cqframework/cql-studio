@@ -76,6 +76,16 @@ export interface OpenCodeEditorContext {
   mode: 'selection' | 'inline';
 }
 
+export interface OpenCodeAttachment {
+  id: string;
+  name: string;
+  mimeType: string;
+  size: number;
+  path: string;
+  converted: boolean;
+  createdAt: string;
+}
+
 export interface OpenCodeLibraryChange {
   libraryId: string;
   cqlContent: string;
@@ -128,6 +138,7 @@ export interface OpenCodeSessionState {
   session: OpenCodeSession;
   messages: unknown[];
   diffs: OpenCodeFileDiff[];
+  attachments: OpenCodeAttachment[];
   commands: OpenCodeCommand[];
   validation: OpenCodeValidation | null;
   permissions: OpenCodePermissionRequest[];

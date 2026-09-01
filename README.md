@@ -68,8 +68,10 @@ npm start
 In Settings, enable the AI assistant and configure:
 
 - CQL Studio Server Base URL (development default `http://localhost:3003`)
-- Ollama Base URL
-- Ollama model name
+- Provider (Ollama, OpenAI, or OpenAI-compatible)
+- Provider URL and API key where applicable, then **Load models** and choose a model
+
+The OpenCode composer can attach text/source files, CSV/TSV, Markdown, PDF, and DOCX context. Attachments are retained for the lifetime of the session and appear as read-only files to OpenCode. PDF and DOCX files are converted to bounded Markdown in the runner with MarkItDown; originals are not exposed. Removing a session or successfully running `/compact` purges the attachment files. A session accepts at most 20 files and each upload is limited to 10 MB (converted text is limited to 4 MB).
 
 Starting OpenCode snapshots the active library's current editor text, including unsaved changes. Before every prompt or model-backed slash command, the browser re-synchronizes the active draft and its user-edit revision into the isolated workspace. Open CQL libraries referenced through `include` are copied into the session as read-only dependencies. OpenCode cannot directly save a FHIR Library: it proposes a filesystem diff, the user reviews it in the tab, and **Apply & save** returns the accepted text to the editor's existing translate-and-save workflow.
 

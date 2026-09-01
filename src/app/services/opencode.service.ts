@@ -12,6 +12,7 @@ import {
   OpenCodeSessionState,
   OpenCodeValidation,
   OpenCodeProviderConfig,
+  OpenCodeAttachment,
 } from '../models/opencode.model';
 import { SettingsService } from './settings.service';
 import type { AiProviderType } from '../models/settings.model';
@@ -68,11 +69,35 @@ export class OpenCodeService {
     agent: 'plan' | 'build',
     references: string[] = [],
     reasoning = false,
-    editorContext?: OpenCodeEditorContext
+    editorContext?: OpenCodeEditorContext,
+    attachments: string[] = []
   ): Promise<void> {
     return this.request(`/sessions/${encodeURIComponent(sessionId)}/prompt`, {
       method: 'POST',
-      body: JSON.stringify({ message, agent, references, reasoning, editorContext }),
+      body: JSON.stringify({ message, agent, references, reasoning, editorContext, attachments }),
+    }).then(() => undefined);
+  }
+
+  uploadAttachment(sessionId: string, file: File): Promise<OpenCodeAttachment> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(reader.error ?? new Error('Unable to read attachment'));
+      reader.onload = () => {
+        const result = typeof reader.result === 'string' ? reader.result : '';
+        const comma = result.indexOf(',');
+        const data = comma >= 0 ? result.slice(comma + 1) : result;
+        this.request(`/sessions/${encodeURIComponent(sessionId)}/attachments`, {
+          method: 'POST',
+          body: JSON.stringify({ name: file.name, mimeType: file.type || undefined, data }),
+        }).then((attachment) => resolve(attachment as OpenCodeAttachment)).catch(reject);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  removeAttachment(sessionId: string, attachmentId: string): Promise<void> {
+    return this.request(`/sessions/${encodeURIComponent(sessionId)}/attachments/${encodeURIComponent(attachmentId)}`, {
+      method: 'DELETE',
     }).then(() => undefined);
   }
 

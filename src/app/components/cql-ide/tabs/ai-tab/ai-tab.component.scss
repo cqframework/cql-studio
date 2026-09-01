@@ -284,6 +284,41 @@
   background: var(--bs-primary-bg-subtle);
 }
 
+.attachment-list {
+  min-width: 0;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.35rem;
+  color: var(--bs-secondary-color);
+  background: var(--bs-secondary-bg);
+  font-size: 0.75rem;
+}
+
+.attachment-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-chip small {
+  color: var(--bs-primary-text-emphasis);
+  white-space: nowrap;
+}
+
+.attachment-chip .btn-close {
+  width: 0.55rem;
+  height: 0.55rem;
+  padding: 0;
+  flex-shrink: 0;
+}
+
 .suggestion-menu {
   position: absolute;
   z-index: 20;

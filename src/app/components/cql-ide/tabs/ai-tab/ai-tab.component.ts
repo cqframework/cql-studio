@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { MarkdownComponent } from 'ngx-markdown';
 import {
   OpenCodeActivity,
+  OpenCodeAttachment,
   OpenCodeCommand,
   OpenCodeEvent,
   OpenCodeEventEnvelope,
@@ -95,6 +96,8 @@ export class AiTabComponent implements OnInit, OnDestroy {
   readonly questionAnswers = signal<Record<string, string[][]>>({});
   readonly commands = signal<OpenCodeCommand[]>(WEB_COMMANDS);
   readonly fileSuggestions = signal<OpenCodeFileReference[]>([]);
+  readonly attachments = signal<OpenCodeAttachment[]>([]);
+  readonly uploadingAttachments = signal(false);
   readonly promptText = signal('');
   readonly agent = signal<'plan' | 'build'>('build');
   readonly status = signal<'idle' | 'starting' | 'busy' | 'error'>('idle');
@@ -305,7 +308,8 @@ export class AiTabComponent implements OnInit, OnDestroy {
         this.agent(),
         this.referencesFrom(message),
         this.reasoningEnabled(),
-        editorContext ?? undefined
+        editorContext ?? undefined,
+        this.attachments().map(attachment => attachment.id)
       );
       if (editorContext?.mode === 'inline') this.inlineContext.set(null);
     } catch (error) {
@@ -346,6 +350,38 @@ export class AiTabComponent implements OnInit, OnDestroy {
   chooseFile(file: OpenCodeFileReference): void {
     this.promptText.update(value => value.replace(/@[A-Za-z0-9._\/-]*$/, `@${file.path} `));
     this.fileSuggestions.set([]);
+  }
+
+  async onAttachmentsSelected(event: Event): Promise<void> {
+    const session = this.session();
+    const input = event.target as HTMLInputElement | null;
+    const files = input?.files ? [...input.files] : [];
+    if (!session || !files.length) return;
+    this.uploadingAttachments.set(true);
+    try {
+      for (const file of files) {
+        try {
+          const attachment = await this.openCodeService.uploadAttachment(session.id, file);
+          this.attachments.update(current => [...current, attachment]);
+        } catch (error) {
+          this.setError(error);
+        }
+      }
+    } finally {
+      this.uploadingAttachments.set(false);
+      if (input) input.value = '';
+    }
+  }
+
+  async removeAttachment(attachment: OpenCodeAttachment): Promise<void> {
+    const session = this.session();
+    if (!session) return;
+    try {
+      await this.openCodeService.removeAttachment(session.id, attachment.id);
+      this.attachments.update(current => current.filter(item => item.id !== attachment.id));
+    } catch (error) {
+      this.setError(error);
+    }
   }
 
   onPromptKeydown(event: KeyboardEvent): void {
@@ -863,6 +899,10 @@ export class AiTabComponent implements OnInit, OnDestroy {
       this.handleWorkspaceChange(event.properties);
       return;
     }
+    if (event.type === 'attachments.compacted') {
+      this.attachments.set([]);
+      return;
+    }
     if (event.type === 'message.updated') {
       const info = event.properties['info'] as Record<string, unknown> | undefined;
       this.ingestMessageInfo(info);
@@ -916,10 +956,22 @@ export class AiTabComponent implements OnInit, OnDestroy {
       });
       return;
     }
-    if (event.type === 'session.error' || event.type === 'runner.error') {
+    if (event.type === 'runner.error') {
       this.status.set('error');
       const message = event.properties['message'];
       this.error.set(typeof message === 'string' ? message : 'The OpenCode session failed.');
+      this.errorRetryable.set(true);
+      return;
+    }
+    if (event.type === 'session.error') {
+      this.status.set('error');
+      const providerError = event.properties['error'] as { name?: string; data?: { message?: string } } | undefined;
+      // A runner timeout aborts the underlying OpenCode request. Preserve the
+      // actionable timeout message instead of replacing it with only "Aborted".
+      if (providerError?.name !== 'MessageAbortedError' || !this.error()) {
+        const message = event.properties['message'] ?? providerError?.data?.message;
+        this.error.set(typeof message === 'string' ? message : 'The OpenCode session failed.');
+      }
       this.errorRetryable.set(true);
     }
   }
@@ -970,8 +1022,10 @@ export class AiTabComponent implements OnInit, OnDestroy {
     if (!id || (role !== 'user' && role !== 'assistant')) return;
     this.messageRoles.set(id, role);
     if (!this.messageOrders.has(id)) this.messageOrders.set(id, this.nextTimelineOrder());
-    const messageError = info?.['error'] as { data?: { message?: string } } | undefined;
-    if (messageError?.data?.message) this.error.set(messageError.data.message);
+    const messageError = info?.['error'] as { name?: string; data?: { message?: string } } | undefined;
+    if (messageError?.data?.message && (messageError.name !== 'MessageAbortedError' || !this.error())) {
+      this.error.set(messageError.data.message);
+    }
     this.rebuildMessages();
   }
 
@@ -1058,6 +1112,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.status.set(state.session.status);
     this.reasoningEnabled.set(state.session.reasoningEnabled);
     this.diffs.set(state.diffs);
+    this.attachments.set(state.attachments ?? []);
     this.validation.set(state.validation);
     this.permissions.set(state.permissions ?? []);
     this.questions.set(state.questions ?? []);
@@ -1099,6 +1154,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.questionAnswers.set({});
     this.promptText.set('');
     this.fileSuggestions.set([]);
+    this.attachments.set([]);
     this.messageRoles.clear();
     this.messageOrders.clear();
     this.messageParts.clear();

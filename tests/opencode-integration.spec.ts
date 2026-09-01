@@ -69,6 +69,7 @@ test.describe('OpenCode browser integration', () => {
     let questionAnswered = false;
     let activeFileSync: Record<string, unknown> | null = null;
     let promptRequest: Record<string, unknown> | null = null;
+    let attachmentPromptIds: unknown[] | null = null;
     const now = new Date().toISOString();
     const session = {
       id: 'browser-session-1',
@@ -164,6 +165,7 @@ test.describe('OpenCode browser integration', () => {
             additions: 1,
             deletions: 0,
           }],
+          attachments: [],
           commands,
           validation: { valid: true, diagnostics: [], checkedAt: now },
           permissions: [],
@@ -186,7 +188,23 @@ test.describe('OpenCode browser integration', () => {
         await route.fulfill({ status: 204, headers: cors });
       } else if (path.endsWith('/prompt') && request.method() === 'POST') {
         promptRequest = request.postDataJSON() as Record<string, unknown>;
+        attachmentPromptIds = (promptRequest['attachments'] as unknown[]) ?? [];
         await route.fulfill({ status: 202, headers: cors, contentType: 'application/json', body: JSON.stringify({ accepted: true }) });
+      } else if (path.endsWith('/attachments') && request.method() === 'POST') {
+        await route.fulfill({
+          status: 201,
+          headers: cors,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            id: 'attachment-1',
+            name: 'context.md',
+            mimeType: 'text/markdown',
+            size: 20,
+            path: 'attachments/attachment-1-context.md',
+            converted: false,
+            createdAt: now,
+          }),
+        });
       } else if (path.includes('/questions/') && request.method() === 'POST') {
         questionAnswered = true;
         await route.fulfill({ status: 200, headers: cors, contentType: 'application/json', body: JSON.stringify({ accepted: true }) });
@@ -291,6 +309,8 @@ test.describe('OpenCode browser integration', () => {
     await expect.poll(() => questionAnswered).toBe(true);
 
     const composer = page.locator('.composer textarea');
+    await page.locator('input[type="file"]').setInputFiles({ name: 'context.md', mimeType: 'text/markdown', buffer: Buffer.from('# Attached context') });
+    await expect(page.getByText('context.md', { exact: true })).toBeVisible();
     await composer.fill('/');
     await expect(page.locator('.suggestion-menu').getByText('/validate')).toBeVisible();
     await composer.fill('/help');
@@ -336,6 +356,7 @@ test.describe('OpenCode browser integration', () => {
       mode: 'inline',
       documentRevision: 0,
     });
+    expect(attachmentPromptIds).toEqual(['attachment-1']);
 
     await page.reload();
     await expect(page.getByText('qwen3.8:27b-mlx')).toBeVisible();

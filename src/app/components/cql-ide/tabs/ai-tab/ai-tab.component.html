@@ -227,6 +227,12 @@
           <button type="button" class="btn" [class.btn-primary]="agent() === 'build'" [class.btn-outline-secondary]="agent() !== 'build'" (click)="agent.set('build')">Build</button>
         </div>
         <div class="d-flex gap-1">
+          <input #attachmentInput type="file" class="d-none" multiple
+            (change)="onAttachmentsSelected($event)">
+          <button type="button" class="btn btn-sm btn-outline-secondary" (click)="attachmentInput.click()" [disabled]="uploadingAttachments()" title="Attach context files">
+            @if (uploadingAttachments()) { <span class="spinner-border spinner-border-sm"></span> }
+            @else { <i class="bi bi-paperclip"></i> }
+          </button>
           <button type="button" class="btn btn-sm btn-outline-secondary" (click)="detailsShown.update(value => !value)" [class.active]="detailsShown()" title="Tool details"><i class="bi bi-list-task"></i></button>
           <button type="button" class="btn btn-sm btn-outline-secondary" (click)="reasoningShown.update(value => !value)" [class.active]="reasoningShown()" title="Reasoning details"><i class="bi bi-lightbulb"></i></button>
           <button type="button" class="btn btn-sm btn-outline-secondary" (click)="refreshDiff()" title="Refresh workspace changes"><i class="bi bi-file-diff me-1"></i>Changes</button>
@@ -242,6 +248,18 @@
         <div class="editor-context-chip mb-2" title="The highlighted CQL will be attached to the next prompt">
           <i class="bi bi-text-paragraph"></i>
           <span>Selected CQL · lines {{ context.startLine }}–{{ context.endLine }}</span>
+        </div>
+      }
+      @if (attachments().length) {
+        <div class="attachment-list d-flex flex-wrap gap-1 mb-2" aria-label="Session attachments">
+          @for (attachment of attachments(); track attachment.id) {
+            <span class="attachment-chip" [title]="attachment.converted ? 'Converted to Markdown for OpenCode' : 'Attached for this session'">
+              <i class="bi" [class.bi-file-earmark-text]="!attachment.converted" [class.bi-file-earmark-richtext]="attachment.converted"></i>
+              <span>{{ attachment.name }}</span>
+              @if (attachment.converted) { <small>Markdown</small> }
+              <button type="button" class="btn-close btn-sm" aria-label="Remove attachment" (click)="removeAttachment(attachment)"></button>
+            </span>
+          }
         </div>
       }
       <div class="composer-input">
