@@ -1,8 +1,8 @@
-# OpenCode Frontend Integration
+# OpenCode Integration
 
 ## Current boundary
 
-The Angular UI contains the OpenCode IDE experience, while the monorepo `server/` package does not yet expose the OpenCode gateway or manage the runner container. Until the server phase is complete, the UI can target the existing standalone gateway through the Server Base URL override in Settings.
+The Angular UI contains the OpenCode IDE experience. The monorepo `server/` package owns the authenticated gateway and delegates isolated execution to the private `opencode-runner` service defined in `docker/docker-compose.development.yml`.
 
 The frontend always uses same-origin CQL Studio Server routes under `/api/opencode`. Provider URLs and credentials are request data for CQL Studio Server; the browser never connects OpenCode directly to a provider.
 
@@ -28,7 +28,7 @@ Opening a Library from a CQL Studio Workspace preserves this frontend origin con
 - Workspace resource-reference ID
 - Effective Workspace role
 
-This is intentionally frontend-only until the server supports Workspace-owned OpenCode sessions. It prevents the origin information from being discarded during navigation and provides the future server handoff point.
+The origin is sent when a session is created and retained on the server-owned session. With SSO enabled, the gateway resolves the authenticated user's effective Workspace role and verifies that the resource reference identifies the active Library before starting the runner session. Development single-user mode retains the origin without requiring the optional Workspace database.
 
 Every OpenCode session is also bound to the active personal or shared Workspace environment at creation time. The binding contains environment identity and a fingerprint derived only from non-secret endpoint identity. If the active environment changes, the UI blocks prompts, uploads, tool answers, live edits, and saves for the old session. Ending and recreating the session is required.
 
@@ -41,7 +41,7 @@ Provider API keys are held only in Angular memory:
 - Legacy persisted keys are absorbed into memory once and removed from stored settings.
 - Reloading the page clears them.
 
-The browser sends a key to CQL Studio Server only when listing provider models or creating a session. Persistent encrypted server-side provider credentials are deferred to the server phase.
+The browser sends a key to CQL Studio Server only when listing provider models or creating a session. The gateway retains session tool context in memory and sends the runner only an opaque, random MCP capability.
 
 Environment bindings stored in `sessionStorage` do not include endpoint usernames, passwords, authorization values, URL credentials, query strings, or fragments.
 
@@ -67,16 +67,11 @@ Environment bindings stored in `sessionStorage` do not include endpoint username
 | `POST` | `/api/opencode/sessions/:id/abort` | Stop active generation |
 | `POST/DELETE` | `/api/opencode/sessions/:id/permissions` and `/questions` | Resolve interactive OpenCode requests |
 
-The exact request and response types live in `ui/src/app/models/opencode.model.ts` until they can move into `@cql-studio/core` with the server implementation.
+Wire-level request and response types live in `@cql-studio/core`. UI-only timeline, editor callback, and environment-binding state remains in `ui/src/app/models/opencode.model.ts`.
 
-## Server-phase checklist
+## Remaining production checklist
 
-1. Move the OpenCode contracts and tool-name references into `@cql-studio/core`.
-2. Port the gateway, runtime, workspace, validation, MCP bridge, logging, and error modules into `server/`.
-3. Register authenticated `/api/opencode` routes with per-user session ownership and limits.
-4. Add the runner image and ephemeral workspace volume to `docker/docker-compose.development.yml` without sibling-repository paths.
-5. Materialize authorized CQL Studio Workspace resource references into session snapshots without granting arbitrary filesystem access.
-6. Persist the Workspace ID and resource-reference ID on server-owned sessions.
-7. Add session expiry, orphan-directory cleanup, attachment limits, structured logs, and secure provider capabilities.
-8. Run live Ollama, FHIR, VSAC, MCP, document-conversion, and browser integration tests through the monorepo server.
-9. Resolve the current production audit advisories in the Prisma/config dependency chain with compatible server upgrades, then rerun the root production audit.
+1. Add an explicit production allowlist for OpenAI-compatible and private-network provider origins.
+2. Publish multi-architecture runner images alongside the server image.
+3. Run authenticated live FHIR and VSAC probes in deployment CI.
+4. Resolve the current production audit advisories in the Prisma/config dependency chain with compatible server upgrades, then rerun the root production audit.

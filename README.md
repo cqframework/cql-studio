@@ -11,7 +11,7 @@ The codebase is organized as an npm monorepo with strict TypeScript typing:
 - **`docker/`** – Local Docker Compose stack providing PostgreSQL (CQL Studio DB & Authentik), Authentik (SSO/OIDC), and HAPI FHIR R4 JPA server.
 - **`doc/`** – Architecture documentation, PlantUML diagrams, and SQL on FHIR guides.
 
-The OpenCode frontend architecture, filesystem boundaries, credential lifecycle, gateway contract, and pending server integration are documented in [`doc/opencode-frontend.md`](doc/opencode-frontend.md).
+The OpenCode architecture, filesystem boundaries, credential lifecycle, and gateway contract are documented in [`doc/opencode-frontend.md`](doc/opencode-frontend.md).
 
 ---
 
@@ -57,9 +57,12 @@ npm run diagram
 
 ### 1. Start Docker Development Services
 
-Start the local backing infrastructure services (PostgreSQL, Authentik SSO, and HAPI FHIR R4) using the development compose file:
+Start the private OpenCode runner and local backing infrastructure services using the development compose file:
 
 ```bash
+# OpenCode runner required by the AI tab:
+docker compose -f docker/docker-compose.development.yml up -d --build opencode-runner
+
 # Using root npm script:
 npm run docker:up
 
@@ -125,6 +128,7 @@ Once running, open your browser and navigate to `http://localhost:4200/`.
 | --- | --- | --- |
 | **CQL Studio UI** | `http://localhost:4200` | Angular Authoring & IDE Web Console |
 | **CQL Studio Server** | `http://localhost:3003` | REST API, BFF Auth, and MCP Server |
+| **OpenCode Runner** | `http://127.0.0.1:4097` | Private local AI runtime; accessed through CQL Studio Server |
 | **Authentik SSO** | `http://localhost:9000` | OIDC Identity Provider & Admin Console |
 | **PostgreSQL** | `localhost:5432` | Primary PostgreSQL database (`cql_studio_development`) |
 | **HAPI FHIR R4** | `http://localhost:8080/fhir` | FHIR R4 JPA Server |
@@ -149,6 +153,15 @@ Server configuration uses the `CQL_STUDIO_SERVER_*` prefix:
 | `CQL_STUDIO_SERVER_SSO_SCOPES` | No | `openid profile email` | OIDC Scopes |
 | `CQL_STUDIO_SERVER_UI_BASE_URL` | For SSO | `http://localhost:4200` | Base URL of the Angular UI |
 | `CQL_STUDIO_SERVER_SESSION_SECRET` | For SSO | `cql-studio-development-session-secret` | Secret key for signing session cookies |
+| `CQL_STUDIO_SERVER_OPENCODE_ENABLED` | No | `true` in development | Enables the OpenCode gateway |
+| `CQL_STUDIO_SERVER_OPENCODE_ALLOW_UNAUTHENTICATED` | Production without SSO | `true` in development | Explicitly permits single-user, unauthenticated OpenCode sessions |
+| `CQL_STUDIO_SERVER_OPENCODE_RUNNER_URL` | No | `http://localhost:4097` | Private runner base URL |
+| `CQL_STUDIO_SERVER_OPENCODE_RUNNER_TOKEN` | Production | Development-only shared token | Gateway-to-runner credential; must be at least 32 bytes and non-default in production |
+| `CQL_STUDIO_SERVER_OPENCODE_TOOL_BRIDGE_URL` | No | `http://host.docker.internal:3003/api/opencode/tool-bridge` | Gateway URL used by the runner's MCP subprocess |
+| `CQL_STUDIO_SERVER_OPENCODE_SESSION_IDLE_MS` | No | `3600000` | Session idle expiration |
+| `CQL_STUDIO_SERVER_OPENCODE_CLEANUP_INTERVAL_MS` | No | `60000` | Orphan session cleanup interval |
+| `CQL_STUDIO_SERVER_OPENCODE_MAX_SESSIONS_PER_USER` | No | `0` | Per-user session limit; zero is unlimited |
+| `CQL_STUDIO_SERVER_OPENCODE_MAX_SESSIONS_GLOBAL` | No | `0` | Global process session limit; zero is unlimited |
 
 ---
 

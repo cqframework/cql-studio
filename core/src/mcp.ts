@@ -4,8 +4,13 @@ export interface MCPToolProperty {
   type: string;
   description?: string;
   enum?: string[];
-  items?: { type: string };
+  items?: MCPToolProperty;
   default?: unknown;
+  properties?: Record<string, MCPToolProperty>;
+  required?: string[];
+  additionalProperties?: boolean | MCPToolProperty;
+  minimum?: number;
+  maximum?: number;
 }
 
 export interface MCPToolParameters {
@@ -25,6 +30,13 @@ export interface MCPTool {
 }
 
 export class MCPToolNames {
+  static readonly CQL_STUDIO_CONTEXT = 'cql_studio_context';
+  static readonly CQL_VALIDATE = 'cql_validate';
+  static readonly CQL_LIBRARY_SEARCH = 'cql_library_search';
+  static readonly CQL_LIBRARY_READ = 'cql_library_read';
+  static readonly FHIR_READ = 'fhir_read';
+  static readonly FHIR_SEARCH = 'fhir_search';
+  static readonly VALUESET_EXPAND = 'valueset_expand';
   static readonly FETCH_CONTENT = 'fetch_content';
   static readonly FETCH_URL = 'fetch_url';
   static readonly SEARXNG_SEARCH = 'searxng_search';

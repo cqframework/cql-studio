@@ -11,6 +11,22 @@ export let logger: Logger = pino({ level: 'silent' });
 export function createLogger(env: Pick<ServerEnv, 'logLevel' | 'nodeEnv'>): Logger {
   logger = pino({
     level: env.logLevel,
+    redact: {
+      paths: [
+        'req.headers.authorization',
+        'req.headers.cookie',
+        '*.authorization',
+        '*.cookie',
+        '*.capability',
+        '*.prompt',
+        '*.cqlContent',
+        '*.toolOutput',
+        '*.password',
+        '*.token',
+        '*.headers.authorization',
+      ],
+      censor: '[REDACTED]',
+    },
     ...(env.nodeEnv === 'development'
       ? {
           transport: {

@@ -6,6 +6,7 @@ import express from 'express';
 const router = express.Router();
 
 const CQL_STUDIO_SERVER_OLLAMA_BASE_URL = 'x-ollama-base-url';
+const CQL_STUDIO_SERVER_OLLAMA_API_KEY = 'x-ollama-api-key';
 
 const ALLOWED_GET = new Set(['tags', 'version', 'ps']);
 const ALLOWED_POST = new Set(['show', 'chat', 'generate', 'embed', 'embeddings']);
@@ -37,6 +38,13 @@ function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
 }
 
+function upstreamAuthHeader(req: express.Request): Record<string, string> {
+  const key = req.headers[CQL_STUDIO_SERVER_OLLAMA_API_KEY];
+  return typeof key === 'string' && key.trim()
+    ? { Authorization: `Bearer ${key.trim()}` }
+    : {};
+}
+
 function resolveOllamaBaseUrl(
   req: express.Request,
   res: express.Response
@@ -49,11 +57,16 @@ function resolveOllamaBaseUrl(
   return baseUrl;
 }
 
-async function proxyGet(baseUrl: string, path: string, res: express.Response): Promise<boolean> {
+async function proxyGet(
+  baseUrl: string,
+  path: string,
+  req: express.Request,
+  res: express.Response
+): Promise<boolean> {
   const target = `${normalizeBaseUrl(baseUrl)}/api/${path}`;
   const response = await fetch(target, {
     method: 'GET',
-    headers: { Accept: 'application/json' }
+    headers: { Accept: 'application/json', ...upstreamAuthHeader(req) }
   });
   const contentType = response.headers.get('content-type') || 'application/json';
   res.setHeader('Content-Type', contentType);
@@ -80,7 +93,8 @@ async function proxyPost(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'application/json'
+      Accept: 'application/json',
+      ...upstreamAuthHeader(req)
     },
     body
   });
@@ -118,7 +132,7 @@ router.get('/:endpoint', async (req, res, next) => {
     if (!baseUrl) {
       return;
     }
-    await proxyGet(baseUrl, endpoint, res);
+    await proxyGet(baseUrl, endpoint, req, res);
   } catch (err) {
     next(err);
   }

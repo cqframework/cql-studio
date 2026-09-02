@@ -5,6 +5,7 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { pinoHttp } from 'pino-http';
 import { loadEnv } from './config/env.js';
+import { createCorsOptions } from './config/cors.js';
 import { createLogger, logger } from './logger.js';
 import { applyPendingMigrations } from './db/migrate.js';
 import { mcpRouter } from './mcp/index.js';
@@ -13,33 +14,39 @@ import { vsacFhirProxyRouter, vsacSiteProxyRouter } from './vsac/proxy.js';
 import { createAuthRouter } from './auth/routes.js';
 import { createTeamRouter } from './team/routes.js';
 import { createActivityRouter, createWorkspaceRouter } from './workspace/routes.js';
+import { createOpenCodeGateway } from './opencode/gateway.js';
+import { OpenCodeError } from './opencode/errors.js';
+import { configureOpenCodeLogger } from './opencode/logger.js';
 
 async function main(): Promise<void> {
   const env = loadEnv();
-  createLogger(env);
+  configureOpenCodeLogger(createLogger(env));
   const isDev = env.nodeEnv === 'development';
 
   await applyPendingMigrations(env);
 
   const app = express();
 
-  app.use(
-    cors({
-      origin: env.ssoConfigured ? env.corsOrigin : '*',
-      credentials: env.ssoConfigured,
-      optionsSuccessStatus: 200,
-    })
-  );
-  app.use(express.json({ limit: '2mb' }));
+  app.use(cors(createCorsOptions(env)));
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
   app.use(pinoHttp({ logger }));
+
+  if (env.opencodeEnabled) {
+    app.use(
+      '/api/opencode',
+      express.json({ limit: '20mb' }),
+      createOpenCodeGateway(env)
+    );
+  }
+  app.use(express.json({ limit: '2mb' }));
 
   app.get('/health', (req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
       ssoEnabled: env.ssoConfigured,
+      opencodeEnabled: env.opencodeEnabled,
     });
   });
 
@@ -60,6 +67,20 @@ async function main(): Promise<void> {
   }
 
   app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err instanceof OpenCodeError) {
+      logger.error(
+        {
+          method: req.method,
+          path: req.path,
+          status: err.status,
+          code: err.code,
+          err: isDev ? err : undefined,
+        },
+        'OpenCode request failed'
+      );
+      if (!res.headersSent) res.status(err.status).json(err.toBody());
+      return;
+    }
     const oauthErr = err as Error & { error?: string; error_description?: string };
     const oauthDetail =
       oauthErr.error
@@ -96,7 +117,8 @@ async function main(): Promise<void> {
         nodeEnv: env.nodeEnv,
         sso: env.ssoConfigured ? 'enabled' : 'disabled',
         ...(env.ssoConfigured && { uiBaseUrl: env.uiBaseUrl }),
-        corsOrigin: env.ssoConfigured ? `${env.corsOrigin} (credentials)` : '* (allowing all origins)',
+        corsOrigin: `${env.corsOrigin} (credentials)`,
+        opencode: env.opencodeEnabled ? 'enabled' : 'disabled',
       },
       'CQL Studio Server listening'
     );

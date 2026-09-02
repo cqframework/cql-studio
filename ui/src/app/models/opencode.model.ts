@@ -1,15 +1,29 @@
 // Author: Preston Lee
 
+import type {
+  CreateOpenCodeSessionRequest as CoreCreateOpenCodeSessionRequest,
+  OpenCodeAttachmentDto,
+  OpenCodeCommandDto,
+  OpenCodeDiagnosticDto,
+  OpenCodeEditorContext as CoreOpenCodeEditorContext,
+  OpenCodeErrorBody,
+  OpenCodeEventEnvelope,
+  OpenCodeFileDiffDto,
+  OpenCodeFileReferenceDto,
+  OpenCodePermissionRequestDto,
+  OpenCodeProviderConfig,
+  OpenCodeQuestionRequestDto,
+  OpenCodeSessionDto,
+  OpenCodeValidationDto,
+  OpenCodeWorkspaceOrigin,
+} from '@cql-studio/core';
 import { CqlEnvironment } from './environment.model';
-import { ActiveEnvironmentSource, AiProviderType } from './settings.model';
+import { ActiveEnvironmentSource } from './settings.model';
 
-export interface OpenCodeProviderConfig {
-  type: AiProviderType;
-  model: string;
-  baseUrl?: string;
-  apiKey?: string;
-  name?: string;
-}
+export type {
+  OpenCodeEventEnvelope,
+  OpenCodeProviderConfig,
+};
 
 export interface OpenCodeEnvironmentBinding {
   key: string;
@@ -28,21 +42,16 @@ export interface OpenCodeLibrarySnapshot {
   cqlContent: string;
   originalContent?: string;
   fhirVersionId?: string;
+  workspaceOrigin?: OpenCodeWorkspaceOrigin;
 }
 
-export interface CreateOpenCodeSessionRequest {
-  title?: string;
-  provider?: OpenCodeProviderConfig;
-  providers?: OpenCodeProviderConfig[];
-  /** @deprecated retained for older clients and persisted sessions. */
-  ollamaBaseUrl: string;
-  /** @deprecated retained for older clients and persisted sessions. */
-  ollamaModel: string;
+export interface CreateOpenCodeSessionRequest extends Omit<
+  CoreCreateOpenCodeSessionRequest,
+  'activeLibrary' | 'dependencies' | 'environment' | 'toolContext'
+> {
   activeLibrary: OpenCodeLibrarySnapshot;
   dependencies: OpenCodeLibrarySnapshot[];
-  /** Sent to CQL Studio Server only. It is never written into the runner workspace. */
   environment: CqlEnvironment;
-  /** Secrets stay in server memory; the runner receives only an opaque capability. */
   toolContext: {
     vsacFhirBaseUrl: string;
     vsacApiUsername: string;
@@ -51,52 +60,17 @@ export interface CreateOpenCodeSessionRequest {
   };
 }
 
-export interface OpenCodeSession {
-  id: string;
-  openCodeSessionId: string;
-  title: string;
-  status: 'starting' | 'idle' | 'busy' | 'error';
-  activeLibraryId: string;
-  activeFile: string;
-  createdAt: string;
-  updatedAt: string;
-  lastActivityAt: string;
-  expiresAt: string;
-  model: string;
-  reasoningEnabled: boolean;
+export interface OpenCodeSession extends OpenCodeSessionDto {
   environmentBinding?: OpenCodeEnvironmentBinding;
 }
 
-export interface OpenCodeFileDiff {
-  file: string;
+export type OpenCodeFileDiff = OpenCodeFileDiffDto;
+
+export interface OpenCodeEditorContext extends CoreOpenCodeEditorContext {
   libraryId: string;
-  before: string;
-  after: string;
-  additions: number;
-  deletions: number;
 }
 
-export interface OpenCodeEditorContext {
-  libraryId: string;
-  file: string;
-  selectedText: string;
-  startLine: number;
-  startColumn: number;
-  endLine: number;
-  endColumn: number;
-  documentRevision: number;
-  mode: 'selection' | 'inline';
-}
-
-export interface OpenCodeAttachment {
-  id: string;
-  name: string;
-  mimeType: string;
-  size: number;
-  path: string;
-  converted: boolean;
-  createdAt: string;
-}
+export type OpenCodeAttachment = OpenCodeAttachmentDto;
 
 export interface OpenCodeLibraryChange {
   libraryId: string;
@@ -112,39 +86,10 @@ export interface OpenCodeEvent {
   properties: Record<string, unknown>;
 }
 
-export interface OpenCodeEventEnvelope {
-  id: number;
-  sessionId: string;
-  emittedAt: string;
-  event: OpenCodeEvent;
-}
-
-export interface OpenCodeCommand {
-  name: string;
-  description: string;
-  source: 'web' | 'opencode' | 'cql-studio';
-  acceptsArguments: boolean;
-}
-
-export interface OpenCodeFileReference {
-  path: string;
-  name: string;
-  writable: boolean;
-}
-
-export interface OpenCodeDiagnostic {
-  severity: 'error' | 'warning' | 'info';
-  message: string;
-  file?: string;
-  line?: number;
-  column?: number;
-}
-
-export interface OpenCodeValidation {
-  valid: boolean;
-  diagnostics: OpenCodeDiagnostic[];
-  checkedAt: string;
-}
+export type OpenCodeCommand = OpenCodeCommandDto;
+export type OpenCodeFileReference = OpenCodeFileReferenceDto;
+export type OpenCodeDiagnostic = OpenCodeDiagnosticDto;
+export type OpenCodeValidation = OpenCodeValidationDto;
 
 export interface OpenCodeSessionState {
   session: OpenCodeSession;
@@ -172,31 +117,9 @@ export interface OpenCodeActivity {
   order: number;
 }
 
-export interface OpenCodeApiErrorBody {
-  code: string;
-  message: string;
-  retryable: boolean;
-  details?: unknown;
-}
-
-export interface OpenCodePermissionRequest {
-  id: string;
-  type: string;
-  title: string;
-  pattern?: string | string[];
-  metadata?: Record<string, unknown>;
-}
-
-export interface OpenCodeQuestionRequest {
-  id: string;
-  questions: Array<{
-    question: string;
-    header: string;
-    options: Array<{ label: string; description: string }>;
-    multiple?: boolean;
-    custom?: boolean;
-  }>;
-}
+export type OpenCodeApiErrorBody = OpenCodeErrorBody;
+export type OpenCodePermissionRequest = OpenCodePermissionRequestDto;
+export type OpenCodeQuestionRequest = OpenCodeQuestionRequestDto;
 
 export interface OpenCodeUiMessage {
   id: string;

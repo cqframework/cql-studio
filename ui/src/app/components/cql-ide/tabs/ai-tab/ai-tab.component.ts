@@ -1306,6 +1306,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
       cqlContent: library.cqlContent,
       originalContent: library.originalContent,
       fhirVersionId: library.library?.meta?.versionId,
+      workspaceOrigin: library.workspaceOrigin,
     };
   }
 
