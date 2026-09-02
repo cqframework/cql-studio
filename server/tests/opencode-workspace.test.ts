@@ -7,10 +7,11 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   isLightweightOpenCodeConversation,
+  openCodeToolsForPrompt,
   isOpenCodeSessionProgress,
   openCodeAttachmentMimeType,
 } from '../src/opencode/runtime.js';
-import { OpenCodeWorkspaceManager } from '../src/opencode/workspace.js';
+import { mcpBridgeExecutable, OpenCodeWorkspaceManager } from '../src/opencode/workspace.js';
 
 const activeCql = `library Example version '1.0.0'\nusing FHIR version '4.0.1'\ninclude Shared version '1.0.0'\ndefine Answer: 42\n`;
 
@@ -44,6 +45,18 @@ test('uses the lightweight tool-free path only for context-free conversation', (
       mode: 'context',
     },
   }), false);
+});
+
+test('explicitly restores tools after a lightweight conversation turn', () => {
+  assert.deepEqual(openCodeToolsForPrompt({ message: 'Hi' }), { '*': false });
+  assert.deepEqual(openCodeToolsForPrompt({ message: 'Read the active CQL file' }), { '*': true });
+});
+
+test('resolves the MCP bridge beside the compiled monorepo server module', () => {
+  assert.equal(
+    mcpBridgeExecutable('file:///app/server/dist/opencode/workspace.js', ''),
+    '/app/server/dist/opencode/mcp-bridge.js'
+  );
 });
 
 test('materializes a writable draft, read-only dependencies, MCP config, and a review diff', async () => {
@@ -102,6 +115,7 @@ test('materializes a writable draft, read-only dependencies, MCP config, and a r
     });
     assert.equal(config.mcp['cql-studio'].environment.CQL_STUDIO_SERVER_MCP_CAPABILITY, 'opaque-test-capability');
     assert.equal(config.mcp['cql-studio'].environment.CQL_STUDIO_SERVER_MCP_ACTIVE_FILE, workspace.activeFile);
+    assert.match(config.mcp['cql-studio'].command[1], /\/opencode\/mcp-bridge\.js$/);
     assert.equal(config.provider.ollama.models['qwen3-coder:latest'].variants.fast.reasoningEffort, 'none');
     assert.equal(config.provider.ollama.models['qwen3-coder:latest'].variants.thinking.reasoningEffort, 'medium');
     const commandExpectations: Record<string, RegExp> = {

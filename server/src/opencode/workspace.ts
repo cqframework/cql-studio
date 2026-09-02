@@ -3,6 +3,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readFile, readdir, rm, writeFile, chmod } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { MCPToolNames } from '@cql-studio/core';
@@ -33,6 +34,13 @@ const BINARY_EXTENSIONS = new Set([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.mp3', '.wav', '.mp4',
   '.mov', '.avi', '.xlsx', '.xls', '.pptx', '.ppt', '.odt', '.ods',
 ]);
+
+export function mcpBridgeExecutable(
+  moduleUrl = import.meta.url,
+  configured = process.env.CQL_STUDIO_SERVER_MCP_BRIDGE_BIN
+): string {
+  return configured?.trim() || fileURLToPath(new URL('./mcp-bridge.js', moduleUrl));
+}
 
 export interface MaterializedWorkspace {
   id: string;
@@ -322,7 +330,7 @@ export class OpenCodeWorkspaceManager {
         mcp: {
           'cql-studio': {
             type: 'local',
-            command: ['node', '/app/dist/opencode/mcp-bridge.js'],
+            command: [process.execPath, mcpBridgeExecutable()],
             environment: {
               CQL_STUDIO_SERVER_MCP_BRIDGE_URL: input.toolBridge.baseUrl,
               CQL_STUDIO_SERVER_MCP_CAPABILITY: input.toolBridge.capability,

@@ -1,11 +1,12 @@
 // Author: Preston Lee
 
 import express from 'express';
+import pino from 'pino';
 import type { Request, Response, NextFunction } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import type { CreateOpenCodeSessionRequest, OpenCodePermissionResponse, OpenCodePromptRequest } from '@cql-studio/core';
 import { normalizeOpenCodeError, OpenCodeError } from './errors.js';
-import { openCodeLogger } from './logger.js';
+import { configureOpenCodeLogger, openCodeLogger } from './logger.js';
 import { OpenCodeRuntime } from './runtime.js';
 
 const app = express();
@@ -13,6 +14,23 @@ const runtime = new OpenCodeRuntime();
 const port = Number.parseInt(process.env.CQL_STUDIO_SERVER_OPENCODE_RUNNER_PORT || '4097', 10);
 const token = process.env.CQL_STUDIO_SERVER_OPENCODE_RUNNER_TOKEN || 'cql-studio-opencode-development-only';
 const nodeEnv = process.env.CQL_STUDIO_SERVER_NODE_ENV || 'development';
+configureOpenCodeLogger(pino({
+  level: process.env.CQL_STUDIO_SERVER_LOG_LEVEL || 'info',
+  redact: {
+    paths: [
+      '*.authorization',
+      '*.cookie',
+      '*.capability',
+      '*.prompt',
+      '*.cqlContent',
+      '*.toolOutput',
+      '*.password',
+      '*.token',
+      '*.headers.authorization',
+    ],
+    censor: '[REDACTED]',
+  },
+}).child({ service: 'opencode-runner' }));
 if (nodeEnv !== 'development' && (token === 'cql-studio-opencode-development-only' || Buffer.byteLength(token) < 32)) {
   throw new Error('CQL_STUDIO_SERVER_OPENCODE_RUNNER_TOKEN must be a non-default secret of at least 32 bytes in production');
 }

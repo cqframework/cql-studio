@@ -104,6 +104,16 @@ export function isLightweightOpenCodeConversation(input: Pick<OpenCodePromptRequ
   return LIGHTWEIGHT_CONVERSATION_MESSAGES.has(normalized);
 }
 
+/**
+ * OpenCode persists a prompt's wildcard tool override for later turns in the
+ * same session. Always send the inverse override so a tool-free greeting
+ * cannot leave subsequent CQL work without file and MCP tools.
+ */
+export function openCodeToolsForPrompt(input: Pick<OpenCodePromptRequest,
+  'message' | 'references' | 'attachments' | 'editorContext'>): Record<string, boolean> {
+  return { '*': !isLightweightOpenCodeConversation(input) };
+}
+
 export class OpenCodeRuntime {
   private readonly workspaces = new OpenCodeWorkspaceManager();
   private readonly sessions = new Map<string, RuntimeSession>();
@@ -278,9 +288,18 @@ export class OpenCodeRuntime {
         agent: input.agent === 'plan' ? 'plan' : 'build',
         model: { providerID: selectedModel.providerID, modelID: selectedModel.modelID },
         variant: input.reasoning ? 'thinking' : 'fast',
-        ...(lightweightConversation ? { tools: { '*': false } } : {}),
+        tools: openCodeToolsForPrompt(input),
         parts,
       });
+      openCodeLogger.info({
+        operation: 'prompt.accepted',
+        sessionId: id,
+        model: selectedModel.model,
+        toolsEnabled: !lightweightConversation,
+        references: input.references?.length ?? 0,
+        attachments: input.attachments?.length ?? 0,
+        editorContext: Boolean(input.editorContext),
+      }, 'OpenCode prompt accepted');
     } catch (error) {
       session.dto.status = 'error';
       this.clearStallTimer(session);
