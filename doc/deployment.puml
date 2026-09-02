@@ -1,0 +1,69 @@
+@startuml deployment
+title CQL Studio Platform Deployment Footprint & Architecture
+
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam nodesep 35
+skinparam ranksep 45
+
+cloud "Client Layer" as Clients {
+  actor "Developer / Author\n(Browser)" as DevUser
+  [Ollama LLM Runner\n(Local / Remote)] as OllamaRunner
+  [NLM VSAC FHIR API\n(cts.nlm.nih.gov)] as VsacApi
+  [SearXNG Web Search\n(Search Instance)] as SearxngApi
+}
+
+node "CQL Studio UI" as UiTier {
+  [Angular SPA\n(CodeMirror 6 & Bootstrap 5)] as UI
+  [PGlite WebAssembly\n(In-Browser SQL on FHIR)] as PGliteEngine
+}
+
+node "CQL Studio Server (Express / Node.js ESM)" as ServerTier {
+  [BFF Auth & Sessions\n(HttpOnly Cookies)] as BffAuth
+  [Team & Workspace Service\n(IAM & Activity Log)] as TeamService
+  [MCP Tool Orchestrator\n(Model Context Protocol)] as McpEngine
+  [Ollama Proxy\n(CORS Bypass)] as OllamaProxy
+  [VSAC ValueSet Proxy\n(Authoritative Discovery)] as VsacProxy
+}
+
+node "Identity & SSO" as SsoTier {
+  [Authentik SSO Server\n(OIDC Provider)] as AuthentikServer
+  [Authentik Worker] as AuthentikWorker
+}
+
+node "FHIR Storage Layer" as FhirTier {
+  [HAPI FHIR R4 JPA\n(CQL Evaluation & Libraries)] as HapiR4
+}
+
+database "PostgreSQL 18" as DatabaseTier {
+  database "CQL Studio DB\n(Prisma Schema)" as AppDb
+  database "Authentik DB" as AuthentikDb
+}
+
+DevUser --> UI : HTTPS (Port 4200)
+UI --> ServerTier : REST API & MCP (Port 3003)\n(Session Cookie)
+UI --> HapiR4 : FHIR REST API / $evaluate (Port 8080)
+DevUser ..> AuthentikServer : OIDC Authorize (BFF flow)
+BffAuth --> AuthentikServer : Token Exchange / Discovery (Port 9000)
+
+OllamaProxy --> OllamaRunner : Native API Forwarding
+VsacProxy --> VsacApi : FHIR ValueSet Search & Validation
+McpEngine --> SearxngApi : Anonymous Search Queries
+
+ServerTier --> AppDb : Prisma ORM (Port 5432)
+AuthentikServer --> AuthentikDb : Relational Store
+
+note right of McpEngine
+  MCP Tool Orchestration provides
+  web searching, page fetching,
+  feed extraction, and authoritative
+  VSAC ValueSet resolution to AI agents.
+end note
+
+note bottom of UI
+  Includes full CQL editor,
+  ELM AST inspector, Test Runner,
+  and in-browser SQL on FHIR engine via PGlite.
+end note
+
+@enduml

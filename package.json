@@ -1,91 +1,31 @@
 {
   "name": "cql-studio",
-  "version": "2.3.6",
-  "author": "Preston Lee",
-  "license": "Apache-2.0",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/cqframework/cql-studio"
-  },
-  "homepage": "https://github.com/cqframework/cql-studio",
-  "bugs": {
-    "url": "https://github.com/cqframework/cql-studio/issues"
-  },
-  "scripts": {
-    "ng": "ng",
-    "start": "envsubst < public/configuration.template.js > public/configuration.js && ng serve",
-    "build": "ng build",
-    "watch": "envsubst < public/configuration.template.js > public/configuration.js && ng build --watch --configuration development",
-    "test": "ng test",
-    "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed",
-    "test:e2e:debug": "playwright test --debug"
-  },
-  "prettier": {
-    "printWidth": 100,
-    "singleQuote": true,
-    "overrides": [
-      {
-        "files": "*.html",
-        "options": {
-          "parser": "angular"
-        }
-      }
-    ]
-  },
   "private": true,
-  "dependencies": {
-    "@angular/cdk": "^22.1.3",
-    "@angular/common": "^22.1.3",
-    "@angular/compiler": "^22.1.3",
-    "@angular/core": "^22.1.3",
-    "@angular/forms": "^22.1.3",
-    "@angular/platform-browser": "^22.1.3",
-    "@angular/router": "^22.1.3",
-    "@codemirror/autocomplete": "^6.20.3",
-    "@codemirror/commands": "^6.11.0",
-    "@codemirror/lang-json": "^6.0.2",
-    "@codemirror/language": "^6.12.4",
-    "@codemirror/lint": "^6.9.7",
-    "@codemirror/search": "^6.7.1",
-    "@codemirror/state": "^6.7.1",
-    "@codemirror/view": "^6.43.9",
-    "@cqframework/cql": "^4.0.0-beta.1",
-    "@electric-sql/pglite": "^0.5.5",
-    "@lezer/highlight": "^1.2.3",
-    "@lhncbc/ucum-lhc": "^7.1.9",
-    "ajv": "^8.20.0",
-    "ajv-formats": "^3.0.1",
-    "bootstrap": "^5.3.8",
-    "bootstrap-icons": "^1.13.1",
-    "bootswatch": "^5.3.8",
-    "chart.js": "^4.5.1",
-    "codemirror": "^6.0.2",
-    "fflate": "^0.8.3",
-    "mammoth": "^1.12.1",
-    "marked": "^18.0.10",
-    "ng2-charts": "^10.0.0",
-    "ngx-markdown": "^22.0.0",
-    "ngx-timeago": "^4.1.0",
-    "pdfjs-dist": "^6.2.108",
-    "prism-js-fold": "^1.0.1",
-    "prismjs": "^1.30.0",
-    "rxjs": "~7.8.2",
-    "semver": "^7.8.5",
-    "tslib": "^2.8.1",
-    "uuid": "^14.0.2"
+  "engines": {
+    "node": ">=26"
   },
-  "devDependencies": {
-    "@angular/build": "^22.1.5",
-    "@angular/cli": "^22.1.5",
-    "@angular/compiler-cli": "^22.1.3",
-    "@playwright/test": "^1.62.1",
-    "@types/fhir": "^0.0.44",
-    "@types/prismjs": "^1.26.6",
-    "@types/semver": "^7.8.0",
-    "jsdom": "^30.0.1",
-    "typescript": "<7",
-    "vitest": "^4.1.11"
+  "packageManager": "npm",
+  "workspaces": [
+    "core",
+    "server",
+    "ui"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@cql-studio/core && npm run build --workspace=@cql-studio/server && npm run build --workspace=@cql-studio/ui",
+    "build:core": "npm run build --workspace=@cql-studio/core",
+    "build:server": "npm run build --workspace=@cql-studio/server",
+    "build:ui": "npm run build --workspace=@cql-studio/ui",
+    "start:ui": "npm run start --workspace=@cql-studio/ui",
+    "start:server": "npm run dev --workspace=@cql-studio/server",
+    "prisma:migrate": "npm run prisma:migrate --workspace=@cql-studio/server",
+    "prisma:generate": "npm run prisma:generate --workspace=@cql-studio/server",
+    "prisma:deploy": "npm run prisma:deploy --workspace=@cql-studio/server",
+    "docker:up": "docker compose -f docker/docker-compose.development.yml up -d --pull always --remove-orphans",
+    "docker:down": "docker compose -f docker/docker-compose.development.yml down",
+    "diagram": "command -v plantuml >/dev/null 2>&1 && plantuml -tpng doc/*.puml || echo 'plantuml not found on PATH; install PlantUML to render doc/*.puml'",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "overrides": {
+    "@types/express-serve-static-core": "5.1.0"
   }
 }

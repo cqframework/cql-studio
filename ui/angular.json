@@ -1,0 +1,130 @@
+{
+  "$schema": "./node_modules/@angular/cli/lib/config/schema.json",
+  "version": 1,
+  "newProjectRoot": "projects",
+  "projects": {
+    "cql-studio": {
+      "projectType": "application",
+      "schematics": {
+        "@schematics/angular:component": {
+          "style": "scss"
+        }
+      },
+      "root": "",
+      "sourceRoot": "src",
+      "prefix": "app",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "src/main.ts",
+            "tsConfig": "tsconfig.app.json",
+            "inlineStyleLanguage": "scss",
+            "stylePreprocessorOptions": {
+              "includePaths": ["node_modules"]
+            },
+            "allowedCommonJsDependencies": [
+              "ajv",
+              "ajv-formats"
+            ],
+            "assets": [
+              {
+                "glob": "**/*",
+                "input": "public"
+              },
+              {
+                "glob": "*.wasm",
+                "input": "node_modules/@electric-sql/pglite/dist",
+                "output": "/pglite/"
+              },
+              {
+                "glob": "*.data",
+                "input": "node_modules/@electric-sql/pglite/dist",
+                "output": "/pglite/"
+              },
+              {
+                "glob": "*.tar.gz",
+                "input": "node_modules/@electric-sql/pglite/dist",
+                "output": "/pglite/"
+              }
+            ],
+            "styles": [
+              "bootswatch/dist/materia/bootstrap.min.css",
+              "bootstrap-icons/font/bootstrap-icons.css",
+              "src/styles.scss",
+              "prismjs/plugins/line-numbers/prism-line-numbers.css",
+              "prism-js-fold/prism-js-fold.css"
+            ],
+            "scripts": [
+              "bootstrap/dist/js/bootstrap.bundle.min.js",
+              "prismjs/prism.js",
+              "prismjs/components/prism-json.min.js",
+              "prismjs/components/prism-xml-doc.min.js",
+              "prismjs/components/prism-javascript.min.js",
+              "prismjs/components/prism-sql.min.js",
+              "prismjs/plugins/line-numbers/prism-line-numbers.min.js",
+              "prismjs/plugins/keep-markup/prism-keep-markup.min.js",
+              "prism-js-fold/prism-js-fold.js"
+            ]
+          },
+          "configurations": {
+            "production": {
+              "optimization": {
+                "fonts": {
+                  "inline": false
+                }
+              },
+              "budgets": [
+                {
+                  "type": "initial",
+                  "maximumWarning": "8MB",
+                  "maximumError": "16MB"
+                },
+                {
+                  "type": "anyComponentStyle",
+                  "maximumWarning": "32kB",
+                  "maximumError": "64kB"
+                }
+              ],
+              "outputHashing": "all"
+            },
+            "development": {
+              "optimization": false,
+              "extractLicenses": false,
+              "sourceMap": true
+            }
+          },
+          "defaultConfiguration": "production"
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "configurations": {
+            "production": {
+              "buildTarget": "cql-studio:build:production"
+            },
+            "development": {
+              "buildTarget": "cql-studio:build:development"
+            }
+          },
+          "defaultConfiguration": "development"
+        },
+        "extract-i18n": {
+          "builder": "@angular/build:extract-i18n"
+        },
+        "test": {
+          "builder": "@angular/build:unit-test",
+          "options": {
+            "tsConfig": "tsconfig.spec.json",
+            "runnerConfig": "vitest.config.ts"
+          }
+        }
+      }
+    }
+  },
+  "cli": {
+    "analytics": false,
+    "cache": {
+      "enabled": false
+    }
+  }
+}

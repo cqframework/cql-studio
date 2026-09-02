@@ -1,0 +1,128 @@
+<div id="lipid-management-example">
+  <h5 class="card-title mb-3">{{ example.title }}</h5>
+  @if (example.packageId || example.packageUrl) {
+  <div class="mb-3">
+    <app-example-import-cta [packageId]="example.packageId" [packageVersion]="example.packageVersion"
+      [packageUrl]="example.packageUrl" buttonId="lipid-management-example-import-cta" />
+  </div>
+  } @else {
+  <p class="text-muted small mb-3" id="lipid-management-package-unavailable">
+    A FHIR package for this example is not published yet.
+  </p>
+  }
+  <p class="text-muted">{{ example.description }}</p>
+  <p>
+    This hands-on example is based on the open-source
+    <a href="https://github.com/preston/lipid-management" target="_blank" rel="noopener noreferrer"
+      id="lipid-management-github-link">Lipid Management</a>
+    project based on VA/DoD guidelines, which includes CQL libraries and value sets for lipid therapy decision support
+    on FHIR R4, including
+    PREVENT-aligned cardiovascular risk utilities and ValueSet resources.
+  </p>
+
+  <p>
+    These libraries are provided as teaching and demonstration artifacts. OpenCVDRisk is an open-source implementation
+    of published PREVENT equations in Clinical Quality Language (CQL) and is not affiliated with or endorsed by
+    the AHA. CDS outputs are not treatment orders. Not for clinical use.
+  </p>
+
+  <h6 class="mt-4" id="lipid-management-libraries-heading">Libraries</h6>
+  <p>
+    Each FHIR CQL Library is independently evaluable in <code>Patient</code> context, with upper guideline Library
+    reusing the lower-level logic.
+  </p>
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered" id="lipid-management-libraries">
+      <thead class="table-light">
+        <tr>
+          <th>Library</th>
+          <th>Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>BMI</code></td>
+          <td>Height, weight, and BMI from Observations (computed BMI preferred with recorded BMI fallback)</td>
+        </tr>
+        <tr>
+          <td><code>SDI2019</code></td>
+          <td>ZIP / ZCTA to Robert Graham Center 2019 Social Deprivation Index decile (1-10)</td>
+        </tr>
+        <tr>
+          <td><code>OpenCVDRisk</code></td>
+          <td>AHA PREVENT 10- and 30-year total CVD risk from chart labs, vitals, meds, and optional add-ons.</td>
+        </tr>
+        <tr>
+          <td><code>LipidManagement</code></td>
+          <td>VA/DoD 2025 lipid CPG algorithm path and recommendation applicability on top of PREVENT risk.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h6 class="mt-4" id="lipid-management-stack-heading">How the libraries stack</h6>
+  <p>
+    <code>BMI</code> is used by <code>OpenCVDRisk</code>, which is in turn used by <code>LipidManagement</code>, with
+    <code>SDI2019</code> supplying optional scoring covariates using social deprivation index data.
+  </p>
+
+  <h6 class="mt-4" id="lipid-management-patients-heading">Example patients</h6>
+  <p>
+    Eight Synthea FHIR R4 transaction bundles are included, which can be used out of the box within the IDE. Ages are as
+    of 2026.
+  </p>
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered" id="lipid-management-example-patients">
+      <thead class="table-light">
+        <tr>
+          <th>Patient</th>
+          <th>Demographics</th>
+          <th>Highlights</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>German382 Zemlak964</td>
+          <td>61, male</td>
+          <td>Primary prevention on simvastatin; LDL already at goal (~79 mg/dL); no coded conditions.</td>
+        </tr>
+        <tr>
+          <td>Jeromy156 Boyer713</td>
+          <td>74, male</td>
+          <td>Active HIV, former smoker, no lipid-lowering therapy — exercises the HIV / moderate-statin path.</td>
+        </tr>
+        <tr>
+          <td>Tracie996 Weber641</td>
+          <td>64, female</td>
+          <td>Type 2 diabetes with diabetic kidney disease and microalbuminuria, on simvastatin, LDL ~143.</td>
+        </tr>
+        <tr>
+          <td>Rhett759 Kulas532</td>
+          <td>67, male</td>
+          <td>Untreated-range LDL (~225) on simvastatin plus lisinopril; LVEF 8% (HFrEF exclusion from the CPG
+            population).</td>
+        </tr>
+        <tr>
+          <td>Katharine125 Hudson301</td>
+          <td>58, female</td>
+          <td>On simvastatin with LDL ~93 and LVEF ~43%; no coded conditions.</td>
+        </tr>
+        <tr>
+          <td>Ahmad985 Schulist381</td>
+          <td>47, male</td>
+          <td>Diabetic kidney disease and microalbuminuria on lisinopril; no statin.</td>
+        </tr>
+        <tr>
+          <td>Marco578 Balistreri607</td>
+          <td>40, male</td>
+          <td>Diabetic kidney disease on lisinopril; LDL ~142, no statin.</td>
+        </tr>
+        <tr>
+          <td>Aja848 Cormier289</td>
+          <td>30, female</td>
+          <td>Young adult with type 2 diabetes and diabetic kidney disease; no medications on file.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>

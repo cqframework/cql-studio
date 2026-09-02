@@ -1,0 +1,276 @@
+<div id="hospital-at-home-example">
+  <h5 class="card-title mb-3">{{ example.title }}</h5>
+  @if (example.packageId || example.packageUrl) {
+  <div class="mb-3">
+    <app-example-import-cta [packageId]="example.packageId" [packageVersion]="example.packageVersion"
+      [packageUrl]="example.packageUrl" buttonId="hospital-at-home-example-import-cta" />
+  </div>
+  } @else {
+  <p class="text-muted small mb-3" id="hospital-at-home-package-unavailable">
+    A FHIR package for this example is not published yet.
+  </p>
+  }
+  <p class="text-muted">{{ example.description }}</p>
+
+  <h6 class="mt-4">What Hospital-at-Home eligibility is</h6>
+  <p>
+    Hospital-at-Home (HaH) delivers acute, inpatient-level care in a patient's residence: daily
+    clinician visits, IV therapy, diagnostics, and continuous monitoring for a condition that would
+    otherwise require a hospital bed.
+  </p>
+  <p>
+    This library is provided as ateaching and demonstration artifact. It
+    has not been clinically validated, and the criteria it encodes are a published research protocol,
+    not any particular organization's admission policy.
+  </p>
+  <p>
+    The clinical question is a screening one: of the patients presenting for acute admission, which
+    can be safely treated at home instead? That question decomposes into inclusion and exclusion
+    criteria. In clinical practice, all criteria are manually checked by clinicians, requiring full
+    time screening staff to spend ~5–10 minutes per patient chart.
+  </p>
+  <p>
+    This library encodes the criteria described by Leff et al. (1997) in an original publication
+    (<a href="https://doi.org/10.1111/j.1532-5415.1997.tb05968.x" target="_blank" rel="noopener noreferrer"
+      id="hospital-at-home-leff-doi">https://doi.org/10.1111/j.1532-5415.1997.tb05968.x</a>)
+    and can be executed in &lt;1s using CQL. Results are structured to support clinicians' eligibility
+    decisions on criteria-level.
+  </p>
+
+  <h6 class="mt-4">How the library is structured</h6>
+  <h6 class="fw-normal">Four layers</h6>
+  <p>
+    The library is organized into layers so that expensive operations happen once per patient rather
+    than once per encounter per criterion.
+  </p>
+  <p>
+    <strong>Layer 0 — Base populations.</strong> One retrieve per resource type, with
+    encounter-independent status filters applied exactly once (<code>Qualifying Conditions</code>,
+    <code>Final Observations</code>, <code>Qualifying Procedures</code>, and so on).
+  </p>
+  <p>
+    <strong>Layer 1 — Fluent filter functions.</strong> Reusable filters that operate on
+    already-retrieved in-memory lists: <code>codedAs</code>, <code>withCode</code>,
+    <code>linkedTo</code>, <code>during</code>, <code>performedDuring</code>,
+    <code>knownAsOf</code>. No retrieves happen here.
+  </p>
+  <p>
+    <strong>Layer 2 — Coded subsets.</strong> Terminology matching runs once per patient per value
+    set and is cached by the engine — <code>Qualifying CHF Conditions</code>,
+    <code>Systolic BP Results</code>, <code>Dialysis Performed</code>, etc.
+  </p>
+  <p>
+    <strong>Layer 3 — Enumerated criteria.</strong> One definition per criterion, named by its
+    identifier in the source protocol (<code>1.A.2. CHF Diagnosis</code>,
+    <code>5.G. General Exclusion Hypotension</code>). Each is tagged in a comment with how it is
+    evaluated:
+  </p>
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered" id="hospital-at-home-criterion-tags">
+      <thead class="table-light">
+        <tr>
+          <th>Tag</th>
+          <th>Meaning</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>[per-encounter]</code></td>
+          <td>Filters a cached list against the index encounter</td>
+        </tr>
+        <tr>
+          <td><code>[lookback]</code></td>
+          <td>Date window anchored to the encounter start</td>
+        </tr>
+        <tr>
+          <td><code>[patient-level]</code></td>
+          <td>Cohort-wide, bounded by a retrospective cutoff</td>
+        </tr>
+        <tr>
+          <td><code>[manual-review stub]</code></td>
+          <td>Constant; requires human adjudication</td>
+        </tr>
+        <tr>
+          <td><code>[inline]</code></td>
+          <td>Computed directly in the Layer 4 output query</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    <strong>Layer 4 — Output.</strong> A single expression, <code>Encounter Eligibility Results</code>,
+    returning one tuple per qualifying encounter.
+  </p>
+
+  <h6 class="fw-normal">Criterion sections</h6>
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered" id="hospital-at-home-criterion-sections">
+      <thead class="table-light">
+        <tr>
+          <th>Section</th>
+          <th>Scope</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>Inclusion — admission required, target diagnosis, age ≥ 65, catchment area</td>
+        </tr>
+        <tr>
+          <td>2</td>
+          <td>CHF-specific exclusions</td>
+        </tr>
+        <tr>
+          <td>3</td>
+          <td>COAD-specific exclusions</td>
+        </tr>
+        <tr>
+          <td>4</td>
+          <td>CAP-specific exclusions</td>
+        </tr>
+        <tr>
+          <td>5</td>
+          <td>General exclusions — applied to every patient</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Each section rolls up into a <code>Z.n</code> summary, and those combine into the final
+    determination <code>Z.6. HaH Eligible</code>.
+  </p>
+
+  <h6 class="mt-4">Parameters</h6>
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered" id="hospital-at-home-parameters">
+      <thead class="table-light">
+        <tr>
+          <th>Parameter</th>
+          <th>Default</th>
+          <th>Purpose</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>IndexEncounterStatuses</code></td>
+          <td><code>'in-progress'</code>, <code>'finished'</code></td>
+          <td>Which encounter statuses qualify</td>
+        </tr>
+        <tr>
+          <td><code>IndexEncounterClasses</code></td>
+          <td><code>ACUTE</code>, <code>IMP</code>, <code>SS</code>, <code>EMER</code></td>
+          <td>Which encounter classes count as inpatient</td>
+        </tr>
+        <tr>
+          <td><code>MinimumIndexEncounterLengthHours</code></td>
+          <td><code>24</code></td>
+          <td>Minimum stay to be considered an index encounter</td>
+        </tr>
+        <tr>
+          <td><code>MaxEncountersToEvaluate</code></td>
+          <td><code>10</code></td>
+          <td>Caps output size for patients with long histories</td>
+        </tr>
+        <tr>
+          <td><code>AllowedConditionClinicalStatuses</code></td>
+          <td><code>active</code>, <code>recurrence</code>, <code>relapse</code>, <code>resolved</code></td>
+          <td>Which conditions are in scope</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>
+    Changing <code>MinimumIndexEncounterLengthHours</code> is the quickest way to see the
+    encounter-selection logic respond.
+  </p>
+
+  <h6 class="mt-4">Using the library</h6>
+  <h6 class="fw-normal">Working through it</h6>
+  <ol>
+    <li>
+      <strong>Start at the bottom.</strong> Read <code>Encounter Eligibility Results</code> (Layer 4)
+      first. It is the whole protocol on one screen.
+    </li>
+    <li>
+      <strong>Pick one criterion and trace it upward.</strong>
+      <code>5.G. General Exclusion Hypotension</code> is a good first choice — it goes from a LOINC
+      code through a Layer 2 subset, a Layer 1 <code>during</code> filter, and a quantity comparison,
+      in four short hops.
+    </li>
+    <li>
+      <strong>Run the test bundles.</strong> Use a CQL engine to execute the library against patient
+      test cases and check the results against the table below.
+    </li>
+  </ol>
+
+  <h6 class="fw-normal">Test data</h6>
+  <p>Four patient bundles are included in the package:</p>
+  <div class="table-responsive mb-3">
+    <table class="table table-sm table-bordered" id="hospital-at-home-test-bundles">
+      <thead class="table-light">
+        <tr>
+          <th>Bundle</th>
+          <th>Expected <code>Z.6. HaH Eligible</code></th>
+          <th>Demonstrates</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>Bundle-Eligible</code></td>
+          <td><code>true</code></td>
+          <td>Inclusion met, no exclusions</td>
+        </tr>
+        <tr>
+          <td><code>Bundle-NotEligibleNoInclusion</code></td>
+          <td><code>false</code></td>
+          <td>Fails Section 1</td>
+        </tr>
+        <tr>
+          <td><code>Bundle-NotEligibleCHFExclusion</code></td>
+          <td><code>false</code></td>
+          <td>Fails Section 2 (conditional branch)</td>
+        </tr>
+        <tr>
+          <td><code>Bundle-NotEligibleGeneralExclusion</code></td>
+          <td><code>false</code></td>
+          <td>Fails Section 5</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Load a bundle, then evaluate <code>Encounter Eligibility Results</code> in <code>Patient</code> context.</p>
+
+  <h6 class="fw-normal">Terminology</h6>
+  <p>
+    The value set references point at VSAC canonical URLs
+    (<code>http://cts.nlm.nih.gov/fhir/ValueSet/...</code>). The package
+    includes the VSAC FHIR ValueSet resources required by the library. Intensional
+    <code>is-a</code> (and other filter) definitions, plus grouping ValueSets that include them,
+    are <strong>pre-expanded via VSAC</strong> into enumerated codes and an
+    <code>expansion</code> snapshot so you do not need to import ICD, SNOMED, or other full
+    CodeSystems to run this example. VSAC/UMLS license terms still apply to redistributed
+    expansions.
+  </p>
+  <p>
+    If you swap in your own value sets, the declarations at the top of the CQL are the only
+    thing you need to change.
+  </p>
+
+  <h6 class="mt-4" id="hospital-at-home-attribution">Attribution</h6>
+  <p>
+    Content authored by <em>Tim Schwirtlich, Institute for AI in Medicine (I.AIM), Northwestern
+      University</em>.
+  </p>
+  <p>
+    The eligibility criteria encoded here are derived from the published work of Leff et al. on
+    Hospital-at-Home admission criteria; that work is cited, not reproduced. The CQL implementation,
+    structure, and test data are original.
+  </p>
+  <p>
+    <a href="https://doi.org/10.1111/j.1532-5415.1997.tb05968.x" target="_blank" rel="noopener noreferrer"
+      id="hospital-at-home-leff-doi-attribution">https://doi.org/10.1111/j.1532-5415.1997.tb05968.x</a>
+  </p>
+
+  <h6 class="mt-4">License</h6>
+  <p>MIT Licensed.</p>
+</div>

@@ -1,0 +1,35 @@
+{
+  "name": "@cql-studio/core",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CQL Studio Core Domain Models and Shared Types",
+  "type": "module",
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "import": "./build/index.js",
+      "default": "./build/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "build"
+  ],
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "clean": "rm -rf ./build",
+    "compile": "tsc",
+    "build": "npm run clean && npm run compile",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "typescript": "^7.0.2"
+  }
+}

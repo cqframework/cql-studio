@@ -1,4 +1,5 @@
-name: latest-amd64
+---
+name: ui-amd64
 kind: pipeline
 type: docker
 platform:
@@ -8,6 +9,7 @@ steps:
   - name: publish
     image: plugins/docker
     settings:
+      dockerfile: ui/Dockerfile
       repo: hlseven/quality-cql-studio
       tags:
         - ${DRONE_COMMIT_BRANCH}-linux-amd64
@@ -16,7 +18,7 @@ steps:
       password:
         from_secret: docker_password
 ---
-name: latest-arm64
+name: ui-arm64
 kind: pipeline
 type: docker
 platform:
@@ -26,6 +28,7 @@ steps:
   - name: publish
     image: plugins/docker
     settings:
+      dockerfile: ui/Dockerfile
       repo: hlseven/quality-cql-studio
       tags:
         - ${DRONE_COMMIT_BRANCH}-linux-arm64
@@ -34,12 +37,12 @@ steps:
       password:
         from_secret: docker_password
 ---
-name: manifest
+name: ui-manifest
 kind: pipeline
 type: docker
 depends_on:
-  - latest-amd64
-  - latest-arm64
+  - ui-amd64
+  - ui-arm64
 steps:
   - name: publish-manifest
     image: plugins/manifest
@@ -53,7 +56,74 @@ steps:
       platforms:
         - linux/amd64
         - linux/arm64
-      exclude: [master]
+      exclude:
+        - master
+trigger:
+  branch:
+    include:
+      - master
+  status:
+    - success
+---
+name: server-amd64
+kind: pipeline
+type: docker
+platform:
+  arch: amd64
+  os: linux
+steps:
+  - name: publish
+    image: plugins/docker
+    settings:
+      dockerfile: server/Dockerfile
+      repo: p3000/cql-studio-server
+      tags:
+        - ${DRONE_COMMIT_BRANCH}-linux-amd64
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+---
+name: server-arm64
+kind: pipeline
+type: docker
+platform:
+  arch: arm64
+  os: linux
+steps:
+  - name: publish
+    image: plugins/docker
+    settings:
+      dockerfile: server/Dockerfile
+      repo: p3000/cql-studio-server
+      tags:
+        - ${DRONE_COMMIT_BRANCH}-linux-arm64
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+---
+name: server-manifest
+kind: pipeline
+type: docker
+depends_on:
+  - server-amd64
+  - server-arm64
+steps:
+  - name: publish-manifest
+    image: plugins/manifest
+    settings:
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+      target: p3000/cql-studio-server:latest
+      template: p3000/cql-studio-server:master-OS-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      exclude:
+        - master
 trigger:
   branch:
     include:

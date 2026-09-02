@@ -1,0 +1,13 @@
+.cursor
+.cursorrules
+.env
+.DS_Store
+.git
+.gitignore
+
+node_modules
+dist
+
+*.log
+README.md
+

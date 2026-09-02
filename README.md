@@ -2,131 +2,164 @@
 ![Docker Image Version](https://shields.foundry.hl7.org/docker/v/hlseven/quality-cql-studio)
 ![Docker Pulls](https://shields.foundry.hl7.org/docker/pulls/hlseven/quality-cql-studio)
 
-A integrated web application suite for developing, testing, and publication of CQL (Clinical Quality Language) and FHIR-based artifacts using classical IDE concepts and optional AI-assisted drafting, as well as full support of official CQL _engine_ compatibility test cases, runner services, and results analysis.
+CQL Studio is an integrated web application suite and developer platform for developing, testing, and publication of Clinical Quality Language (CQL) and FHIR-based quality artifacts. It provides an advanced IDE with CodeMirror 6, AST and ELM translation, execution test harnesses, in-browser SQL on FHIR via WebAssembly (PGlite), and optional AI-assisted drafting backed by local LLMs (Ollama) and Model Context Protocol (MCP) tooling.
 
-See [CQL Studio Website](https://cqlstudio.com) for screenshots and product information.
+The codebase is organized as an npm monorepo with strict TypeScript typing:
+- **`core/`** (`@cql-studio/core`) – Shared domain models, authentication/user types, team & workspace models, activity tracking, endpoint configurations, and MCP tool definitions.
+- **`server/`** (`@cql-studio/server`) – Express and Node.js ESM backend, Prisma ORM, MCP tool orchestrator, Ollama & VSAC proxies, and OIDC BFF session authentication.
+- **`ui/`** (`@cql-studio/ui`) – Angular 22 standalone frontend with CodeMirror 6, Bootstrap 5, and in-browser SQL on FHIR engine.
+- **`docker/`** – Local Docker Compose stack providing PostgreSQL (CQL Studio DB & Authentik), Authentik (SSO/OIDC), and HAPI FHIR R4 JPA server.
+- **`doc/`** – Architecture documentation, PlantUML diagrams, and SQL on FHIR guides.
 
+The OpenCode frontend architecture, filesystem boundaries, credential lifecycle, gateway contract, and pending server integration are documented in [`doc/opencode-frontend.md`](doc/opencode-frontend.md).
 
-## Quick Start with Docker
+---
 
-**This is just the UI component of CQL Studio. If you want to use the full distribution, you will likely want a fully configured, downloadable bundle such as distributed through [HL7 Foundry](https://foundry.hl7.org/products/fb509f14-5bc1-491b-a145-fab078a901c0)**.
+## Architecture
 
-The easiest way to run this application is using Docker:
+![deployment](doc/deployment.png)
 
-### Build and Run with Docker
+### Components
+
+| Component | Role |
+| --- | --- |
+| **CQL Studio UI** | Angular standalone frontend with CodeMirror 6 and Bootstrap styling. Provides CQL authoring, syntax highlighting, ELM inspection, measure evaluation, and in-browser SQL on FHIR execution. |
+| **CQL Studio Server** | Express API with Node.js ESM and Prisma ORM. Handles user authentication via OIDC Backend-For-Frontend (BFF), team & workspace collaboration, MCP tool execution, and proxies for Ollama and VSAC. |
+| **PostgreSQL** | Primary relational store for CQL Studio user accounts, teams, workspaces, access grants, activity logs, and shared environment metadata. |
+| **Authentik** | OpenID Connect SSO identity provider for user authentication and team logins. |
+| **HAPI FHIR JPA Server** | FHIR persistence and `$evaluate` execution server for clinical data, ValueSets, and CQL Library resources. |
+| **Ollama Runner & Proxy** | Local or remote LLM execution engine with CORS-proxied endpoints for browser-safe AI code drafting and assistance. |
+| **MCP Tool Orchestrator** | Tool execution engine providing web search (SearXNG), page fetching, metadata parsing, RSS feed extraction, and authoritative VSAC ValueSet discovery. |
+
+---
+
+## Architecture Diagrams
+
+PlantUML sources live under [`doc/`](doc/) and can be rerendered into PNGs with `plantuml` in your PATH:
 
 ```bash
-# Build the Docker image
-docker build -t hlseven/quality-cql-studio:latest .
-
-# Alternatively, build images for multiple architectures if supported by your build environment
-docker buildx build --platform linux/arm64,linux/amd64 -t hlseven/quality-cql-studio:latest .
-
-# Run the container
-docker run -p 4200:80 hlseven/quality-cql-studio
+# Requires `plantuml` to be in your PATH
+npm run diagram
 ```
 
-Once the container is running, open your browser and navigate to `http://localhost:4200/`.
+---
 
+## Prerequisites
 
-## Running from Source Code
+- **Node.js+** (monorepo root for both UI and server workspace)
+- **npm** (workspace support)
+- **Docker & Docker Compose** (PostgreSQL, Authentik, HAPI FHIR R4)
+- **PlantUML** (optional, for regenerating architectural diagrams under `doc/`)
 
-### Prerequisites
+---
 
-- Current stable version of Node.js
-- npm (comes with Node.js)
+## Quick Start & Local Development
 
-### Development Server
+### 1. Start Docker Development Services
 
-To start a local development server, run:
+Start the local backing infrastructure services (PostgreSQL, Authentik SSO, and HAPI FHIR R4) using the development compose file:
 
 ```bash
-# Install dependencies
+# Using root npm script:
+npm run docker:up
+
+# Or directly via docker compose:
+docker compose -f docker/docker-compose.development.yml up -d --pull always --remove-orphans
+```
+
+### 2. Configure Environment
+
+Copy the example environment configuration for the server:
+
+```bash
+cp server/.env.example server/.env
+```
+
+### 3. Install Dependencies & Build Core
+
+Install all dependencies across monorepo workspaces and build the shared core package:
+
+```bash
 npm install
-
-# Start the development server
-npm run start
+npm run build:core
 ```
 
-For a local HAPI FHIR R4 server and Authentik IdP used with SSO development:
-```bash
-docker compose -f docker-compose.development.yml up -d
-```
+### 4. Database Setup & Migrations
 
-## OpenCode assistant
-
-*This will be changed as opencode will eventually be merged into server but is a seperated container for now*
-
-The IDE's OpenCode tab uses the official TypeScript SDK through a dedicated runner container. Start the runner together with the normal CQL Studio Server process:
+Run Prisma migrations on the development database:
 
 ```bash
-docker compose -f docker-compose.development.yml up -d --build opencode-runner
-
-# In ../cql-studio-server
-npm run build
-npm start
+npm run prisma:migrate
 ```
 
-In Settings, enable the AI assistant and configure:
+### 5. Start Server and UI from Source
 
-- CQL Studio Server Base URL (development default `http://localhost:3003`)
-- Provider (Ollama, OpenAI, or OpenAI-compatible)
-- Provider URL and API key where applicable, then **Load models** and choose a model
-
-The OpenCode composer can attach text/source files, CSV/TSV, Markdown, PDF, and DOCX context. Attachments are retained for the lifetime of the session and appear as read-only files to OpenCode. PDF and DOCX files are converted to bounded Markdown in the runner with MarkItDown; originals are not exposed. Removing a session or successfully running `/compact` purges the attachment files. A session accepts at most 20 files and each upload is limited to 10 MB (converted text is limited to 4 MB).
-
-Starting OpenCode snapshots the active library's current editor text, including unsaved changes. Before every prompt or model-backed slash command, the browser re-synchronizes the active draft and its user-edit revision into the isolated workspace. Open CQL libraries referenced through `include` are copied into the session as read-only dependencies. OpenCode cannot directly save a FHIR Library: it proposes a filesystem diff, the user reviews it in the tab, and **Apply & save** returns the accepted text to the editor's existing translate-and-save workflow.
-
-Inside the tab, type `/` to discover browser, OpenCode, and CQL workflow commands, including `/validate`, `/review`, `/explain`, `/dependencies`, `/library`, and `/valueset`. Type `@` to attach the active CQL file or a read-only dependency as an SDK file part. Tool calls, reasoning (opt-in), retries, validation, repair attempts, permission prompts, and OpenCode questions are visible in the activity stream. Sessions reconnect with event replay and can be reattached after a browser reload.
-
-Highlighted CQL is attached as structured context to the next prompt. `Cmd+I` on macOS or `Ctrl+I` elsewhere opens a focused inline-edit prompt for the selection (or current line). The **Live edits** switch can mirror OpenCode's workspace writes into CodeMirror as unsaved, highlighted changes; revision conflicts pause mirroring and leave the diff for review. Live edits never invoke FHIR persistence. Optional inline code prediction is enabled separately in Settings, uses the configured Ollama model through the existing server proxy, and supports **Tab** to accept or **Escape** to dismiss.
-
-Run the deterministic end-to-end workflow with:
+Run both the server and UI concurrently in separate terminals:
 
 ```bash
-npm run test:e2e -- tests/opencode-integration.spec.ts
+# Terminal 1: Start the backend API & MCP Server (runs in watch mode via tsx)
+npm run start:server
+
+# Terminal 2: Start the Angular UI development server (runs on port 4200)
+npm run start:ui
 ```
 
-FHIR/VSAC connection settings are sent only to CQL Studio Server for the lifetime of the session. They are not placed in the runner workspace. See the server README for the filesystem layout, private runner configuration, API endpoints, and MCP tool boundary.
+Once running, open your browser and navigate to `http://localhost:4200/`.
 
-## Docker Details
+---
 
-This application uses a multi-stage Docker build:
+## Default Accounts & Service Endpoints
 
-1. **Builder Stage**: Uses Node to install dependencies and build the Angular application
-2. **Runtime Stage**: Uses Nginx to serve the built application
+### Default Credentials (SSO Development)
 
-The Docker setup includes:
-- `Dockerfile`: Multi-stage build configuration
-- `nginx.conf`: Nginx configuration for serving the Angular app
-- `entrypoint.sh`: Runtime configuration script
+| Username | Email | Password | Role / Description |
+| --- | --- | --- | --- |
+| `alice` | `alice@example.com` | `password` | Sample Developer User |
+| `bob` | `bob@example.com` | `password` | Sample Developer User |
+| `developer` | `developer@example.com` | `developer` | Standard Developer Account |
+| `administrator` | `administrator@localhost` | `password` | Authentik IdP Console Bootstrap Account |
 
-### Docker Environment Variables
+### Local Service Endpoints
 
-The application supports runtime configuration through environment variables. The `entrypoint.sh` script processes `configuration.template.js` to generate the final configuration at runtime.
+| Service | Endpoint | Description |
+| --- | --- | --- |
+| **CQL Studio UI** | `http://localhost:4200` | Angular Authoring & IDE Web Console |
+| **CQL Studio Server** | `http://localhost:3003` | REST API, BFF Auth, and MCP Server |
+| **Authentik SSO** | `http://localhost:9000` | OIDC Identity Provider & Admin Console |
+| **PostgreSQL** | `localhost:5432` | Primary PostgreSQL database (`cql_studio_development`) |
+| **HAPI FHIR R4** | `http://localhost:8080/fhir` | FHIR R4 JPA Server |
 
-#### Available Environment Variables
+---
 
-- **CQL_STUDIO_RUNNER_BASE_URL**: Specifies the base URL for the CQL Tests Runner service. This URL is used to communicate with the runner backend for executing CQL tests and retrieving results. Defaults to `http://localhost:3000`.
+## Environment Variables
 
-- **CQL_STUDIO_FHIR_BASE_URL**: Specifies the base URL for the FHIR server. This URL is used for FHIR resource operations and data retrieval. Defaults to `http://localhost:8080/fhir`.
+Server configuration uses the `CQL_STUDIO_SERVER_*` prefix:
 
-Team collaboration (SSO, Teams, Workspaces) is configured on **cql-studio-server**. The UI calls that server via `CQL_STUDIO_SERVER_BASE_URL` (same as other Studio APIs). See the server README for `CQL_STUDIO_SERVER_SSO_*` / `CQL_STUDIO_SERVER_DATABASE_URL`.
+| Variable | Required | Default / Local Development Value | Description |
+| --- | --- | --- | --- |
+| `CQL_STUDIO_SERVER_PORT` | No | `3003` | Express HTTP server listen port |
+| `CQL_STUDIO_SERVER_NODE_ENV` | No | `development` | Node environment (`development` / `production`) |
+| `CQL_STUDIO_SERVER_CORS_ORIGIN` | Yes | `http://localhost:4200` | Allowed CORS origins for the webapp |
+| `CQL_STUDIO_SERVER_LOG_LEVEL` | No | `info` | Pino log level (`fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`) |
+| `CQL_STUDIO_SERVER_DATABASE_URL` | For SSO/Teams | `postgresql://cql_studio:password@localhost:5432/cql_studio_development` | PostgreSQL database connection URL |
+| `CQL_STUDIO_SERVER_SSO_ISSUER_URL` | For SSO | `http://localhost:9000/application/o/cql-studio/` | OIDC SSO Issuer URL |
+| `CQL_STUDIO_SERVER_SSO_CLIENT_ID` | For SSO | `cql-studio-development` | OIDC Client ID |
+| `CQL_STUDIO_SERVER_SSO_CLIENT_SECRET` | For SSO | `cql-studio-development-secret` | OIDC Client Secret |
+| `CQL_STUDIO_SERVER_SSO_REDIRECT_URL` | For SSO | `http://localhost:3003/api/auth/callback` | OIDC BFF Callback URL |
+| `CQL_STUDIO_SERVER_SSO_SCOPES` | No | `openid profile email` | OIDC Scopes |
+| `CQL_STUDIO_SERVER_UI_BASE_URL` | For SSO | `http://localhost:4200` | Base URL of the Angular UI |
+| `CQL_STUDIO_SERVER_SESSION_SECRET` | For SSO | `cql-studio-development-session-secret` | Secret key for signing session cookies |
 
-### Including other CQL libraries
-
-To `include` another library from the CQL IDE, the dependency must be **saved** as a FHIR `Library` on the configured FHIR server. The included library's CQL `library` name and `version` must match the FHIR resource `name` and `version` fields.
-
-IDE translation discovers CQl includes from ELM (stored on FHIR and from compiler output), not by parsing CQL text. Execution uses the same saved libraries on the FHIR server.
-
+---
 
 ## SQL on FHIR
 
-CQL Studio includes an experimental **CQL → SQL → MeasureReport** pipeline that runs entirely in the browser via PGlite (Postgres in WebAssembly). Open `/sql` and click **Load CMS125 demo** to see it in action — no FHIR server or backend required.
+CQL Studio includes an experimental **CQL → SQL → MeasureReport** pipeline that runs entirely in the browser via PGlite (Postgres in WebAssembly). Open `/sql` in the webapp to explore the pipeline without requiring a backend.
 
-See [doc/sql-on-fhir/](doc/sql-on-fhir/) for the vision behind the feature (originally presented at the December 2025 SQL-on-FHIR Analytics Conference), the architecture, the roadmap, and the demo walkthrough.
+See [doc/sql-on-fhir/](doc/sql-on-fhir/) for architecture details and vision.
 
+---
 
 ## Attribution & License
 
-Copyright © 2025+ Preston Lee. All rights reserved. Provided under the Apache 2.0 license.
+Provided under the Apache 2.0 license. Copyright © 2025+ Preston Lee. All rights reserved.

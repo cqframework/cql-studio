@@ -1,17 +1,40 @@
-# See https://docs.github.com/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+# Dependencies
+node_modules/
+.pnpm-store/
 
-# Compiled output
-/dist
-/tmp
-/out-tsc
-/bazel-out
+# Build & Compilation Outputs
+dist/
+build/
+out-tsc/
+*.tsbuildinfo
+.tscache/
 
-# Node
-/node_modules
-npm-debug.log
-yarn-error.log
+# Angular & Tooling Caches
+.angular/
+.cache/
+.sass-cache/
 
-# IDEs and editors
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Testing & Code Coverage
+coverage/
+.nyc_output/
+test-results/
+playwright-report/
+.playwright-mcp/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDEs and Editors
 .idea/
 .project
 .classpath
@@ -19,8 +42,6 @@ yarn-error.log
 *.launch
 .settings/
 *.sublime-workspace
-
-# Visual Studio Code
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
@@ -28,38 +49,13 @@ yarn-error.log
 !.vscode/extensions.json
 .history/*
 
-# Miscellaneous
-/.angular/cache
-.sass-cache/
-/connect.lock
-/coverage
-/libpeerconnection.log
-testem.log
-/typings
-.cursor
-test-results/
-.playwright-mcp/
-/sql-on-fhir-*.png
-/cms125-*.png
-/sql-pipeline-*.png
-
-# AI tooling configs / prompts / plans / memory — keep out of the repo (#36).
-# `.cursor` (directory) is already covered above. These cover the rest of the
-# common AI-assistant config file conventions.
-/.claude/
-/CLAUDE.md
-/GEMINI.md
-/AGENTS.md
-/.cursorrules
-/.github/copilot-instructions.md
-/.aider*
-/MEMORY.md
-/.windsurfrules
-
-# System files
+# OS Files
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
+ehthumbs.db
 
-# Container files
-
+# Dynamic UI config
+ui/public/configuration.js
 public/configuration.js
