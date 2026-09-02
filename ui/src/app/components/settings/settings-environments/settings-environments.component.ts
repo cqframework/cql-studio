@@ -27,6 +27,10 @@ export class SettingsEnvironmentsComponent {
   readonly selectedEnvironmentId = signal<string | null>(null);
   readonly editingEnvironment = signal<CqlEnvironment | null>(null);
 
+  readonly defaultEvaluationServerUrl = computed(
+    () => this.environments().find((env) => env.builtIn)?.evaluationServer.address ?? ''
+  );
+
   readonly selectedEnvironment = computed(() => {
     const id = this.selectedEnvironmentId() ?? this.activeEnvironmentId();
     return this.environments().find(env => env.id === id) ?? this.environments()[0] ?? null;

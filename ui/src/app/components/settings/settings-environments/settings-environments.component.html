@@ -70,7 +70,7 @@
             <div class="card-body pt-2">
               <app-settings-endpoint-editor idPrefix="settings-evaluation-server"
                 label="Evaluation server URL"
-                [placeholder]="settingsService.getDefaultFhirBaseUrl()"
+                [placeholder]="defaultEvaluationServerUrl()"
                 [disabled]="!!env.builtIn"
                 [(endpoint)]="env.evaluationServer"
                 (endpointChange)="onEvaluationServerChange()" />

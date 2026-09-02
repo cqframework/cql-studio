@@ -2,15 +2,14 @@
 
 import { Injectable } from '@angular/core';
 import type { CqlEnvironment, UserEnvironmentDto, UserSettingsDto, UserSettingsPatch } from '@cql-studio/core';
+import { DeployConfigKeys, readDeployConfigUrl } from './deploy-config.lib';
 
 @Injectable({
   providedIn: 'root'
 })
 export class UserSettingsApiService {
   private apiBase(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_SERVER_BASE_URL'];
-    const base = envValue?.trim() ? envValue : 'http://localhost:3003';
-    return base.replace(/\/+$/, '');
+    return readDeployConfigUrl(DeployConfigKeys.SERVER_BASE_URL);
   }
 
   private url(path: string): string {

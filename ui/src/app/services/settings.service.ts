@@ -6,6 +6,7 @@ import type { UserSettingsDto, UserSettingsPatch } from '@cql-studio/core';
 import { BUILT_IN_ENVIRONMENT_ID, CqlEnvironment, EndpointHttpContext, EndpointRole } from '../models/environment.model';
 import { Settings, ThemeType } from '../models/settings.model';
 import { ExamplePaths } from '../constants/example-paths.constants';
+import { DeployConfigKeys, readDeployConfig, readDeployConfigUrl } from './deploy-config.lib';
 import { buildFhirEndpoint, normalizeEndpointConfiguration } from './endpoint-config.lib';
 import { EnvironmentService, LegacyEnvironmentFields } from './environment.service';
 import { UserSettingsApiService } from './user-settings-api.service';
@@ -29,8 +30,6 @@ interface LegacySettingsRecord extends Partial<Settings> {
 export class SettingsService {
   public static SETTINGS_KEY: string = 'cql_tests_ui_settings';
   public static FORCE_RESET_KEY: string = 'cql_tests_ui_settings_force_reset';
-
-  private static readonly VSAC_FHIR_PRODUCTION_DEFAULT = 'https://cts.nlm.nih.gov/fhir';
 
   private readonly environmentService = inject(EnvironmentService);
   private readonly userSettingsApi = inject(UserSettingsApiService);
@@ -202,67 +201,35 @@ export class SettingsService {
   }
 
   getDefaultRunnerApiBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_RUNNER_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:3000';
-  }
-
-  getDefaultFhirBaseUrl(): string {
-    const evalUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_EVALUATION_SERVER_URL'];
-    if (evalUrl?.trim()) {
-      return evalUrl.trim().replace(/\/+$/, '');
-    }
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_FHIR_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:8080/fhir';
+    return readDeployConfig(DeployConfigKeys.RUNNER_BASE_URL);
   }
 
   getDefaultRunnerFhirBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_RUNNER_FHIR_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:8080/fhir';
-  }
-
-  getDefaultTerminologyBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASE_URL'];
-    return envValue?.trim() ? envValue : '';
-  }
-
-  getDefaultTerminologyBasicAuthUsername(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_USERNAME'];
-    return envValue?.trim() ?? '';
-  }
-
-  getDefaultTerminologyBasicAuthPassword(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_PASSWORD'];
-    return envValue ?? '';
+    return readDeployConfigUrl(DeployConfigKeys.RUNNER_FHIR_BASE_URL);
   }
 
   getDefaultTestResultsIndexUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_DEFAULT_TEST_RESULTS_INDEX_URL'];
-    return envValue?.trim() ? envValue : ExamplePaths.INDEX_JSON;
+    return readDeployConfig(DeployConfigKeys.DEFAULT_TEST_RESULTS_INDEX_URL, ExamplePaths.INDEX_JSON);
   }
 
   getDefaultOllamaBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_OLLAMA_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:11434';
+    return readDeployConfig(DeployConfigKeys.OLLAMA_BASE_URL);
   }
 
   getDefaultOllamaModel(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_OLLAMA_MODEL'];
-    return envValue?.trim() ? envValue : 'qwen3.6:35b-mlx';
+    return readDeployConfig(DeployConfigKeys.OLLAMA_MODEL);
   }
 
   getDefaultServerBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_SERVER_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:3003';
+    return readDeployConfig(DeployConfigKeys.SERVER_BASE_URL);
   }
 
   getDefaultSearxngBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_SEARXNG_BASE_URL'];
-    return envValue?.trim() ?? '';
+    return readDeployConfig(DeployConfigKeys.SEARXNG_BASE_URL);
   }
 
   getDefaultFhirPackageRegistryBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_FHIR_PACKAGE_REGISTRY_BASE_URL'];
-    return envValue?.trim() ? envValue : 'https://packages.fhir.org';
+    return readDeployConfig(DeployConfigKeys.FHIR_PACKAGE_REGISTRY_BASE_URL);
   }
 
   getEffectiveFhirPackageRegistryBaseUrl(): string {
@@ -286,6 +253,10 @@ export class SettingsService {
     const settingValue = this.settings().runnerFhirBaseUrl;
     if (settingValue?.trim()) {
       return settingValue.trim().replace(/\/+$/, '');
+    }
+    const envDefault = this.getDefaultRunnerFhirBaseUrl();
+    if (envDefault) {
+      return envDefault;
     }
     return this.getEffectiveDataEndpointAddress();
   }
@@ -312,11 +283,7 @@ export class SettingsService {
   }
 
   getDefaultVsacFhirBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_VSAC_FHIR_BASE_URL'];
-    if (envValue?.trim()) {
-      return envValue.trim();
-    }
-    return SettingsService.VSAC_FHIR_PRODUCTION_DEFAULT;
+    return readDeployConfig(DeployConfigKeys.VSAC_FHIR_BASE_URL);
   }
 
   getEffectiveVsacFhirBaseUrl(): string {
@@ -326,13 +293,11 @@ export class SettingsService {
   }
 
   getDefaultVsacApiUsername(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_VSAC_BASIC_AUTH_USERNAME'];
-    return envValue?.trim() ? envValue : 'apikey';
+    return readDeployConfig(DeployConfigKeys.VSAC_BASIC_AUTH_USERNAME);
   }
 
   getDefaultVsacApiPassword(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_VSAC_BASIC_AUTH_PASSWORD'];
-    return envValue?.trim() ?? '';
+    return readDeployConfig(DeployConfigKeys.VSAC_BASIC_AUTH_PASSWORD);
   }
 
   getEffectiveVsacApiUsername(): string {

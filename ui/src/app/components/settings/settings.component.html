@@ -70,10 +70,10 @@
                 <input type="url" class="form-control" id="runnerFhirBaseUrl" name="runnerFhirBaseUrl"
                   [ngModel]="settingsService.settings().runnerFhirBaseUrl"
                   (ngModelChange)="settingsService.patchSettings({ runnerFhirBaseUrl: $event })"
-                  [placeholder]="settingsService.getEffectiveDataEndpointAddress()">
+                  [placeholder]="settingsService.getEffectiveRunnerFhirBaseUrl()">
                 <label for="runnerFhirBaseUrl">Runner FHIR Base URL</label>
               </div>
-              <small class="form-text text-muted d-block mb-3">Base FHIR URL to pass to the CQL Tests Runner; must be network-accessible from the runner. Defaults to the active environment data endpoint.</small>
+              <small class="form-text text-muted d-block mb-3">Base FHIR URL to pass to the CQL Tests Runner; must be reachable from the runner process. Falls back to <code>CQL_STUDIO_RUNNER_FHIR_BASE_URL</code>, then the active environment data endpoint.</small>
               <div class="form-floating mb-3">
                 <input type="url" class="form-control" id="defaultTestResultsIndexUrl"
                   name="defaultTestResultsIndexUrl"

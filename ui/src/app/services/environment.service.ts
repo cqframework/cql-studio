@@ -21,6 +21,7 @@ import {
   normalizeEndpointAddress,
   normalizeEndpointConfiguration
 } from './endpoint-config.lib';
+import { DeployConfigKeys, readDeployConfig } from './deploy-config.lib';
 
 export interface LegacyEnvironmentFields {
   fhirBaseUrl?: string;
@@ -504,13 +505,6 @@ export class EnvironmentService {
     };
   }
 
-  private normalizeEnvironments(environments: CqlEnvironment[]): CqlEnvironment[] {
-    const personal = (environments ?? [])
-      .filter(env => !env.builtIn && env.id !== BUILT_IN_ENVIRONMENT_ID)
-      .map(env => this.cloneEnvironment({ ...env, builtIn: false }));
-    return [this.seedBuiltInEnvironment(), ...personal];
-  }
-
   private resolveActiveEnvironmentId(id: string, environments: CqlEnvironment[]): string {
     if (id && environments.some(env => env.id === id)) {
       return id;
@@ -532,36 +526,30 @@ export class EnvironmentService {
   }
 
   private getDeployDefaultEvaluationServerUrl(): string {
-    const evalUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_EVALUATION_SERVER_URL'];
-    if (evalUrl?.trim()) {
+    const evalUrl = readDeployConfig(DeployConfigKeys.EVALUATION_SERVER_URL);
+    if (evalUrl) {
       return normalizeEndpointAddress(evalUrl);
     }
-    const fhirUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_FHIR_BASE_URL'];
-    return fhirUrl?.trim() ? normalizeEndpointAddress(fhirUrl) : 'http://localhost:8080/fhir';
+    return normalizeEndpointAddress(readDeployConfig(DeployConfigKeys.FHIR_BASE_URL));
   }
 
   private getDeployDefaultDataUrl(): string {
-    const dataUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_DATA_ENDPOINT_URL'];
-    return dataUrl?.trim() ? normalizeEndpointAddress(dataUrl) : '';
+    return normalizeEndpointAddress(readDeployConfig(DeployConfigKeys.DATA_ENDPOINT_URL));
   }
 
   private getDeployDefaultContentUrl(): string {
-    const contentUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_CONTENT_ENDPOINT_URL'];
-    return contentUrl?.trim() ? normalizeEndpointAddress(contentUrl) : '';
+    return normalizeEndpointAddress(readDeployConfig(DeployConfigKeys.CONTENT_ENDPOINT_URL));
   }
 
   private getDeployDefaultTerminologyUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASE_URL'];
-    return envValue?.trim() ? normalizeEndpointAddress(envValue) : '';
+    return normalizeEndpointAddress(readDeployConfig(DeployConfigKeys.TERMINOLOGY_BASE_URL));
   }
 
   private getDeployDefaultTerminologyAuthUsername(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_USERNAME'];
-    return envValue?.trim() ?? '';
+    return readDeployConfig(DeployConfigKeys.TERMINOLOGY_BASIC_AUTH_USERNAME);
   }
 
   private getDeployDefaultTerminologyAuthPassword(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_PASSWORD'];
-    return envValue ?? '';
+    return readDeployConfig(DeployConfigKeys.TERMINOLOGY_BASIC_AUTH_PASSWORD);
   }
 }
