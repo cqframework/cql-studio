@@ -587,15 +587,6 @@ export class ResultsViewerComponent implements OnInit {
     this.router.navigate(['/results/open']);
   }
 
-  goBackToIndex(): void {
-    const indexUrl = sessionStorage.getItem(SessionStorageKeys.INDEX_URL);
-    if (indexUrl) {
-      this.router.navigate(['/results/open'], { queryParams: { index: indexUrl } });
-    } else {
-      this.router.navigate(['/results/open']);
-    }
-  }
-
   hasDetailedInfo(): boolean {
     return this.filteredResults().some(r => r.error || r.actual || r.expected);
   }

@@ -15,14 +15,21 @@ export class SettingsEndpointEditorComponent {
   readonly idPrefix = input.required<string>();
   readonly showCustomHeaders = input(true);
   readonly placeholder = input('');
+  readonly disabled = input(false);
 
   readonly endpoint = model.required<EndpointConfiguration>();
 
   patchEndpoint(patch: Partial<EndpointConfiguration>): void {
+    if (this.disabled()) {
+      return;
+    }
     this.endpoint.set({ ...this.endpoint(), ...patch });
   }
 
   addHeader(): void {
+    if (this.disabled()) {
+      return;
+    }
     const current = this.endpoint();
     this.endpoint.set({
       ...current,
@@ -31,6 +38,9 @@ export class SettingsEndpointEditorComponent {
   }
 
   removeHeader(index: number): void {
+    if (this.disabled()) {
+      return;
+    }
     const current = this.endpoint();
     const headers = [...(current.headers ?? [])];
     headers.splice(index, 1);
@@ -38,6 +48,9 @@ export class SettingsEndpointEditorComponent {
   }
 
   updateHeader(index: number, value: string): void {
+    if (this.disabled()) {
+      return;
+    }
     const current = this.endpoint();
     const headers = [...(current.headers ?? [])];
     headers[index] = value;

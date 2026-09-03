@@ -93,7 +93,6 @@ export class OpenComponent implements OnInit {
     const baseUrl = this.getBaseUrlFromIndexUrl();
     const fileUrl = `${baseUrl}/${filename}`;
     
-    // Store the index URL for the "Back to Home" functionality
     sessionStorage.setItem(SessionStorageKeys.INDEX_URL, this.indexUrl());
     
     // Load the file and update URL with the specific file URL

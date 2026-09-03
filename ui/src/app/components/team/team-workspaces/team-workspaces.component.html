@@ -47,6 +47,16 @@
               <button
                 type="button"
                 class="nav-link"
+                id="team-workspace-tab-sessions"
+                [class.active]="activeTab() === 'sessions'"
+                (click)="setTab('sessions')">
+                Sessions
+              </button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button
+                type="button"
+                class="nav-link"
                 id="team-workspace-tab-resources"
                 [class.active]="activeTab() === 'resources'"
                 (click)="setTab('resources')">
@@ -91,6 +101,61 @@
               [(resources)]="resources"
               [canEdit]="canEdit()"
               (changed)="onResourcesChanged()" />
+          }
+
+          @if (activeTab() === 'sessions') {
+            <div id="team-workspace-panel-sessions">
+              <p class="small text-body-secondary">
+                Your OpenCode conversations for Libraries opened from this Workspace. Saved chats are read-only here.
+              </p>
+              @if (openCodeSessionsError()) {
+                <div class="alert alert-danger py-2">{{ openCodeSessionsError() }}</div>
+              }
+              @if (openCodeSessions().length === 0 && !openCodeSessionsLoading()) {
+                <div class="text-body-secondary" id="team-workspace-sessions-empty">No OpenCode sessions yet.</div>
+              } @else {
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <div class="list-group" id="team-workspace-sessions-list">
+                      @for (item of openCodeSessions(); track item.id) {
+                        <button type="button" class="list-group-item list-group-item-action text-start"
+                          [class.active]="selectedOpenCodeSession()?.id === item.id"
+                          (click)="selectOpenCodeSession(item)">
+                          <span class="d-block text-truncate">{{ item.title }}</span>
+                          <small [class.text-body-secondary]="selectedOpenCodeSession()?.id !== item.id">
+                            {{ item.availability === 'archived' ? 'Archived' : 'Live' }} · {{ item.updatedAt | date: 'short' }}
+                          </small>
+                        </button>
+                      }
+                    </div>
+                  </div>
+                  <div class="col-md-8">
+                    @if (openCodeSessionsLoading()) {
+                      <div class="d-flex align-items-center gap-2 text-body-secondary py-3">
+                        <span class="spinner-border spinner-border-sm"></span>Loading conversation…
+                      </div>
+                    } @else if (selectedOpenCodeSession(); as chatSession) {
+                      <div class="border rounded p-3" id="team-workspace-session-chat">
+                        <div class="d-flex flex-wrap justify-content-between gap-2 border-bottom pb-2 mb-3">
+                          <div><strong>{{ chatSession.title }}</strong><div class="small text-body-secondary">{{ chatSession.model }}</div></div>
+                          <small class="text-body-secondary">Updated {{ chatSession.updatedAt | date: 'medium' }}</small>
+                        </div>
+                        @for (message of openCodeMessages(); track message.id) {
+                          <article class="mb-3" [class.ms-4]="message.role === 'user'">
+                            <div class="small fw-semibold text-body-secondary mb-1">{{ message.role === 'user' ? 'You' : 'OpenCode' }}</div>
+                            <div class="border rounded p-2" [class.bg-body-tertiary]="message.role === 'user'">
+                              <markdown [data]="message.text"></markdown>
+                            </div>
+                          </article>
+                        } @empty {
+                          <div class="text-body-secondary">This session has no chat messages.</div>
+                        }
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
           }
 
           @if (activeTab() === 'settings') {

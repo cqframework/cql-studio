@@ -29,6 +29,13 @@ enum WorkspaceRole {
   VIEWER
 }
 
+enum EndpointRole {
+  EVALUATION
+  DATA
+  TERMINOLOGY
+  CONTENT
+}
+
 model User {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   ssoIssuer   String
@@ -39,6 +46,33 @@ model User {
   updatedAt   DateTime  @updatedAt
   lastLoginAt DateTime?
 
+  experimental               Boolean @default(false)
+  developer                  Boolean @default(false)
+  themePreferred             String  @default("automatic")
+  validateSchema             Boolean @default(false)
+  runnerApiBaseUrl           String  @default("")
+  runnerFhirBaseUrl          String  @default("")
+  defaultTestResultsIndexUrl String  @default("")
+  fhirPackageRegistryBaseUrl String  @default("")
+  vsacFhirBaseUrl            String  @default("")
+  vsacApiUsername            String  @default("")
+  vsacApiPassword            String  @default("")
+  aiProvider                 String  @default("ollama")
+  ollamaBaseUrl              String  @default("")
+  ollamaModel                String  @default("")
+  openaiModel                String  @default("")
+  compatibleProviderName     String  @default("")
+  compatibleProviderBaseUrl  String  @default("")
+  compatibleProviderModel    String  @default("")
+  searxngBaseUrl             String  @default("")
+  enableAiAssistant          Boolean @default(false)
+  useMCPTools                Boolean @default(false)
+  allowAiWriteOperations     Boolean @default(false)
+  autoApplyCodeEdits         Boolean @default(false)
+  requireDiffPreview         Boolean @default(false)
+  planActSeparateModels      Boolean @default(false)
+  enableAiCodePrediction     Boolean @default(false)
+
   sessions              Session[]
   teamMemberships       TeamMembership[]
   createdTeams          Team[]                 @relation("TeamCreatedBy")
@@ -46,12 +80,38 @@ model User {
   grantedAccess         WorkspaceAccessGrant[] @relation("GrantGrantedBy")
   workspaceActivity     WorkspaceActivity[]
   createdResourceRefs   WorkspaceResourceReference[]
+  environments          UserEnvironment[]
+  openCodeSessions      OpenCodeSession[]
 
   @@unique([ssoIssuer, ssoSubject])
   @@index([email])
   @@index([createdAt])
   @@index([updatedAt])
   @@index([lastLoginAt])
+}
+
+model OpenCodeSession {
+  id                String   @id @db.Uuid
+  userId            String   @db.Uuid
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  openCodeSessionId String
+  title             String
+  status            String
+  activeLibraryId   String
+  activeFile        String
+  model             String
+  reasoningEnabled  Boolean  @default(false)
+  runnerCreatedAt   DateTime
+  lastActivityAt    DateTime
+  expiresAt         DateTime
+  workspaceOrigin   Json?
+  state             Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+  @@index([userId, activeLibraryId])
+  @@index([expiresAt])
 }
 
 model Session {
@@ -162,17 +222,71 @@ model WorkspaceActivity {
 }
 
 model SharedEnvironment {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId String    @db.Uuid
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  name        String
-  /// Addresses and non-secret header names only (JSON matching EndpointConfiguration shape without passwords)
-  config      Json
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId                String    @db.Uuid
+  workspace                  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name                       String
+  evaluationServerAddress    String    @default("")
+  dataEndpointAddress        String    @default("")
+  terminologyEndpointAddress String    @default("")
+  contentEndpointAddress     String    @default("")
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  headers SharedEnvironmentHttpHeader[]
 
   @@unique([workspaceId, name])
   @@index([workspaceId])
+  @@index([createdAt])
+  @@index([updatedAt])
+}
+
+model SharedEnvironmentHttpHeader {
+  id            String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  environmentId String             @db.Uuid
+  environment   SharedEnvironment  @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  endpointRole  EndpointRole
+  name          String
+  value         String             @default("")
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@index([environmentId, endpointRole])
+  @@index([createdAt])
+  @@index([updatedAt])
+}
+
+model UserEnvironment {
+  id                         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId                     String   @db.Uuid
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                       String
+  evaluationServerAddress    String   @default("")
+  dataEndpointAddress        String   @default("")
+  terminologyEndpointAddress String   @default("")
+  contentEndpointAddress     String   @default("")
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  headers UserEnvironmentHttpHeader[]
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([updatedAt])
+}
+
+model UserEnvironmentHttpHeader {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  environmentId String          @db.Uuid
+  environment   UserEnvironment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+  endpointRole  EndpointRole
+  name          String
+  value         String          @default("")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([environmentId, endpointRole])
   @@index([createdAt])
   @@index([updatedAt])
 }

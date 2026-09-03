@@ -10,11 +10,15 @@ import { TeamService } from '../../../services/team.service';
 import { EnvironmentService } from '../../../services/environment.service';
 import { EnvironmentSwitchService } from '../../../services/environment-switch.service';
 import { SettingsEndpointEditorComponent } from '../../settings/settings-endpoint-editor/settings-endpoint-editor.component';
+import { MarkdownComponent } from 'ngx-markdown';
 import { WorkspaceCreateModalComponent } from '../../shared/workspace-create-modal/workspace-create-modal.component';
 import { TeamWorkspaceResourcesPanelComponent } from './team-workspace-resources-panel/team-workspace-resources-panel.component';
 import { cloneEndpointConfiguration } from '../../../services/endpoint-config.lib';
 import { workspaceActivityVerbLabel } from '../../../services/workspace-activity.lib';
 import { ToastService } from '../../../services/toast.service';
+import { OpenCodeService } from '../../../services/opencode.service';
+import { openCodeChatMessages } from '../../../services/opencode-chat.lib';
+import type { OpenCodeSession, OpenCodeUiMessage } from '../../../models/opencode.model';
 import {
   SharedEnvironmentConfig,
   SharedEnvironmentDto,
@@ -28,7 +32,7 @@ import {
   WorkspaceVisibility,
 } from '../../../models/team.model';
 
-type WorkspaceTab = 'resources' | 'environments' | 'activity' | 'settings';
+type WorkspaceTab = 'resources' | 'sessions' | 'environments' | 'activity' | 'settings';
 
 @Component({
   selector: 'app-team-workspaces',
@@ -36,6 +40,7 @@ type WorkspaceTab = 'resources' | 'environments' | 'activity' | 'settings';
   imports: [
     DatePipe,
     FormsModule,
+    MarkdownComponent,
     RouterLink,
     SettingsEndpointEditorComponent,
     WorkspaceCreateModalComponent,
@@ -50,10 +55,12 @@ export class TeamWorkspacesComponent implements OnInit {
   private readonly environmentService = inject(EnvironmentService);
   private readonly environmentSwitchService = inject(EnvironmentSwitchService);
   private readonly toast = inject(ToastService);
+  private readonly openCodeService = inject(OpenCodeService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
 
   private detailLoadToken = 0;
+  private sessionLoadToken = 0;
 
   readonly workspaces = signal<Workspace[]>([]);
   readonly teams = signal<Team[]>([]);
@@ -62,6 +69,11 @@ export class TeamWorkspacesComponent implements OnInit {
   readonly environments = signal<SharedEnvironmentDto[]>([]);
   readonly resources = signal<WorkspaceResourceReference[]>([]);
   readonly activity = signal<WorkspaceActivity[]>([]);
+  readonly openCodeSessions = signal<OpenCodeSession[]>([]);
+  readonly selectedOpenCodeSession = signal<OpenCodeSession | null>(null);
+  readonly openCodeMessages = signal<OpenCodeUiMessage[]>([]);
+  readonly openCodeSessionsLoading = signal(false);
+  readonly openCodeSessionsError = signal('');
   readonly loading = signal(true);
   readonly error = signal('');
   readonly detailError = signal('');
@@ -117,6 +129,28 @@ export class TeamWorkspacesComponent implements OnInit {
 
   setTab(tab: WorkspaceTab): void {
     this.activeTab.set(tab);
+    if (tab === 'sessions' && !this.selectedOpenCodeSession() && this.openCodeSessions()[0]) {
+      void this.selectOpenCodeSession(this.openCodeSessions()[0]);
+    }
+  }
+
+  async selectOpenCodeSession(session: OpenCodeSession): Promise<void> {
+    const token = ++this.sessionLoadToken;
+    this.selectedOpenCodeSession.set(session);
+    this.openCodeMessages.set([]);
+    this.openCodeSessionsLoading.set(true);
+    this.openCodeSessionsError.set('');
+    try {
+      const state = await this.openCodeService.getState(session.id);
+      if (token !== this.sessionLoadToken) return;
+      this.selectedOpenCodeSession.set(state.session);
+      this.openCodeMessages.set(openCodeChatMessages(state.messages));
+    } catch (e) {
+      if (token !== this.sessionLoadToken) return;
+      this.openCodeSessionsError.set((e as Error).message || 'Failed to load the OpenCode session');
+    } finally {
+      if (token === this.sessionLoadToken) this.openCodeSessionsLoading.set(false);
+    }
   }
 
   async reloadList(): Promise<void> {
@@ -158,6 +192,10 @@ export class TeamWorkspacesComponent implements OnInit {
     this.detailError.set('');
     this.envEditorMode.set('idle');
     this.editingEnvId.set(null);
+    this.openCodeSessions.set([]);
+    this.selectedOpenCodeSession.set(null);
+    this.openCodeMessages.set([]);
+    this.openCodeSessionsError.set('');
     try {
       const workspace = await this.workspaceService.get(id);
       if (token !== this.detailLoadToken) {
@@ -180,6 +218,17 @@ export class TeamWorkspacesComponent implements OnInit {
       this.environments.set(environments);
       this.resources.set(resources);
       this.activity.set(activity.items);
+      try {
+        const sessions = await this.openCodeService.listSessions(id);
+        if (token !== this.detailLoadToken) return;
+        this.openCodeSessions.set(sessions);
+        if (this.activeTab() === 'sessions' && sessions[0]) {
+          void this.selectOpenCodeSession(sessions[0]);
+        }
+      } catch (e) {
+        if (token !== this.detailLoadToken) return;
+        this.openCodeSessionsError.set((e as Error).message || 'Failed to load OpenCode sessions');
+      }
       const previousKey = this.environmentSwitchService.currentSelectionKey();
       this.environmentService.replaceWorkspaceEnvironments(id, environments, workspace.name);
       this.environmentSwitchService.afterCatalogMutation(previousKey);

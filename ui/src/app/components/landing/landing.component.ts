@@ -1,20 +1,21 @@
 // Author: Preston Lee
 
 import { Component, computed, inject } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { SettingsService } from '../../services/settings.service';
 import { AuthService } from '../../services/auth.service';
+import { sanitizeReturnToPath } from '../../utils/sanitize-return-to';
 
 @Component({
   selector: 'app-landing',
-  imports: [RouterLink],
+  imports: [],
   templateUrl: './landing.component.html',
 
   styleUrl: './landing.component.scss'
 })
 export class LandingComponent {
   private readonly settingsService = inject(SettingsService);
-  private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
   protected readonly authService = inject(AuthService);
 
   readonly activeEnvironmentName = computed(() => this.settingsService.getActiveEnvironment().name);
@@ -24,6 +25,7 @@ export class LandingComponent {
   readonly contentEndpointUrl = computed(() => this.settingsService.getEffectiveContentEndpointAddress());
 
   signIn(): void {
-    this.authService.login(this.router.url);
+    const raw = this.route.snapshot.queryParamMap.get('returnTo');
+    this.authService.login(sanitizeReturnToPath(raw));
   }
 }

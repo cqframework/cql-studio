@@ -1,7 +1,7 @@
 <div class="form-floating mb-3">
   <input type="url" class="form-control" [id]="idPrefix() + '-address'" [name]="idPrefix() + '-address'"
     [ngModel]="endpoint().address" (ngModelChange)="patchEndpoint({ address: $event })"
-    [placeholder]="placeholder() || label()">
+    [placeholder]="placeholder() || label()" [disabled]="disabled()">
   <label [for]="idPrefix() + '-address'">{{ label() }}</label>
 </div>
 @if (description()) {
@@ -15,19 +15,18 @@
         <div class="form-floating flex-grow-1">
           <input type="text" class="form-control" [id]="idPrefix() + '-header-' + $index"
             [value]="header" (input)="updateHeader($index, $any($event.target).value)"
-            placeholder="Header-Name: value">
+            placeholder="Header-Name: value" [disabled]="disabled()">
           <label [for]="idPrefix() + '-header-' + $index">Header-Name: value</label>
         </div>
         <button type="button" class="btn btn-outline-secondary" [id]="idPrefix() + '-remove-header-' + $index"
-          (click)="removeHeader($index)" aria-label="Remove header">
+          (click)="removeHeader($index)" aria-label="Remove header" [disabled]="disabled()">
           <span class="bi bi-trash"></span>
         </button>
       </div>
     }
     <button type="button" class="btn btn-sm btn-outline-secondary" [id]="idPrefix() + '-add-header'"
-      (click)="addHeader()">
+      (click)="addHeader()" [disabled]="disabled()">
       <span class="bi bi-plus-lg me-1"></span>Add
     </button>
-    <!-- <small class="form-text text-muted d-block mt-1">FHIR Endpoint.header format: <code>Name: value</code></small> -->
   </div>
 }

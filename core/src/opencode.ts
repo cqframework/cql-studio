@@ -58,7 +58,15 @@ export interface CreateOpenCodeSessionRequest {
     baseUrl: string;
     capability: string;
   };
+  /** Injected only by the trusted gateway when an archived session is resumed. */
+  resume?: {
+    sessionId: string;
+    createdAt: string;
+    messages: unknown[];
+  };
 }
+
+export type ResumeOpenCodeSessionRequest = Omit<CreateOpenCodeSessionRequest, 'resume' | 'toolBridge'>;
 
 export interface OpenCodeModelSwitchRequest {
   provider: OpenCodeProviderConfig;
@@ -139,6 +147,8 @@ export interface OpenCodeSessionDto {
   expiresAt: string;
   model: string;
   reasoningEnabled: boolean;
+  /** Live sessions can accept prompts; archived sessions retain server-backed history only. */
+  availability?: 'live' | 'archived';
   workspaceOrigin?: OpenCodeWorkspaceOrigin;
 }
 

@@ -18,7 +18,6 @@ export interface ActiveWorkspaceEnvironmentRef {
 }
 
 export class Settings {
-    public settingsVersion: number = 2;
     public experimental: boolean = false;
     public developer: boolean = false;
     public theme_preferred: ThemeType = ThemeType.AUTOMATIC;
@@ -26,19 +25,17 @@ export class Settings {
     public runnerApiBaseUrl: string = '';
     public runnerFhirBaseUrl: string = '';
     public defaultTestResultsIndexUrl: string = '';
+    /** Personal environments only (excludes virtual Default Environment). */
     public environments: CqlEnvironment[] = [];
-    public activeEnvironmentId: string = 'default';
-    public activeEnvironmentSource: ActiveEnvironmentSource = 'personal';
-    public activeWorkspaceEnvironment: ActiveWorkspaceEnvironmentRef | null = null;
 
     /** FHIR NPM package registry (normative default https://packages.fhir.org). */
     public fhirPackageRegistryBaseUrl: string = '';
 
     /** VSAC (NLM CTS / vsac.nlm.nih.gov) — UMLS API key auth; VSAC Browser always calls NLM via CQL Studio Server (no CORS). */
     public vsacFhirBaseUrl: string = '';
-    public vsacApiUsername: string = 'apikey';
+    public vsacApiUsername: string = '';
     public vsacApiPassword: string = '';
-    
+
     // AI Settings
     public aiProvider: AiProviderType = 'ollama';
     public ollamaBaseUrl: string = '';

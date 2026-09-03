@@ -17,7 +17,6 @@ export class SettingsActionsComponent {
 
   save = output<void>();
   resetClipboard = output<void>();
-  restore = output<void>();
   exportSettings = output<void>();
   importSettings = output<void>();
 
@@ -27,10 +26,6 @@ export class SettingsActionsComponent {
 
   onResetClipboard(): void {
     this.resetClipboard.emit();
-  }
-
-  onRestore(): void {
-    this.restore.emit();
   }
 
   onExport(): void {

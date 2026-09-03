@@ -4,6 +4,9 @@ import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { pinoHttp } from 'pino-http';
+import { existsSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { parseEnv } from 'node:util';
 import { loadEnv } from './config/env.js';
 import { createCorsOptions } from './config/cors.js';
 import { createLogger, logger } from './logger.js';
@@ -17,6 +20,14 @@ import { createActivityRouter, createWorkspaceRouter } from './workspace/routes.
 import { createOpenCodeGateway } from './opencode/gateway.js';
 import { OpenCodeError } from './opencode/errors.js';
 import { configureOpenCodeLogger } from './opencode/logger.js';
+import { createUserSettingsRouter } from './user/routes.js';
+
+// Package-local values take precedence when .env exists. Variables omitted by
+// the file remain available from the parent shell environment.
+const localEnvFile = fileURLToPath(new URL('../.env', import.meta.url));
+if (existsSync(localEnvFile)) {
+  Object.assign(process.env, parseEnv(readFileSync(localEnvFile, 'utf8')));
+}
 
 async function main(): Promise<void> {
   const env = loadEnv();
@@ -41,11 +52,11 @@ async function main(): Promise<void> {
   }
   app.use(express.json({ limit: '2mb' }));
 
-  app.get('/health', (req, res) => {
+  app.get('/health', (_req, res) => {
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      ssoEnabled: env.ssoConfigured,
+      ssoEnabled: true,
       opencodeEnabled: env.opencodeEnabled,
     });
   });
@@ -54,17 +65,11 @@ async function main(): Promise<void> {
   app.use('/api/ollama', ollamaProxyRouter);
   app.use('/api/vsac/fhir', vsacFhirProxyRouter);
   app.use('/api/vsac/site', vsacSiteProxyRouter);
-
-  if (env.ssoConfigured) {
-    app.use('/api/auth', createAuthRouter(env));
-    app.use('/api/teams', createTeamRouter(env));
-    app.use('/api/workspaces', createWorkspaceRouter(env));
-    app.use('/api/activity', createActivityRouter(env));
-  } else {
-    app.get('/api/auth/session', (_req, res) => {
-      res.json({ enabled: false, user: null });
-    });
-  }
+  app.use('/api/auth', createAuthRouter(env));
+  app.use('/api/teams', createTeamRouter(env));
+  app.use('/api/workspaces', createWorkspaceRouter(env));
+  app.use('/api/activity', createActivityRouter(env));
+  app.use('/api/users', createUserSettingsRouter(env));
 
   app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (err instanceof OpenCodeError) {
@@ -115,8 +120,8 @@ async function main(): Promise<void> {
       {
         port: env.port,
         nodeEnv: env.nodeEnv,
-        sso: env.ssoConfigured ? 'enabled' : 'disabled',
-        ...(env.ssoConfigured && { uiBaseUrl: env.uiBaseUrl }),
+        sso: 'enabled',
+        uiBaseUrl: env.uiBaseUrl,
         corsOrigin: `${env.corsOrigin} (credentials)`,
         opencode: env.opencodeEnabled ? 'enabled' : 'disabled',
       },

@@ -10,7 +10,7 @@ import {
 } from '@prisma/client';
 import { getPrisma } from '../db/prisma.js';
 import type { ServerEnv } from '../config/env.js';
-import { requireAuth, requireSsoConfigured } from '../auth/session.js';
+import { requireAuth } from '../auth/session.js';
 import {
   countOwners,
   listAccessibleWorkspaceIds,
@@ -28,12 +28,46 @@ import {
   WorkspaceActivityTargetType,
   WorkspaceActivityVerb,
 } from './activity.js';
+import {
+  addressesFromConfig,
+  configFromStoredEnvironment,
+  headerRowsFromConfig,
+  normalizeSharedEnvironmentConfig,
+} from '../user/environment-persist.js';
 
 function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void>
 ): (req: Request, res: Response, next: NextFunction) => void {
   return (req, res, next) => {
     Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
+const sharedEnvInclude = {
+  headers: {
+    orderBy: [{ name: 'asc' as const }],
+  },
+};
+
+function sharedEnvironmentDto(row: {
+  id: string;
+  workspaceId: string;
+  name: string;
+  evaluationServerAddress: string;
+  dataEndpointAddress: string;
+  terminologyEndpointAddress: string;
+  contentEndpointAddress: string;
+  createdAt: Date;
+  updatedAt: Date;
+  headers: Array<{ endpointRole: 'EVALUATION' | 'DATA' | 'TERMINOLOGY' | 'CONTENT'; name: string; value: string }>;
+}) {
+  return {
+    id: row.id,
+    workspaceId: row.workspaceId,
+    name: row.name,
+    config: configFromStoredEnvironment(row),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -59,40 +93,8 @@ function parsePrincipalType(raw: unknown): WorkspacePrincipalType | null {
   return null;
 }
 
-function stripSecretsFromConfig(config: unknown): Record<string, unknown> {
-  if (!config || typeof config !== 'object') {
-    return {};
-  }
-  const clone = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
-  const scrub = (endpoint: unknown) => {
-    if (!endpoint || typeof endpoint !== 'object') {
-      return endpoint;
-    }
-    const e = endpoint as Record<string, unknown>;
-    delete e.basicAuthPassword;
-    delete e.basicAuthUsername;
-    return e;
-  };
-  if (clone.evaluationServer) {
-    clone.evaluationServer = scrub(clone.evaluationServer);
-  }
-  if (clone.dataEndpoint) {
-    clone.dataEndpoint = scrub(clone.dataEndpoint);
-  }
-  if (clone.terminologyEndpoint) {
-    clone.terminologyEndpoint = scrub(clone.terminologyEndpoint);
-  }
-  if (clone.contentEndpoint) {
-    clone.contentEndpoint = scrub(clone.contentEndpoint);
-  }
-  delete clone.basicAuthPassword;
-  delete clone.basicAuthUsername;
-  return clone;
-}
-
 export function createWorkspaceRouter(env: ServerEnv): Router {
   const router = Router();
-  router.use(requireSsoConfigured(env));
   router.use(requireAuth(env));
 
   router.get(
@@ -479,9 +481,10 @@ export function createWorkspaceRouter(env: ServerEnv): Router {
       }
       const envs = await getPrisma().sharedEnvironment.findMany({
         where: { workspaceId: req.params.id },
+        include: sharedEnvInclude,
         orderBy: { name: 'asc' },
       });
-      res.json(envs);
+      res.json(envs.map(sharedEnvironmentDto));
     })
   );
 
@@ -498,9 +501,17 @@ export function createWorkspaceRouter(env: ServerEnv): Router {
         res.status(400).json({ error: 'name is required' });
         return;
       }
-      const config = stripSecretsFromConfig(req.body?.config) as Prisma.InputJsonValue;
+      const config = normalizeSharedEnvironmentConfig(req.body?.config);
+      const addresses = addressesFromConfig(config);
+      const headers = headerRowsFromConfig(config);
       const envRow = await getPrisma().sharedEnvironment.create({
-        data: { workspaceId: req.params.id, name, config },
+        data: {
+          workspaceId: req.params.id,
+          name,
+          ...addresses,
+          headers: { create: headers },
+        },
+        include: sharedEnvInclude,
       });
       await recordActivity(
         req.params.id,
@@ -509,7 +520,7 @@ export function createWorkspaceRouter(env: ServerEnv): Router {
         WorkspaceActivityTargetType.Environment,
         envRow.id
       );
-      res.status(201).json(envRow);
+      res.status(201).json(sharedEnvironmentDto(envRow));
     })
   );
 
@@ -528,16 +539,33 @@ export function createWorkspaceRouter(env: ServerEnv): Router {
         res.status(404).json({ error: 'Environment not found' });
         return;
       }
-      const data: { name?: string; config?: Prisma.InputJsonValue } = {};
-      if (typeof req.body?.name === 'string' && req.body.name.trim()) {
-        data.name = req.body.name.trim();
-      }
-      if (req.body?.config !== undefined) {
-        data.config = stripSecretsFromConfig(req.body.config) as Prisma.InputJsonValue;
-      }
-      const envRow = await getPrisma().sharedEnvironment.update({
-        where: { id: existing.id },
-        data,
+      const name =
+        typeof req.body?.name === 'string' && req.body.name.trim()
+          ? req.body.name.trim()
+          : undefined;
+      const envRow = await getPrisma().$transaction(async (tx) => {
+        if (req.body?.config !== undefined) {
+          const config = normalizeSharedEnvironmentConfig(req.body.config);
+          const addresses = addressesFromConfig(config);
+          const headers = headerRowsFromConfig(config);
+          await tx.sharedEnvironmentHttpHeader.deleteMany({
+            where: { environmentId: existing.id },
+          });
+          return tx.sharedEnvironment.update({
+            where: { id: existing.id },
+            data: {
+              ...(name ? { name } : {}),
+              ...addresses,
+              headers: { create: headers },
+            },
+            include: sharedEnvInclude,
+          });
+        }
+        return tx.sharedEnvironment.update({
+          where: { id: existing.id },
+          data: name ? { name } : {},
+          include: sharedEnvInclude,
+        });
       });
       await recordActivity(
         req.params.id,
@@ -546,7 +574,7 @@ export function createWorkspaceRouter(env: ServerEnv): Router {
         WorkspaceActivityTargetType.Environment,
         envRow.id
       );
-      res.json(envRow);
+      res.json(sharedEnvironmentDto(envRow));
     })
   );
 
@@ -684,7 +712,6 @@ export function createWorkspaceRouter(env: ServerEnv): Router {
 
 export function createActivityRouter(env: ServerEnv): Router {
   const router = Router();
-  router.use(requireSsoConfigured(env));
   router.use(requireAuth(env));
 
   router.get(

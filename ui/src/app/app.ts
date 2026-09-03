@@ -5,6 +5,7 @@ import { RouterOutlet, Router, ActivatedRoute } from '@angular/router';
 
 import { FormsModule } from '@angular/forms';
 import { NavigationComponent } from './components/navigation/navigation.component';
+import { AuthService } from './services/auth.service';
 import { SettingsService } from './services/settings.service';
 import { ToastService } from './services/toast.service';
 
@@ -20,6 +21,7 @@ export class App {
 
   private router = inject(Router);
   private route = inject(ActivatedRoute);
+  protected readonly authService = inject(AuthService);
   protected settingsService = inject(SettingsService);
   protected toastService = inject(ToastService);
   private injector = inject(Injector);

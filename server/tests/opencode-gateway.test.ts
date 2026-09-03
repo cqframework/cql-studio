@@ -66,7 +66,6 @@ test('gateway strips browser-only context and retains trusted local Workspace or
     logLevel: 'silent',
     corsOrigin: 'http://localhost:4200',
     uiBaseUrl: 'http://localhost:4200',
-    ssoConfigured: false,
     ssoIssuerUrl: '',
     ssoClientId: '',
     ssoClientSecret: '',
@@ -117,6 +116,7 @@ test('gateway strips browser-only context and retains trusted local Workspace or
       environment: { id: 'environment-1', name: 'Test' },
       toolContext: { vsacApiPassword: 'secret' },
       toolBridge: { baseUrl: 'http://attacker.invalid', capability: 'attacker' },
+      resume: { sessionId: 'attacker', createdAt: new Date().toISOString(), messages: ['attacker'] },
     }),
   });
   assert.equal(createResponse.status, 201);
@@ -126,6 +126,7 @@ test('gateway strips browser-only context and retains trusted local Workspace or
   assert.ok(runnerInput);
   assert.equal('environment' in runnerInput, false);
   assert.equal('toolContext' in runnerInput, false);
+  assert.equal('resume' in runnerInput, false);
   const activeLibrary = runnerInput['activeLibrary'] as Record<string, unknown>;
   assert.equal('workspaceOrigin' in activeLibrary, false);
   const bridge = runnerInput['toolBridge'] as { baseUrl: string; capability: string };
@@ -140,9 +141,9 @@ test('gateway strips browser-only context and retains trusted local Workspace or
   const state = await stateResponse.json() as { session: { workspaceOrigin?: typeof origin } };
   assert.deepEqual(state.session.workspaceOrigin, origin);
 
-  const deleteResponse = await fetch(
-    `${baseUrl(gatewayServer)}/api/opencode/sessions/runner-session`,
-    { method: 'DELETE' }
+  const archiveResponse = await fetch(
+    `${baseUrl(gatewayServer)}/api/opencode/sessions/runner-session/archive`,
+    { method: 'POST' }
   );
-  assert.equal(deleteResponse.status, 204);
+  assert.equal(archiveResponse.status, 204);
 });

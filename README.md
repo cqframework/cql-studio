@@ -46,7 +46,7 @@ npm run diagram
 
 ## Prerequisites
 
-- **Node.js+** (monorepo root for both UI and server workspace)
+- **Node.js 26+** (monorepo root for both UI and server workspaces)
 - **npm** (workspace support)
 - **Docker & Docker Compose** (PostgreSQL, Authentik, HAPI FHIR R4)
 - **PlantUML** (optional, for regenerating architectural diagrams under `doc/`)
@@ -57,25 +57,33 @@ npm run diagram
 
 ### 1. Start Docker Development Services
 
-Start the private OpenCode runner and local backing infrastructure services using the development compose file:
+Start the private OpenCode runner and all local backing infrastructure services using the development compose file:
 
 ```bash
-# OpenCode runner required by the AI tab:
-docker compose -f docker/docker-compose.development.yml up -d --build opencode-runner
-
-# Using root npm script:
+# Recommended from the monorepo root:
 npm run docker:up
 
-# Or directly via docker compose:
-docker compose -f docker/docker-compose.development.yml up -d --pull always --remove-orphans
+# Equivalent direct command:
+docker compose -f docker/docker-compose.development.yml up -d --build --pull always --remove-orphans
 ```
 
 ### 2. Configure Environment
 
-Copy the example environment configuration for the server:
+Create the ignored local UI and server environment files from the development templates:
 
 ```bash
+cp ui/.env.example ui/.env
 cp server/.env.example server/.env
+```
+
+The UI start script loads `ui/.env`, and the server loads `server/.env`. Both files
+are optional: when one is absent, values exported by the parent shell are used.
+When a file is present, variables declared in it take precedence while omitted
+variables still fall back to the shell environment. To use a remote Ollama
+instance, update the UI file, for example:
+
+```bash
+CQL_STUDIO_OLLAMA_BASE_URL=http://theperfect.crabdance.com:11434/
 ```
 
 ### 3. Install Dependencies & Build Core
@@ -117,9 +125,9 @@ Once running, open your browser and navigate to `http://localhost:4200/`.
 
 | Username | Email | Password | Role / Description |
 | --- | --- | --- | --- |
-| `alice` | `alice@example.com` | `password` | Sample Developer User |
-| `bob` | `bob@example.com` | `password` | Sample Developer User |
-| `developer` | `developer@example.com` | `developer` | Standard Developer Account |
+| `alice` | `alice@localhost` | `password` | Sample Developer User |
+| `bob` | `bob@localhost` | `password` | Sample Developer User |
+| `developer` | `developer@localhost` | `developer` | Standard Developer Account |
 | `administrator` | `administrator@localhost` | `password` | Authentik IdP Console Bootstrap Account |
 
 ### Local Service Endpoints
@@ -145,16 +153,15 @@ Server configuration uses the `CQL_STUDIO_SERVER_*` prefix:
 | `CQL_STUDIO_SERVER_NODE_ENV` | No | `development` | Node environment (`development` / `production`) |
 | `CQL_STUDIO_SERVER_CORS_ORIGIN` | Yes | `http://localhost:4200` | Allowed CORS origins for the webapp |
 | `CQL_STUDIO_SERVER_LOG_LEVEL` | No | `info` | Pino log level (`fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent`) |
-| `CQL_STUDIO_SERVER_DATABASE_URL` | For SSO/Teams | `postgresql://cql_studio:password@localhost:5432/cql_studio_development` | PostgreSQL database connection URL |
-| `CQL_STUDIO_SERVER_SSO_ISSUER_URL` | For SSO | `http://localhost:9000/application/o/cql-studio/` | OIDC SSO Issuer URL |
-| `CQL_STUDIO_SERVER_SSO_CLIENT_ID` | For SSO | `cql-studio-development` | OIDC Client ID |
-| `CQL_STUDIO_SERVER_SSO_CLIENT_SECRET` | For SSO | `cql-studio-development-secret` | OIDC Client Secret |
-| `CQL_STUDIO_SERVER_SSO_REDIRECT_URL` | For SSO | `http://localhost:3003/api/auth/callback` | OIDC BFF Callback URL |
+| `CQL_STUDIO_SERVER_DATABASE_URL` | Yes | `postgresql://cql_studio:password@localhost:5432/cql_studio_development` | PostgreSQL database connection URL |
+| `CQL_STUDIO_SERVER_SSO_ISSUER_URL` | Yes | `http://localhost:9000/application/o/cql-studio/` | OIDC SSO Issuer URL |
+| `CQL_STUDIO_SERVER_SSO_CLIENT_ID` | Yes | `cql-studio-development` | OIDC Client ID |
+| `CQL_STUDIO_SERVER_SSO_CLIENT_SECRET` | Yes | `cql-studio-development-secret` | OIDC Client Secret |
+| `CQL_STUDIO_SERVER_SSO_REDIRECT_URL` | Yes | `http://localhost:3003/api/auth/callback` | OIDC BFF Callback URL |
 | `CQL_STUDIO_SERVER_SSO_SCOPES` | No | `openid profile email` | OIDC Scopes |
-| `CQL_STUDIO_SERVER_UI_BASE_URL` | For SSO | `http://localhost:4200` | Base URL of the Angular UI |
-| `CQL_STUDIO_SERVER_SESSION_SECRET` | For SSO | `cql-studio-development-session-secret` | Secret key for signing session cookies |
+| `CQL_STUDIO_SERVER_UI_BASE_URL` | Yes | `http://localhost:4200` | Base URL of the Angular UI |
+| `CQL_STUDIO_SERVER_SESSION_SECRET` | Yes | `cql-studio-development-session-secret` | Secret key for signing session cookies |
 | `CQL_STUDIO_SERVER_OPENCODE_ENABLED` | No | `true` in development | Enables the OpenCode gateway |
-| `CQL_STUDIO_SERVER_OPENCODE_ALLOW_UNAUTHENTICATED` | Production without SSO | `true` in development | Explicitly permits single-user, unauthenticated OpenCode sessions |
 | `CQL_STUDIO_SERVER_OPENCODE_RUNNER_URL` | No | `http://localhost:4097` | Private runner base URL |
 | `CQL_STUDIO_SERVER_OPENCODE_RUNNER_TOKEN` | Production | Development-only shared token | Gateway-to-runner credential; must be at least 32 bytes and non-default in production |
 | `CQL_STUDIO_SERVER_OPENCODE_TOOL_BRIDGE_URL` | No | `http://host.docker.internal:3003/api/opencode/tool-bridge` | Gateway URL used by the runner's MCP subprocess |
@@ -162,6 +169,18 @@ Server configuration uses the `CQL_STUDIO_SERVER_*` prefix:
 | `CQL_STUDIO_SERVER_OPENCODE_CLEANUP_INTERVAL_MS` | No | `60000` | Orphan session cleanup interval |
 | `CQL_STUDIO_SERVER_OPENCODE_MAX_SESSIONS_PER_USER` | No | `0` | Per-user session limit; zero is unlimited |
 | `CQL_STUDIO_SERVER_OPENCODE_MAX_SESSIONS_GLOBAL` | No | `0` | Global process session limit; zero is unlimited |
+
+UI deploy-time variables are loaded from `ui/.env`; the example values match the
+development Compose stack:
+
+| Variable | Local default | Description |
+| --- | --- | --- |
+| `CQL_STUDIO_RUNNER_BASE_URL` | `http://localhost:8091` | Browser-visible CQL Tests Runner URL |
+| `CQL_STUDIO_RUNNER_FHIR_BASE_URL` | `http://hapi-r4-data:8080/fhir` | FHIR URL used from inside the runner container |
+| `CQL_STUDIO_DEFAULT_TEST_RESULTS_INDEX_URL` | `http://localhost:8092/index.json` | Published test-results index |
+| `CQL_STUDIO_OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama provider URL; override this for a remote Ollama server |
+
+`CQL_STUDIO_BRAVE_SEARCH_API_KEY` is not consumed by the current application. OpenCode web search uses the read-only MCP integration and its configured SearXNG endpoint.
 
 ---
 

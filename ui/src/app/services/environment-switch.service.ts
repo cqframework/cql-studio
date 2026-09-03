@@ -2,7 +2,6 @@
 
 import { Injectable, inject } from '@angular/core';
 import { EnvironmentService } from './environment.service';
-import { SettingsService } from './settings.service';
 import { IdeContextService } from './ide-context.service';
 import { CqlLibrarySourceService } from './cql-library-source.service';
 import { FhirCapabilityService } from './fhir-capability.service';
@@ -15,7 +14,6 @@ import { AuthService } from './auth.service';
 })
 export class EnvironmentSwitchService {
   private readonly environmentService = inject(EnvironmentService);
-  private readonly settingsService = inject(SettingsService);
   private readonly ideContextService = inject(IdeContextService);
   private readonly librarySourceService = inject(CqlLibrarySourceService);
   private readonly fhirCapabilityService = inject(FhirCapabilityService);
@@ -125,8 +123,6 @@ export class EnvironmentSwitchService {
     envName: string,
     options?: { showToast?: boolean }
   ): void {
-    this.settingsService.persistEnvironmentToSettings();
-    this.settingsService.saveSettings();
     this.afterActivation(previousKey, this.selectionKey(), envName, options);
   }
 

@@ -55,6 +55,14 @@ export class OpenCodeService {
     return this.environmentBinding.bind(session);
   }
 
+  async resumeSession(sessionId: string, input: CreateOpenCodeSessionRequest): Promise<OpenCodeSession> {
+    const session = await this.request<OpenCodeSession>(
+      `/sessions/${encodeURIComponent(sessionId)}/resume`,
+      { method: 'POST', body: JSON.stringify(input) }
+    );
+    return this.environmentBinding.bind(session);
+  }
+
   listProviderModels(input: { type: AiProviderType; baseUrl?: string; apiKey?: string }): Promise<string[]> {
     return this.request('/providers/models', { method: 'POST', body: JSON.stringify(input) });
   }
@@ -67,10 +75,13 @@ export class OpenCodeService {
     }).then(() => undefined);
   }
 
-  async listSessions(): Promise<OpenCodeSession[]> {
-    const sessions = await this.request<OpenCodeSession[]>('/sessions');
+  async listSessions(workspaceId?: string): Promise<OpenCodeSession[]> {
+    const query = workspaceId ? `?workspaceId=${encodeURIComponent(workspaceId)}` : '';
+    const sessions = await this.request<OpenCodeSession[]>(`/sessions${query}`);
     const restored = sessions.map(session => this.environmentBinding.restore(session));
-    this.environmentBinding.retain(restored.map(session => session.id));
+    // A Workspace-filtered list is only a subset and must not discard bindings
+    // for the user's sessions in other Workspaces or personal environments.
+    if (!workspaceId) this.environmentBinding.retain(restored.map(session => session.id));
     return restored;
   }
 
@@ -217,11 +228,7 @@ export class OpenCodeService {
   }
 
   async endSession(sessionId: string): Promise<void> {
-    try {
-      await this.request(`/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
-    } finally {
-      this.environmentBinding.forget(sessionId);
-    }
+    await this.request(`/sessions/${encodeURIComponent(sessionId)}/archive`, { method: 'POST' });
   }
 
   events(

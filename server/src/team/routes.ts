@@ -5,7 +5,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { TeamMemberRole, WorkspaceRole } from '@prisma/client';
 import { getPrisma } from '../db/prisma.js';
 import type { ServerEnv } from '../config/env.js';
-import { requireAuth, requireSsoConfigured } from '../auth/session.js';
+import { requireAuth } from '../auth/session.js';
 import { uniqueSlug } from '../workspace/access.js';
 
 function asyncHandler(
@@ -25,7 +25,6 @@ async function requireTeamAdmin(teamId: string, userId: string): Promise<boolean
 
 export function createTeamRouter(env: ServerEnv): Router {
   const router = Router();
-  router.use(requireSsoConfigured(env));
   router.use(requireAuth(env));
 
   router.get(

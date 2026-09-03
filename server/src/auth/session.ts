@@ -62,22 +62,8 @@ export function clearSessionCookie(res: Response, env: ServerEnv): void {
   res.clearCookie(SESSION_COOKIE, sessionCookieOptions(env));
 }
 
-export function requireSsoConfigured(env: ServerEnv) {
-  return (_req: Request, res: Response, next: NextFunction): void => {
-    if (!env.ssoConfigured) {
-      res.status(404).json({ error: 'SSO is not configured on this deployment' });
-      return;
-    }
-    next();
-  };
-}
-
 export function optionalAuth(env: ServerEnv) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    if (!env.ssoConfigured) {
-      next();
-      return;
-    }
     try {
       const raw = req.cookies?.[SESSION_COOKIE] as string | undefined;
       if (!raw) {

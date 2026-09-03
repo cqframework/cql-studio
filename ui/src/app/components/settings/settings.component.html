@@ -1,11 +1,6 @@
 <div id="settings" class="container mt-4 mb-5">
   <input #importFileInput type="file" accept=".json" class="d-none" (change)="onImportFile($event)" />
 
-  <div id="settings-v3-migration-notice" class="alert alert-warning small py-2 mb-4" role="alert">
-    <strong>Important:</strong> User settings will move to server-side storage starting with CQL Studio v3, and may need to be
-    reestablished manually. Export and back up your settings now in preparation for v3.
-  </div>
-
   <div class="row g-4">
     <div class="col-md-3 col-lg-2">
       <app-settings-section-nav [activeSection]="activeSection()" (sectionChange)="onSectionChange($event)" />
@@ -57,8 +52,8 @@
               </div>
 
               <hr class="my-4">
-              <h6 class="mb-3" id="settings-advanced-actions-heading">Import, export &amp; reset</h6>
-              <app-settings-actions variant="toolbar" (resetClipboard)="onResetClipboard()" (restore)="restore()"
+              <h6 class="mb-3" id="settings-advanced-actions-heading">Import &amp; export</h6>
+              <app-settings-actions variant="toolbar" (resetClipboard)="onResetClipboard()"
                 (exportSettings)="onExportSettings()" (importSettings)="onImportSettings()" />
             }
             @case ('runner') {
@@ -75,10 +70,10 @@
                 <input type="url" class="form-control" id="runnerFhirBaseUrl" name="runnerFhirBaseUrl"
                   [ngModel]="settingsService.settings().runnerFhirBaseUrl"
                   (ngModelChange)="settingsService.patchSettings({ runnerFhirBaseUrl: $event })"
-                  [placeholder]="settingsService.getEffectiveDataEndpointAddress()">
+                  [placeholder]="settingsService.getEffectiveRunnerFhirBaseUrl()">
                 <label for="runnerFhirBaseUrl">Runner FHIR Base URL</label>
               </div>
-              <small class="form-text text-muted d-block mb-3">Base FHIR URL to pass to the CQL Tests Runner; must be network-accessible from the runner. Defaults to the active environment data endpoint.</small>
+              <small class="form-text text-muted d-block mb-3">Base FHIR URL to pass to the CQL Tests Runner; must be reachable from the runner process. Falls back to <code>CQL_STUDIO_RUNNER_FHIR_BASE_URL</code>, then the active environment data endpoint.</small>
               <div class="form-floating mb-3">
                 <input type="url" class="form-control" id="defaultTestResultsIndexUrl"
                   name="defaultTestResultsIndexUrl"
@@ -129,12 +124,12 @@
               <h6 class="card-title mb-3"><span class="bi bi-server me-2"></span>CQL Studio Server</h6>
               <div class="form-floating mb-3">
                 <input type="url" class="form-control" id="serverBaseUrl" name="serverBaseUrl"
-                  [ngModel]="settingsService.settings().serverBaseUrl"
-                  (ngModelChange)="settingsService.patchSettings({ serverBaseUrl: $event })"
-                  [placeholder]="settingsService.getDefaultServerBaseUrl()">
-                <label for="serverBaseUrl">Server Base URL (Optional Override)</label>
+                  [ngModel]="settingsService.getEffectiveServerBaseUrl()"
+                  readonly
+                  [placeholder]="settingsService.getDefaultServerBaseUrl() || 'CQL_STUDIO_SERVER_BASE_URL'">
+                <label for="serverBaseUrl">Server Base URL</label>
               </div>
-              <!-- <small class="form-text text-muted d-block mb-3">Base URL for the CQL Studio Server API.</small> -->
+              <small class="form-text text-muted d-block mb-3">Set via deploy configuration <code>CQL_STUDIO_SERVER_BASE_URL</code> only.</small>
               <div class="form-floating mb-3">
                 <input type="url" class="form-control" id="searxngBaseUrl" name="searxngBaseUrl"
                   [ngModel]="settingsService.settings().searxngBaseUrl"

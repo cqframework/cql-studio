@@ -21,6 +21,7 @@ import {
   normalizeEndpointAddress,
   normalizeEndpointConfiguration
 } from './endpoint-config.lib';
+import { DeployConfigKeys, readDeployConfig } from './deploy-config.lib';
 
 export interface LegacyEnvironmentFields {
   fhirBaseUrl?: string;
@@ -86,15 +87,29 @@ export class EnvironmentService {
 
   readonly isPersonalEnvironmentActive = computed(() => this._activeEnvironmentSource() === 'personal');
 
+  /** Replace personal env list while always keeping virtual Default Environment first. Does not change active selection except to repair invalid ids. */
+  syncPersonalEnvironments(personalEnvironments: CqlEnvironment[]): void {
+    const personal = (personalEnvironments ?? [])
+      .filter(env => !env.builtIn && env.id !== BUILT_IN_ENVIRONMENT_ID)
+      .map(env => this.cloneEnvironment({ ...env, builtIn: false }));
+    const normalized = [this.seedBuiltInEnvironment(), ...personal];
+    this._environments.set(normalized);
+    this._activeEnvironmentId.set(
+      this.resolveActiveEnvironmentId(this._activeEnvironmentId(), normalized)
+    );
+  }
+
+  /** @deprecated Prefer syncPersonalEnvironments; active selection is in-memory only. */
   syncFromSettings(
     environments: CqlEnvironment[],
     activeEnvironmentId: string,
     activeEnvironmentSource: ActiveEnvironmentSource = 'personal',
     activeWorkspaceEnvironment: ActiveWorkspaceEnvironmentRef | null = null
   ): void {
-    const normalized = this.normalizeEnvironments(environments);
-    this._environments.set(normalized);
-    this._activeEnvironmentId.set(this.resolveActiveEnvironmentId(activeEnvironmentId, normalized));
+    this.syncPersonalEnvironments(environments);
+    this._activeEnvironmentId.set(
+      this.resolveActiveEnvironmentId(activeEnvironmentId, this._environments())
+    );
     if (activeEnvironmentSource === 'workspace' && activeWorkspaceEnvironment) {
       this._activeEnvironmentSource.set('workspace');
       this._activeWorkspaceEnvironment.set(activeWorkspaceEnvironment);
@@ -238,7 +253,7 @@ export class EnvironmentService {
 
   deleteEnvironment(id: string): boolean {
     const target = this._environments().find(env => env.id === id);
-    if (!target || target.builtIn || this._environments().length <= 1) {
+    if (!target || target.builtIn) {
       return false;
     }
     this._environments.update(envs => envs.filter(env => env.id !== id));
@@ -419,9 +434,10 @@ export class EnvironmentService {
   }
 
   private scrubEndpoint(endpoint: EndpointConfiguration): EndpointConfiguration {
+    const normalized = normalizeEndpointConfiguration(endpoint);
     return {
-      address: endpoint.address ?? '',
-      headers: [...(endpoint.headers ?? [])],
+      address: normalized.address ?? '',
+      headers: [...(normalized.headers ?? [])],
     };
   }
 
@@ -489,13 +505,6 @@ export class EnvironmentService {
     };
   }
 
-  private normalizeEnvironments(environments: CqlEnvironment[]): CqlEnvironment[] {
-    if (!environments?.length) {
-      return [this.seedBuiltInEnvironment()];
-    }
-    return environments.map(env => this.cloneEnvironment(env));
-  }
-
   private resolveActiveEnvironmentId(id: string, environments: CqlEnvironment[]): string {
     if (id && environments.some(env => env.id === id)) {
       return id;
@@ -517,36 +526,30 @@ export class EnvironmentService {
   }
 
   private getDeployDefaultEvaluationServerUrl(): string {
-    const evalUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_EVALUATION_SERVER_URL'];
-    if (evalUrl?.trim()) {
+    const evalUrl = readDeployConfig(DeployConfigKeys.EVALUATION_SERVER_URL);
+    if (evalUrl) {
       return normalizeEndpointAddress(evalUrl);
     }
-    const fhirUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_FHIR_BASE_URL'];
-    return fhirUrl?.trim() ? normalizeEndpointAddress(fhirUrl) : 'http://localhost:8080/fhir';
+    return normalizeEndpointAddress(readDeployConfig(DeployConfigKeys.FHIR_BASE_URL));
   }
 
   private getDeployDefaultDataUrl(): string {
-    const dataUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_DATA_ENDPOINT_URL'];
-    return dataUrl?.trim() ? normalizeEndpointAddress(dataUrl) : '';
+    return normalizeEndpointAddress(readDeployConfig(DeployConfigKeys.DATA_ENDPOINT_URL));
   }
 
   private getDeployDefaultContentUrl(): string {
-    const contentUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_CONTENT_ENDPOINT_URL'];
-    return contentUrl?.trim() ? normalizeEndpointAddress(contentUrl) : '';
+    return normalizeEndpointAddress(readDeployConfig(DeployConfigKeys.CONTENT_ENDPOINT_URL));
   }
 
   private getDeployDefaultTerminologyUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASE_URL'];
-    return envValue?.trim() ? normalizeEndpointAddress(envValue) : '';
+    return normalizeEndpointAddress(readDeployConfig(DeployConfigKeys.TERMINOLOGY_BASE_URL));
   }
 
   private getDeployDefaultTerminologyAuthUsername(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_USERNAME'];
-    return envValue?.trim() ?? '';
+    return readDeployConfig(DeployConfigKeys.TERMINOLOGY_BASIC_AUTH_USERNAME);
   }
 
   private getDeployDefaultTerminologyAuthPassword(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_PASSWORD'];
-    return envValue ?? '';
+    return readDeployConfig(DeployConfigKeys.TERMINOLOGY_BASIC_AUTH_PASSWORD);
   }
 }

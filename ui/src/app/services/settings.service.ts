@@ -2,14 +2,22 @@
 
 import { Injectable, inject, signal } from '@angular/core';
 import { Endpoint } from 'fhir/r4';
+import type { UserSettingsDto, UserSettingsPatch } from '@cql-studio/core';
 import { BUILT_IN_ENVIRONMENT_ID, CqlEnvironment, EndpointHttpContext, EndpointRole } from '../models/environment.model';
 import { AiProviderType, Settings, ThemeType } from '../models/settings.model';
 import { ExamplePaths } from '../constants/example-paths.constants';
-import { buildFhirEndpoint } from './endpoint-config.lib';
+import { DeployConfigKeys, readDeployConfig, readDeployConfigUrl } from './deploy-config.lib';
+import { buildFhirEndpoint, normalizeEndpointConfiguration } from './endpoint-config.lib';
 import { EnvironmentService, LegacyEnvironmentFields } from './environment.service';
 import { AiCredentialsService } from './ai-credentials.service';
+import { UserSettingsApiService } from './user-settings-api.service';
 
 interface LegacySettingsRecord extends Partial<Settings> {
+  settingsVersion?: number;
+  serverBaseUrl?: string;
+  activeEnvironmentId?: string;
+  activeEnvironmentSource?: string;
+  activeWorkspaceEnvironment?: unknown;
   fhirBaseUrl?: string;
   terminologyBaseUrl?: string;
   terminologyBasicAuthUsername?: string;
@@ -21,6 +29,7 @@ interface LegacySettingsRecord extends Partial<Settings> {
   allowAiWriteOperations?: boolean;
   requireDiffPreview?: boolean;
   planActSeparateModels?: boolean;
+  themePreferred?: string;
 }
 
 @Injectable({
@@ -30,27 +39,21 @@ export class SettingsService {
   public static SETTINGS_KEY: string = 'cql_tests_ui_settings';
   public static FORCE_RESET_KEY: string = 'cql_tests_ui_settings_force_reset';
 
-  private static readonly VSAC_FHIR_PRODUCTION_DEFAULT = 'https://cts.nlm.nih.gov/fhir';
-
   private readonly environmentService = inject(EnvironmentService);
   private readonly aiCredentials = inject(AiCredentialsService);
+  private readonly userSettingsApi = inject(UserSettingsApiService);
 
   public settings = signal<Settings>(new Settings());
-  public force_reset = signal<boolean>(false);
   public theme_effective = signal<ThemeType>(ThemeType.LIGHT);
+  public readonly hydrated = signal(false);
 
   constructor() {
-    this.reload();
+    this.environmentService.syncPersonalEnvironments([]);
+    this.setEffectiveTheme();
     window.matchMedia('(prefers-color-scheme: dark)')
       .addEventListener('change', ({ matches }) => {
         if (this.settings().theme_preferred == ThemeType.AUTOMATIC) {
-          if (matches) {
-            this.theme_effective.set(ThemeType.DARK);
-            this.saveSettings();
-          } else {
-            this.theme_effective.set(ThemeType.LIGHT);
-            this.saveSettings();
-          }
+          this.theme_effective.set(matches ? ThemeType.DARK : ThemeType.LIGHT);
         }
       });
   }
@@ -67,72 +70,96 @@ export class SettingsService {
     }
   }
 
-  reload() {
-    this.force_reset.set(localStorage.getItem(SettingsService.FORCE_RESET_KEY) === 'true');
-    if (this.force_reset()) {
-      this.forceResetToDefaults();
+  /**
+   * One-time localStorage → server migration (if blob present), then hydrate from API.
+   * Always deletes the local settings blob when present, regardless of API success.
+   */
+  async bootstrapFromServer(): Promise<void> {
+    const raw = localStorage.getItem(SettingsService.SETTINGS_KEY);
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as LegacySettingsRecord;
+        this.absorbLegacyAiCredentials(parsed);
+        const { settings } = this.normalizeParsedSettings(parsed);
+        const dto = this.toUserSettingsDto(settings);
+        const personalEnvs = this.personalEnvironmentsForPersist(settings.environments);
+        await this.userSettingsApi.putSettings(dto).catch(() => undefined);
+        await this.userSettingsApi.replaceEnvironments(personalEnvs).catch(() => undefined);
+      } catch {
+        // ignore corrupt local blob
+      } finally {
+        localStorage.removeItem(SettingsService.SETTINGS_KEY);
+        localStorage.removeItem(SettingsService.FORCE_RESET_KEY);
+      }
+    }
+
+    await this.reloadFromServer();
+  }
+
+  async reloadFromServer(): Promise<void> {
+    const [dto, envs] = await Promise.all([
+      this.userSettingsApi.getSettings(),
+      this.userSettingsApi.listEnvironments(),
+    ]);
+    const settings = this.fromUserSettingsDto(dto);
+    settings.environments = envs.map((e) => this.cloneEnvironment(e));
+    this.settings.set(settings);
+    this.environmentService.syncPersonalEnvironments(settings.environments);
+    this.setEffectiveTheme();
+    this.hydrated.set(true);
+  }
+
+  /** Persist scalar settings currently in memory to the server. */
+  async saveSettings(): Promise<void> {
+    const dto = this.toUserSettingsDto(this.settings());
+    const saved = await this.userSettingsApi.putSettings(dto);
+    this.settings.update((current) => ({
+      ...current,
+      ...this.fromUserSettingsDto(saved),
+      environments: current.environments,
+    }));
+    this.setEffectiveTheme();
+  }
+
+  /** Persist personal environments currently known to EnvironmentService. */
+  async savePersonalEnvironments(): Promise<void> {
+    const personal = this.personalEnvironmentsForPersist(
+      this.environmentService.getEnvironmentsSnapshot()
+    );
+    const saved = await this.userSettingsApi.replaceEnvironments(personal);
+    const mapped = saved.map((e) => this.cloneEnvironment(e));
+    this.settings.update((current) => ({ ...current, environments: mapped }));
+    this.environmentService.syncPersonalEnvironments(mapped);
+  }
+
+  async persistEnvironment(env: CqlEnvironment): Promise<CqlEnvironment> {
+    if (env.builtIn) {
+      return env;
+    }
+    const normalized = this.cloneEnvironment({ ...env, builtIn: false });
+    const existing = this.settings().environments.find((e) => e.id === env.id);
+    const saved = existing
+      ? await this.userSettingsApi.updateEnvironment(env.id, normalized)
+      : await this.userSettingsApi.createEnvironment(normalized);
+    const mapped = this.cloneEnvironment(saved);
+    this.settings.update((current) => {
+      const others = current.environments.filter((e) => e.id !== mapped.id && e.name !== mapped.name);
+      return { ...current, environments: [...others, mapped] };
+    });
+    this.environmentService.syncPersonalEnvironments(this.settings().environments);
+    return mapped;
+  }
+
+  async deletePersonalEnvironment(id: string): Promise<void> {
+    if (id === BUILT_IN_ENVIRONMENT_ID) {
       return;
     }
-    const tmp = localStorage.getItem(SettingsService.SETTINGS_KEY);
-    if (tmp) {
-      try {
-        const parsed = JSON.parse(tmp) as LegacySettingsRecord;
-        this.absorbLegacyAiCredentials(parsed);
-        const { settings, migrated } = this.normalizeParsedSettings(parsed);
-        this.settings.set(settings);
-        this.syncEnvironmentFromSettings(settings);
-        if (migrated) {
-          this.saveSettings();
-        }
-      } catch {
-        const defaults = this.createDefaultSettings();
-        this.settings.set(defaults);
-        this.syncEnvironmentFromSettings(defaults);
-        this.saveSettings();
-      }
-    } else {
-      const defaults = this.createDefaultSettings();
-      this.settings.set(defaults);
-      this.syncEnvironmentFromSettings(defaults);
-      this.saveSettings();
-    }
-    this.setEffectiveTheme();
-  }
-
-  forceResetToDefaults() {
-    localStorage.clear();
-    this.aiCredentials.clear();
-    const defaults = this.createDefaultSettings();
-    this.settings.set(defaults);
-    this.force_reset.set(false);
-    this.syncEnvironmentFromSettings(defaults);
-    this.saveSettings();
-    this.setEffectiveTheme();
-  }
-
-  saveSettings() {
-    this.persistEnvironmentToSettings();
-    localStorage.setItem(SettingsService.SETTINGS_KEY, JSON.stringify(this.settings()));
-  }
-
-  persistEnvironmentToSettings(): void {
-    this.settings.update(current => ({
+    await this.userSettingsApi.deleteEnvironment(id);
+    this.settings.update((current) => ({
       ...current,
-      settingsVersion: 2,
-      environments: this.environmentService.getEnvironmentsSnapshot(),
-      activeEnvironmentId: this.environmentService.getActiveEnvironmentIdSnapshot(),
-      activeEnvironmentSource: this.environmentService.getActiveEnvironmentSourceSnapshot(),
-      activeWorkspaceEnvironment: this.environmentService.getActiveWorkspaceEnvironmentSnapshot(),
+      environments: current.environments.filter((e) => e.id !== id),
     }));
-  }
-
-  syncEnvironmentFromSettings(settings: Settings): void {
-    this.environmentService.syncFromSettings(
-      settings.environments ?? [],
-      settings.activeEnvironmentId ?? BUILT_IN_ENVIRONMENT_ID,
-      settings.activeEnvironmentSource === 'workspace' ? 'workspace' : 'personal',
-      settings.activeWorkspaceEnvironment ?? null
-    );
+    this.environmentService.syncPersonalEnvironments(this.settings().environments);
   }
 
   getEffectiveEvaluationServerUrl(): string {
@@ -184,67 +211,35 @@ export class SettingsService {
   }
 
   getDefaultRunnerApiBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_RUNNER_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:3000';
-  }
-
-  getDefaultFhirBaseUrl(): string {
-    const evalUrl = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_EVALUATION_SERVER_URL'];
-    if (evalUrl?.trim()) {
-      return evalUrl.trim().replace(/\/+$/, '');
-    }
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_FHIR_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:8080/fhir';
+    return readDeployConfig(DeployConfigKeys.RUNNER_BASE_URL);
   }
 
   getDefaultRunnerFhirBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_RUNNER_FHIR_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:8080/fhir';
-  }
-
-  getDefaultTerminologyBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASE_URL'];
-    return envValue?.trim() ? envValue : '';
-  }
-
-  getDefaultTerminologyBasicAuthUsername(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_USERNAME'];
-    return envValue?.trim() ?? '';
-  }
-
-  getDefaultTerminologyBasicAuthPassword(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_TERMINOLOGY_BASIC_AUTH_PASSWORD'];
-    return envValue ?? '';
+    return readDeployConfigUrl(DeployConfigKeys.RUNNER_FHIR_BASE_URL);
   }
 
   getDefaultTestResultsIndexUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_DEFAULT_TEST_RESULTS_INDEX_URL'];
-    return envValue?.trim() ? envValue : ExamplePaths.INDEX_JSON;
+    return readDeployConfig(DeployConfigKeys.DEFAULT_TEST_RESULTS_INDEX_URL, ExamplePaths.INDEX_JSON);
   }
 
   getDefaultOllamaBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_OLLAMA_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:11434';
+    return readDeployConfig(DeployConfigKeys.OLLAMA_BASE_URL);
   }
 
   getDefaultOllamaModel(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_OLLAMA_MODEL'];
-    return envValue?.trim() ? envValue : 'qwen3.6:35b-mlx';
+    return readDeployConfig(DeployConfigKeys.OLLAMA_MODEL);
   }
 
   getDefaultServerBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_SERVER_BASE_URL'];
-    return envValue?.trim() ? envValue : 'http://localhost:3003';
+    return readDeployConfig(DeployConfigKeys.SERVER_BASE_URL);
   }
 
   getDefaultSearxngBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_SEARXNG_BASE_URL'];
-    return envValue?.trim() ?? '';
+    return readDeployConfig(DeployConfigKeys.SEARXNG_BASE_URL);
   }
 
   getDefaultFhirPackageRegistryBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_FHIR_PACKAGE_REGISTRY_BASE_URL'];
-    return envValue?.trim() ? envValue : 'https://packages.fhir.org';
+    return readDeployConfig(DeployConfigKeys.FHIR_PACKAGE_REGISTRY_BASE_URL);
   }
 
   getEffectiveFhirPackageRegistryBaseUrl(): string {
@@ -268,6 +263,10 @@ export class SettingsService {
     const settingValue = this.settings().runnerFhirBaseUrl;
     if (settingValue?.trim()) {
       return settingValue.trim().replace(/\/+$/, '');
+    }
+    const envDefault = this.getDefaultRunnerFhirBaseUrl();
+    if (envDefault) {
+      return envDefault;
     }
     return this.getEffectiveDataEndpointAddress();
   }
@@ -313,17 +312,13 @@ export class SettingsService {
     return this.aiCredentials.get('openai-compatible');
   }
 
+  /** Deploy config only — no per-user override. */
   getEffectiveServerBaseUrl(): string {
-    const settingValue = this.settings().serverBaseUrl;
-    return settingValue?.trim() ? settingValue : this.getDefaultServerBaseUrl();
+    return this.getDefaultServerBaseUrl().replace(/\/+$/, '');
   }
 
   getDefaultVsacFhirBaseUrl(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_VSAC_FHIR_BASE_URL'];
-    if (envValue?.trim()) {
-      return envValue.trim();
-    }
-    return SettingsService.VSAC_FHIR_PRODUCTION_DEFAULT;
+    return readDeployConfig(DeployConfigKeys.VSAC_FHIR_BASE_URL);
   }
 
   getEffectiveVsacFhirBaseUrl(): string {
@@ -333,13 +328,11 @@ export class SettingsService {
   }
 
   getDefaultVsacApiUsername(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_VSAC_BASIC_AUTH_USERNAME'];
-    return envValue?.trim() ? envValue : 'apikey';
+    return readDeployConfig(DeployConfigKeys.VSAC_BASIC_AUTH_USERNAME);
   }
 
   getDefaultVsacApiPassword(): string {
-    const envValue = (window as unknown as Record<string, string | undefined>)['CQL_STUDIO_VSAC_BASIC_AUTH_PASSWORD'];
-    return envValue?.trim() ?? '';
+    return readDeployConfig(DeployConfigKeys.VSAC_BASIC_AUTH_PASSWORD);
   }
 
   getEffectiveVsacApiUsername(): string {
@@ -358,48 +351,174 @@ export class SettingsService {
 
   updateSettings(updates: Partial<Settings>): void {
     this.patchSettings(updates);
-    this.saveSettings();
+    void this.persistSettingsPatch(updates);
   }
 
-  /** Immutable in-memory update without persisting (Save still required). */
+  /** Immutable in-memory update without persisting (Save still required for most fields). */
   patchSettings(updates: Partial<Settings>): void {
     this.settings.update(current => ({ ...current, ...updates }));
-    if (updates.environments || updates.activeEnvironmentId) {
-      this.syncEnvironmentFromSettings(this.settings());
+  }
+
+  private async persistSettingsPatch(updates: Partial<Settings>): Promise<void> {
+    const patch = this.toUserSettingsDto({ ...this.settings(), ...updates });
+    // Only send keys that were actually updated (map UI names → API DTO names).
+    const body: UserSettingsPatch = {};
+    if (updates.experimental !== undefined) body.experimental = patch.experimental;
+    if (updates.developer !== undefined) body.developer = patch.developer;
+    if (updates.theme_preferred !== undefined) body.themePreferred = patch.themePreferred;
+    if (updates.validateSchema !== undefined) body.validateSchema = patch.validateSchema;
+    if (updates.runnerApiBaseUrl !== undefined) body.runnerApiBaseUrl = patch.runnerApiBaseUrl;
+    if (updates.runnerFhirBaseUrl !== undefined) body.runnerFhirBaseUrl = patch.runnerFhirBaseUrl;
+    if (updates.defaultTestResultsIndexUrl !== undefined) {
+      body.defaultTestResultsIndexUrl = patch.defaultTestResultsIndexUrl;
     }
+    if (updates.fhirPackageRegistryBaseUrl !== undefined) {
+      body.fhirPackageRegistryBaseUrl = patch.fhirPackageRegistryBaseUrl;
+    }
+    if (updates.vsacFhirBaseUrl !== undefined) body.vsacFhirBaseUrl = patch.vsacFhirBaseUrl;
+    if (updates.vsacApiUsername !== undefined) body.vsacApiUsername = patch.vsacApiUsername;
+    if (updates.vsacApiPassword !== undefined) body.vsacApiPassword = patch.vsacApiPassword;
+    if (updates.ollamaBaseUrl !== undefined) body.ollamaBaseUrl = patch.ollamaBaseUrl;
+    if (updates.ollamaModel !== undefined) body.ollamaModel = patch.ollamaModel;
+    if (updates.aiProvider !== undefined) body.aiProvider = patch.aiProvider;
+    if (updates.openaiModel !== undefined) body.openaiModel = patch.openaiModel;
+    if (updates.compatibleProviderName !== undefined) {
+      body.compatibleProviderName = patch.compatibleProviderName;
+    }
+    if (updates.compatibleProviderBaseUrl !== undefined) {
+      body.compatibleProviderBaseUrl = patch.compatibleProviderBaseUrl;
+    }
+    if (updates.compatibleProviderModel !== undefined) {
+      body.compatibleProviderModel = patch.compatibleProviderModel;
+    }
+    if (updates.searxngBaseUrl !== undefined) body.searxngBaseUrl = patch.searxngBaseUrl;
+    if (updates.enableAiAssistant !== undefined) body.enableAiAssistant = patch.enableAiAssistant;
+    if (updates.autoApplyCodeEdits !== undefined) body.autoApplyCodeEdits = patch.autoApplyCodeEdits;
+    if (updates.enableAiCodePrediction !== undefined) {
+      body.enableAiCodePrediction = patch.enableAiCodePrediction;
+    }
+    if (Object.keys(body).length === 0) {
+      return;
+    }
+    const saved = await this.userSettingsApi.patchSettings(body);
+    this.settings.update((current) => ({
+      ...current,
+      ...this.fromUserSettingsDto(saved),
+      environments: current.environments,
+    }));
+    this.setEffectiveTheme();
   }
 
   static readonly EXPORT_FILENAME = 'settings.cql-studio.json';
 
   exportSettingsJson(): string {
-    this.persistEnvironmentToSettings();
-    return JSON.stringify(this.settings(), null, 2);
+    const personal = this.personalEnvironmentsForPersist(
+      this.environmentService.getEnvironmentsSnapshot()
+    );
+    const payload = {
+      ...this.toUserSettingsDto(this.settings()),
+      environments: personal,
+    };
+    return JSON.stringify(payload, null, 2);
   }
 
-  importSettingsJson(json: string): boolean {
+  async importSettingsJson(json: string): Promise<boolean> {
     try {
       const parsed = JSON.parse(json) as LegacySettingsRecord;
       this.absorbLegacyAiCredentials(parsed);
-      const { settings: merged } = this.normalizeParsedSettings(parsed);
-      this.settings.set(merged);
-      this.syncEnvironmentFromSettings(merged);
-      this.saveSettings();
-      this.setEffectiveTheme();
+      const { settings } = this.normalizeParsedSettings(parsed);
+      await this.userSettingsApi.putSettings(this.toUserSettingsDto(settings));
+      await this.userSettingsApi.replaceEnvironments(
+        this.personalEnvironmentsForPersist(settings.environments)
+      );
+      await this.reloadFromServer();
       return true;
     } catch {
       return false;
     }
   }
 
-  private createDefaultSettings(): Settings {
+  toUserSettingsDto(settings: Settings): UserSettingsDto {
+    return {
+      experimental: !!settings.experimental,
+      developer: !!settings.developer,
+      themePreferred: settings.theme_preferred || ThemeType.AUTOMATIC,
+      validateSchema: !!settings.validateSchema,
+      runnerApiBaseUrl: settings.runnerApiBaseUrl ?? '',
+      runnerFhirBaseUrl: settings.runnerFhirBaseUrl ?? '',
+      defaultTestResultsIndexUrl: settings.defaultTestResultsIndexUrl ?? '',
+      fhirPackageRegistryBaseUrl: settings.fhirPackageRegistryBaseUrl ?? '',
+      vsacFhirBaseUrl: settings.vsacFhirBaseUrl ?? '',
+      vsacApiUsername: settings.vsacApiUsername ?? '',
+      vsacApiPassword: settings.vsacApiPassword ?? '',
+      aiProvider: settings.aiProvider,
+      ollamaBaseUrl: settings.ollamaBaseUrl ?? '',
+      ollamaModel: settings.ollamaModel ?? '',
+      openaiModel: settings.openaiModel ?? '',
+      compatibleProviderName: settings.compatibleProviderName ?? '',
+      compatibleProviderBaseUrl: settings.compatibleProviderBaseUrl ?? '',
+      compatibleProviderModel: settings.compatibleProviderModel ?? '',
+      searxngBaseUrl: settings.searxngBaseUrl ?? '',
+      enableAiAssistant: !!settings.enableAiAssistant,
+      autoApplyCodeEdits: !!settings.autoApplyCodeEdits,
+      enableAiCodePrediction: !!settings.enableAiCodePrediction,
+    };
+  }
+
+  private fromUserSettingsDto(dto: UserSettingsDto): Settings {
     const settings = new Settings();
-    const migrated = this.environmentService.migrateLegacySettings({});
-    settings.settingsVersion = 2;
-    settings.environments = migrated.environments;
-    settings.activeEnvironmentId = migrated.activeEnvironmentId;
-    settings.activeEnvironmentSource = 'personal';
-    settings.activeWorkspaceEnvironment = null;
+    settings.experimental = dto.experimental;
+    settings.developer = dto.developer;
+    settings.theme_preferred = this.parseTheme(dto.themePreferred);
+    settings.validateSchema = dto.validateSchema;
+    settings.runnerApiBaseUrl = dto.runnerApiBaseUrl;
+    settings.runnerFhirBaseUrl = dto.runnerFhirBaseUrl;
+    settings.defaultTestResultsIndexUrl = dto.defaultTestResultsIndexUrl;
+    settings.fhirPackageRegistryBaseUrl = dto.fhirPackageRegistryBaseUrl;
+    settings.vsacFhirBaseUrl = dto.vsacFhirBaseUrl;
+    settings.vsacApiUsername = dto.vsacApiUsername;
+    settings.vsacApiPassword = dto.vsacApiPassword;
+    settings.aiProvider = dto.aiProvider;
+    settings.ollamaBaseUrl = dto.ollamaBaseUrl;
+    settings.ollamaModel = dto.ollamaModel;
+    settings.openaiModel = dto.openaiModel;
+    settings.compatibleProviderName = dto.compatibleProviderName;
+    settings.compatibleProviderBaseUrl = dto.compatibleProviderBaseUrl;
+    settings.compatibleProviderModel = dto.compatibleProviderModel;
+    settings.searxngBaseUrl = dto.searxngBaseUrl;
+    settings.enableAiAssistant = dto.enableAiAssistant;
+    settings.autoApplyCodeEdits = dto.autoApplyCodeEdits;
+    settings.enableAiCodePrediction = dto.enableAiCodePrediction;
     return settings;
+  }
+
+  private parseTheme(value: string | undefined): ThemeType {
+    if (value === ThemeType.LIGHT || value === ThemeType.DARK || value === ThemeType.AUTOMATIC) {
+      return value;
+    }
+    return ThemeType.AUTOMATIC;
+  }
+
+  private personalEnvironmentsForPersist(environments: CqlEnvironment[]): CqlEnvironment[] {
+    return (environments ?? [])
+      .filter((env) => !env.builtIn && env.id !== BUILT_IN_ENVIRONMENT_ID)
+      .map((env) => this.cloneEnvironment({ ...env, builtIn: false }));
+  }
+
+  private cloneEnvironment(env: CqlEnvironment): CqlEnvironment {
+    return {
+      id: env.id,
+      name: env.name,
+      builtIn: env.builtIn,
+      evaluationServer: normalizeEndpointConfiguration(env.evaluationServer ?? { address: '' }),
+      dataEndpoint: normalizeEndpointConfiguration(env.dataEndpoint ?? { address: '' }),
+      terminologyEndpoint: normalizeEndpointConfiguration(env.terminologyEndpoint ?? { address: '' }),
+      contentEndpoint: normalizeEndpointConfiguration(env.contentEndpoint ?? { address: '' }),
+    };
+  }
+
+  private createDefaultSettings(): Settings {
+    return new Settings();
   }
 
   private normalizeParsedSettings(parsed: LegacySettingsRecord): { settings: Settings; migrated: boolean } {
@@ -411,49 +530,26 @@ export class SettingsService {
         (filtered as Record<string, unknown>)[key] = parsed[key];
       }
     }
+    if (parsed.themePreferred && !parsed.theme_preferred) {
+      filtered.theme_preferred = this.parseTheme(parsed.themePreferred);
+    }
 
     let merged = { ...defaults, ...filtered } as Settings;
     let migrated = this.containsRetiredAiSettings(parsed);
 
-    if (!parsed.settingsVersion || parsed.settingsVersion < 2 || !parsed.environments?.length) {
+    if (!parsed.environments?.length) {
       const legacy: LegacyEnvironmentFields = {
         fhirBaseUrl: parsed.fhirBaseUrl,
         terminologyBaseUrl: parsed.terminologyBaseUrl,
         terminologyBasicAuthUsername: parsed.terminologyBasicAuthUsername,
         terminologyBasicAuthPassword: parsed.terminologyBasicAuthPassword
       };
-      const migratedEnv = this.environmentService.migrateLegacySettings(legacy);
-      merged = {
-        ...merged,
-        settingsVersion: 2,
-        environments: migratedEnv.environments,
-        activeEnvironmentId: this.environmentService.resolveActiveEnvironmentIdForImport(
-          parsed.activeEnvironmentId ?? migratedEnv.activeEnvironmentId,
-          migratedEnv.environments
-        )
-      };
+      // Legacy only had built-in; no personal envs to migrate
+      void legacy;
+      merged.environments = [];
       migrated = true;
     } else {
-      const resolvedId = this.environmentService.resolveActiveEnvironmentIdForImport(
-        merged.activeEnvironmentId,
-        merged.environments
-      );
-      if (resolvedId !== merged.activeEnvironmentId) {
-        migrated = true;
-      }
-      merged.activeEnvironmentId = resolvedId;
-    }
-
-    if (merged.activeEnvironmentSource !== 'workspace') {
-      merged.activeEnvironmentSource = 'personal';
-      merged.activeWorkspaceEnvironment = null;
-    } else if (
-      !merged.activeWorkspaceEnvironment?.workspaceId ||
-      !merged.activeWorkspaceEnvironment?.environmentId
-    ) {
-      merged.activeEnvironmentSource = 'personal';
-      merged.activeWorkspaceEnvironment = null;
-      migrated = true;
+      merged.environments = this.personalEnvironmentsForPersist(parsed.environments);
     }
 
     return { settings: merged, migrated };

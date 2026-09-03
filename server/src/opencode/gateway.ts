@@ -7,6 +7,7 @@ import type { ServerEnv } from '../config/env.js';
 import { requireAuth } from '../auth/session.js';
 import type {
   CreateOpenCodeSessionRequest,
+  OpenCodeEventEnvelope,
   OpenCodeErrorBody,
   OpenCodeSessionDto,
   OpenCodeSessionStateDto,
@@ -17,6 +18,8 @@ import { openCodeLogger } from './logger.js';
 import { OpenCodeToolExecutor, type OpenCodeToolContext } from './tools.js';
 import { getPrisma } from '../db/prisma.js';
 import { resolveEffectiveWorkspaceRole } from '../workspace/access.js';
+import type { Prisma } from '@prisma/client';
+import { openCodeResumeMessages } from './session-history.js';
 
 interface GatewaySession extends OpenCodeToolContext {
   id: string;
@@ -36,12 +39,90 @@ function asyncHandler(
 
 export function createOpenCodeGateway(env: ServerEnv): Router {
   const router = Router();
+  const persistentSessions = Boolean(env.databaseUrl);
   const sessions = new Map<string, GatewaySession>();
   const capabilities = new Map<string, GatewaySession>();
+  const persistenceTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const toolExecutor = new OpenCodeToolExecutor({
     cqlAssetsDirectory: env.cqlAssetsDirectory,
     cqlAssetsUrl: env.cqlAssetsUrl,
   });
+
+  const jsonValue = (value: unknown): Prisma.InputJsonValue =>
+    JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+
+  const archivedDto = (row: {
+    id: string;
+    openCodeSessionId: string;
+    title: string;
+    activeLibraryId: string;
+    activeFile: string;
+    model: string;
+    reasoningEnabled: boolean;
+    runnerCreatedAt: Date;
+    updatedAt: Date;
+    lastActivityAt: Date;
+    expiresAt: Date;
+    workspaceOrigin: Prisma.JsonValue | null;
+  }): OpenCodeSessionDto => ({
+    id: row.id,
+    openCodeSessionId: row.openCodeSessionId,
+    title: row.title,
+    status: 'idle',
+    activeLibraryId: row.activeLibraryId,
+    activeFile: row.activeFile,
+    createdAt: row.runnerCreatedAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    lastActivityAt: row.lastActivityAt.toISOString(),
+    expiresAt: row.expiresAt.toISOString(),
+    model: row.model,
+    reasoningEnabled: row.reasoningEnabled,
+    availability: 'archived',
+    ...(row.workspaceOrigin
+      ? { workspaceOrigin: row.workspaceOrigin as unknown as OpenCodeWorkspaceOrigin }
+      : {}),
+  });
+
+  const persistState = async (
+    owner: string,
+    state: OpenCodeSessionStateDto,
+    workspaceOrigin?: OpenCodeWorkspaceOrigin
+  ): Promise<void> => {
+    if (!persistentSessions) return;
+    const dto = state.session;
+    await getPrisma().openCodeSession.upsert({
+      where: { id: dto.id },
+      create: {
+        id: dto.id,
+        userId: owner,
+        openCodeSessionId: dto.openCodeSessionId,
+        title: dto.title,
+        status: dto.status,
+        activeLibraryId: dto.activeLibraryId,
+        activeFile: dto.activeFile,
+        model: dto.model,
+        reasoningEnabled: dto.reasoningEnabled,
+        runnerCreatedAt: new Date(dto.createdAt),
+        lastActivityAt: new Date(dto.lastActivityAt),
+        expiresAt: new Date(dto.expiresAt),
+        workspaceOrigin: workspaceOrigin ? jsonValue(workspaceOrigin) : undefined,
+        state: jsonValue(state),
+      },
+      update: {
+        openCodeSessionId: dto.openCodeSessionId,
+        title: dto.title,
+        status: dto.status,
+        activeLibraryId: dto.activeLibraryId,
+        activeFile: dto.activeFile,
+        model: dto.model,
+        reasoningEnabled: dto.reasoningEnabled,
+        lastActivityAt: new Date(dto.lastActivityAt),
+        expiresAt: new Date(dto.expiresAt),
+        workspaceOrigin: workspaceOrigin ? jsonValue(workspaceOrigin) : undefined,
+        state: jsonValue(state),
+      },
+    });
+  };
 
   const requireCapability = (req: Request): GatewaySession => {
     const authorization = req.get('authorization') ?? '';
@@ -74,7 +155,7 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     }
   }));
 
-  if (env.ssoConfigured) router.use(requireAuth(env));
+  if (persistentSessions) router.use(requireAuth(env));
 
   router.post('/providers/models', asyncHandler(async (req, res) => {
     const type = req.body?.type;
@@ -118,7 +199,7 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     res.json([...new Set(models.filter((model): model is string => typeof model === 'string' && model.trim().length > 0))].sort());
   }));
 
-  const ownerFor = (req: Request): string => req.user?.id ?? 'local-development';
+  const ownerFor = (req: Request): string => req.user?.id ?? 'test-only';
 
   const authorizeWorkspaceOrigin = async (
     req: Request,
@@ -126,7 +207,7 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     activeLibraryId: string
   ): Promise<OpenCodeWorkspaceOrigin | undefined> => {
     if (!origin) return undefined;
-    if (!env.ssoConfigured) return origin;
+    if (!persistentSessions) return origin;
     if (!req.user) {
       throw new OpenCodeError('WORKSPACE_ACCESS_DENIED', 'Workspace authentication is required', 401, false);
     }
@@ -177,6 +258,9 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     const session = sessions.get(id);
     sessions.delete(id);
     if (session) capabilities.delete(session.capability);
+    const timer = persistenceTimers.get(id);
+    if (timer) clearTimeout(timer);
+    persistenceTimers.delete(id);
   };
 
   const runnerFetch = async (path: string, init: RequestInit = {}): Promise<globalThis.Response> => {
@@ -212,6 +296,36 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     return response;
   };
 
+  const liveState = async (session: GatewaySession): Promise<OpenCodeSessionStateDto> => {
+    const response = await runnerFetch(`/sessions/${encodeURIComponent(session.id)}/state`);
+    const state = await response.json() as OpenCodeSessionStateDto;
+    state.session = {
+      ...withWorkspaceOrigin(state.session, session),
+      availability: 'live',
+    };
+    session.dto = state.session;
+    await persistState(session.owner, state, session.workspaceOrigin);
+    return state;
+  };
+
+  const schedulePersist = (session: GatewaySession, delayMs = 250): void => {
+    if (!persistentSessions) return;
+    const existing = persistenceTimers.get(session.id);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      persistenceTimers.delete(session.id);
+      if (sessions.get(session.id) !== session) return;
+      void liveState(session).catch(error => {
+        openCodeLogger.warn(
+          { operation: 'session.persist', sessionId: session.id, err: error },
+          'Could not persist OpenCode session state'
+        );
+      });
+    }, delayMs);
+    timer.unref();
+    persistenceTimers.set(session.id, timer);
+  };
+
   router.get('/health', asyncHandler(async (_req, res) => {
     const response = await runnerFetch('/health');
     res.json(await response.json());
@@ -219,10 +333,33 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
 
   router.get('/sessions', asyncHandler(async (req, res) => {
     const owner = ownerFor(req);
-    res.json([...sessions.values()]
-      .filter(session => session.owner === owner && session.dto)
-      .map(session => session.dto)
-      .sort((a, b) => (b?.updatedAt ?? '').localeCompare(a?.updatedAt ?? '')));
+    const workspaceId = typeof req.query.workspaceId === 'string' ? req.query.workspaceId.trim() : '';
+    if (workspaceId && persistentSessions) {
+      if (!req.user || !await resolveEffectiveWorkspaceRole(req.user, workspaceId)) {
+        throw new OpenCodeError('WORKSPACE_ACCESS_DENIED', 'Workspace access is required to view its OpenCode sessions', 403, false);
+      }
+    }
+    if (!persistentSessions) {
+      res.json([...sessions.values()]
+        .filter(session => session.owner === owner && session.dto && (!workspaceId || session.workspaceOrigin?.workspaceId === workspaceId))
+        .map(session => session.dto)
+        .sort((a, b) => (b?.updatedAt ?? '').localeCompare(a?.updatedAt ?? '')));
+      return;
+    }
+    const rows = await getPrisma().openCodeSession.findMany({
+      where: { userId: owner },
+      orderBy: { updatedAt: 'desc' },
+    });
+    res.json(rows.filter(row => {
+      if (!workspaceId) return true;
+      const origin = row.workspaceOrigin as unknown as OpenCodeWorkspaceOrigin | null;
+      return origin?.workspaceId === workspaceId;
+    }).map(row => {
+      const live = sessions.get(row.id);
+      return live?.owner === owner && live.dto
+        ? { ...live.dto, availability: 'live' as const }
+        : archivedDto(row);
+    }));
   }));
 
   router.post('/sessions', asyncHandler(async (req, res) => {
@@ -235,7 +372,7 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
       throw new OpenCodeError('SESSION_LIMIT_REACHED', 'The global OpenCode session limit has been reached', 429, true);
     }
     const browserInput = (req.body ?? {}) as CreateOpenCodeSessionRequest;
-    const { environment, toolContext, toolBridge: _untrustedToolBridge, ...runnerInput } = browserInput;
+    const { environment, toolContext, toolBridge: _untrustedToolBridge, resume: _untrustedResume, ...runnerInput } = browserInput;
     const { workspaceOrigin, ...activeLibrary } = browserInput.activeLibrary ?? {};
     const input = { ...runnerInput, activeLibrary } as CreateOpenCodeSessionRequest;
     if (!input.activeLibrary?.id || !input.activeLibrary?.cqlContent?.trim()) {
@@ -268,37 +405,166 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
       });
       const created = await response.json() as OpenCodeSessionDto;
       gatewaySession.id = created.id;
-      gatewaySession.dto = withWorkspaceOrigin(created, gatewaySession);
+      gatewaySession.dto = {
+        ...withWorkspaceOrigin(created, gatewaySession),
+        availability: 'live',
+      };
       sessions.set(created.id, gatewaySession);
+      await persistState(owner, {
+        session: gatewaySession.dto,
+        messages: [],
+        diffs: [],
+        attachments: [],
+        commands: [],
+        validation: null,
+        permissions: [],
+        questions: [],
+        lastEventId: 0,
+      }, authorizedWorkspaceOrigin);
       res.status(201).json(gatewaySession.dto);
     } catch (error) {
       capabilities.delete(capability);
+      if (gatewaySession.id !== 'pending') {
+        sessions.delete(gatewaySession.id);
+        await runnerFetch(`/sessions/${encodeURIComponent(gatewaySession.id)}`, { method: 'DELETE' })
+          .catch(() => undefined);
+      }
+      throw error;
+    }
+  }));
+
+  router.post('/sessions/:id/resume', asyncHandler(async (req, res) => {
+    if (!persistentSessions) {
+      throw new OpenCodeError('SESSION_NOT_FOUND', 'Archived OpenCode sessions require database persistence', 404, false);
+    }
+    const owner = ownerFor(req);
+    if (sessions.has(req.params.id)) {
+      throw new OpenCodeError('SESSION_ALREADY_LIVE', 'This OpenCode session is already live', 409, false);
+    }
+    const ownedCount = [...sessions.values()].filter(session => session.owner === owner).length;
+    if (env.opencodeMaxSessionsPerUser > 0 && ownedCount >= env.opencodeMaxSessionsPerUser) {
+      throw new OpenCodeError('SESSION_LIMIT_REACHED', 'The per-user OpenCode session limit has been reached', 429, true);
+    }
+    if (env.opencodeMaxSessionsGlobal > 0 && sessions.size >= env.opencodeMaxSessionsGlobal) {
+      throw new OpenCodeError('SESSION_LIMIT_REACHED', 'The global OpenCode session limit has been reached', 429, true);
+    }
+    const row = await getPrisma().openCodeSession.findFirst({
+      where: { id: req.params.id, userId: owner },
+    });
+    if (!row) throw new OpenCodeError('SESSION_NOT_FOUND', 'OpenCode session not found', 404, false);
+
+    const browserInput = (req.body ?? {}) as CreateOpenCodeSessionRequest;
+    const { environment, toolContext, toolBridge: _untrustedToolBridge, resume: _untrustedResume, ...runnerInput } = browserInput;
+    const { workspaceOrigin: _browserWorkspaceOrigin, ...activeLibrary } = browserInput.activeLibrary ?? {};
+    const input = { ...runnerInput, title: row.title, activeLibrary } as CreateOpenCodeSessionRequest;
+    if (!input.activeLibrary?.id || !input.activeLibrary?.cqlContent?.trim()) {
+      throw new OpenCodeError('INVALID_SESSION', 'An active CQL library with non-empty CQL content is required', 400, false);
+    }
+    if (input.activeLibrary.id !== row.activeLibraryId) {
+      throw new OpenCodeError('SESSION_LIBRARY_MISMATCH', 'The archived session belongs to a different CQL Library', 409, false);
+    }
+    const storedOrigin = row.workspaceOrigin
+      ? row.workspaceOrigin as unknown as OpenCodeWorkspaceOrigin
+      : undefined;
+    const authorizedWorkspaceOrigin = await authorizeWorkspaceOrigin(req, storedOrigin, input.activeLibrary.id);
+    const archivedState = row.state as unknown as OpenCodeSessionStateDto;
+    const seedMessages = openCodeResumeMessages(
+      Array.isArray(archivedState.messages) ? archivedState.messages : []
+    );
+    const capability = randomUUID();
+    const gatewaySession: GatewaySession = {
+      id: row.id,
+      owner,
+      createdAt: Date.now(),
+      lastActivityAt: Date.now(),
+      environment,
+      toolContext,
+      capability,
+      workspaceOrigin: authorizedWorkspaceOrigin,
+    };
+    capabilities.set(capability, gatewaySession);
+    try {
+      const response = await runnerFetch('/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...input,
+          toolBridge: { baseUrl: env.opencodeToolBridgeUrl, capability },
+          resume: {
+            sessionId: row.id,
+            createdAt: row.runnerCreatedAt.toISOString(),
+            messages: seedMessages,
+          },
+        } satisfies CreateOpenCodeSessionRequest),
+      });
+      const created = await response.json() as OpenCodeSessionDto;
+      gatewaySession.dto = {
+        ...withWorkspaceOrigin(created, gatewaySession),
+        availability: 'live',
+      };
+      sessions.set(created.id, gatewaySession);
+      await persistState(owner, {
+        session: gatewaySession.dto,
+        messages: seedMessages,
+        diffs: [],
+        attachments: [],
+        commands: [],
+        validation: null,
+        permissions: [],
+        questions: [],
+        lastEventId: 0,
+      }, authorizedWorkspaceOrigin);
+      schedulePersist(gatewaySession, 0);
+      res.json(gatewaySession.dto);
+    } catch (error) {
+      capabilities.delete(capability);
+      sessions.delete(row.id);
+      await runnerFetch(`/sessions/${encodeURIComponent(row.id)}`, { method: 'DELETE' }).catch(() => undefined);
       throw error;
     }
   }));
 
   router.get('/sessions/:id', asyncHandler(async (req, res) => {
-    const session = requireOwnedSession(req);
-    const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}`);
-    const dto = await response.json() as OpenCodeSessionDto;
-    session.dto = withWorkspaceOrigin(dto, session);
-    res.json(session.dto);
+    const live = sessions.get(req.params.id);
+    if (live?.owner === ownerFor(req)) {
+      const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}`);
+      const dto = await response.json() as OpenCodeSessionDto;
+      live.dto = { ...withWorkspaceOrigin(dto, live), availability: 'live' };
+      res.json(live.dto);
+      return;
+    }
+    if (!persistentSessions) {
+      throw new OpenCodeError('SESSION_NOT_FOUND', 'OpenCode session not found', 404, false);
+    }
+    const row = await getPrisma().openCodeSession.findFirst({
+      where: { id: req.params.id, userId: ownerFor(req) },
+    });
+    if (!row) throw new OpenCodeError('SESSION_NOT_FOUND', 'OpenCode session not found', 404, false);
+    res.json(archivedDto(row));
   }));
 
   router.get('/sessions/:id/state', asyncHandler(async (req, res) => {
-    const session = requireOwnedSession(req);
-    const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/state`);
-    const state = await response.json() as OpenCodeSessionStateDto;
-    state.session = withWorkspaceOrigin(state.session, session);
-    session.dto = state.session;
-    res.json(state);
+    const live = sessions.get(req.params.id);
+    if (live?.owner === ownerFor(req)) {
+      res.json(await liveState(live));
+      return;
+    }
+    if (!persistentSessions) {
+      throw new OpenCodeError('SESSION_NOT_FOUND', 'OpenCode session not found', 404, false);
+    }
+    const row = await getPrisma().openCodeSession.findFirst({
+      where: { id: req.params.id, userId: ownerFor(req) },
+    });
+    if (!row) throw new OpenCodeError('SESSION_NOT_FOUND', 'OpenCode session not found', 404, false);
+    const state = row.state as unknown as OpenCodeSessionStateDto;
+    res.json({ ...state, session: archivedDto(row), permissions: [], questions: [] });
   }));
 
   for (const suffix of ['messages', 'diff', 'commands'] as const) {
     router.get(`/sessions/:id/${suffix}`, asyncHandler(async (req, res) => {
-      requireOwnedSession(req);
+      const session = requireOwnedSession(req);
       const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/${suffix}`);
       res.json(await response.json());
+      if (suffix === 'diff') schedulePersist(session);
     }));
   }
 
@@ -310,24 +576,26 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
   }));
 
   router.post('/sessions/:id/attachments', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/attachments`, {
       method: 'POST',
       body: JSON.stringify({ name: req.body?.name, mimeType: req.body?.mimeType, data: req.body?.data }),
     });
     res.status(201).json(await response.json());
+    schedulePersist(session);
   }));
 
   router.delete('/sessions/:id/attachments/:attachmentId', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/attachments/${encodeURIComponent(req.params.attachmentId)}`, {
       method: 'DELETE',
     });
     res.status(204).send();
+    schedulePersist(session);
   }));
 
   router.put('/sessions/:id/active-file', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/active-file`, {
       method: 'PUT',
       body: JSON.stringify({ content: req.body?.content, documentRevision: req.body?.documentRevision }),
@@ -335,10 +603,11 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     res.status(204);
     await response.arrayBuffer();
     res.send();
+    schedulePersist(session);
   }));
 
   router.post('/sessions/:id/prompt', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/prompt`, {
       method: 'POST',
       body: JSON.stringify({
@@ -351,63 +620,70 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
       }),
     });
     res.status(202).json(await response.json());
+    schedulePersist(session);
   }));
 
   router.post('/sessions/:id/model', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/model`, {
       method: 'POST',
       body: JSON.stringify({ provider: req.body?.provider, model: req.body?.model }),
     });
     res.status(response.status).send();
+    schedulePersist(session);
   }));
 
   router.post('/sessions/:id/commands/:command', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     const response = await runnerFetch(
       `/sessions/${encodeURIComponent(req.params.id)}/commands/${encodeURIComponent(req.params.command)}`,
       { method: 'POST', body: JSON.stringify({ arguments: req.body?.arguments, reasoning: req.body?.reasoning }) }
     );
     res.status(202).json(await response.json());
+    schedulePersist(session);
   }));
 
   for (const action of ['abort', 'validate'] as const) {
     router.post(`/sessions/:id/${action}`, asyncHandler(async (req, res) => {
-      requireOwnedSession(req);
+      const session = requireOwnedSession(req);
       const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/${action}`, { method: 'POST' });
       res.status(action === 'abort' ? 200 : 200).json(await response.json());
+      schedulePersist(session);
     }));
   }
 
   router.post('/sessions/:id/permissions/:permissionId', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     const response = await runnerFetch(
       `/sessions/${encodeURIComponent(req.params.id)}/permissions/${encodeURIComponent(req.params.permissionId)}`,
       { method: 'POST', body: JSON.stringify({ response: req.body?.response }) }
     );
     res.json(await response.json());
+    schedulePersist(session);
   }));
 
   router.post('/sessions/:id/questions/:requestId', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     const response = await runnerFetch(
       `/sessions/${encodeURIComponent(req.params.id)}/questions/${encodeURIComponent(req.params.requestId)}`,
       { method: 'POST', body: JSON.stringify({ answers: req.body?.answers }) }
     );
     res.json(await response.json());
+    schedulePersist(session);
   }));
 
   router.delete('/sessions/:id/questions/:requestId', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     await runnerFetch(
       `/sessions/${encodeURIComponent(req.params.id)}/questions/${encodeURIComponent(req.params.requestId)}`,
       { method: 'DELETE' }
     );
     res.status(204).send();
+    schedulePersist(session);
   }));
 
   router.get('/sessions/:id/events', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
+    const session = requireOwnedSession(req);
     const abort = new AbortController();
     req.on('close', () => abort.abort());
     const after = req.get('last-event-id') ?? String(req.query.after ?? '0');
@@ -421,24 +697,107 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
     const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let eventBuffer = '';
+    let upstreamEnded = false;
     try {
       while (!abort.signal.aborted) {
         const { done, value } = await reader.read();
-        if (done) break;
+        if (done) {
+          upstreamEnded = true;
+          break;
+        }
         res.write(Buffer.from(value));
+        eventBuffer += decoder.decode(value, { stream: true });
+        const lines = eventBuffer.split(/\r?\n/);
+        eventBuffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            const envelope = JSON.parse(line.slice(5).trim()) as OpenCodeEventEnvelope;
+            const type = envelope.event?.type;
+            if (type === 'session.idle' || type === 'session.error' || type === 'runner.error') {
+              schedulePersist(session);
+            }
+          } catch {
+            // Ignore malformed event inspection here; the original stream is still forwarded unchanged.
+          }
+        }
       }
     } catch (error) {
       if (!abort.signal.aborted) throw error;
     } finally {
       reader.releaseLock();
+      // A browser closing its stream does not end the session. The runner
+      // closing the upstream stream does: release the in-memory capability so
+      // the durable record is immediately presented as archived/resumable.
+      if (upstreamEnded) forget(session.id);
+      else schedulePersist(session);
       if (!res.writableEnded) res.end();
     }
   }));
 
+  router.post('/sessions/:id/archive', asyncHandler(async (req, res) => {
+    const owner = ownerFor(req);
+    const live = sessions.get(req.params.id);
+    if (!live || live.owner !== owner) {
+      if (!persistentSessions) {
+        throw new OpenCodeError('SESSION_NOT_FOUND', 'OpenCode session not found', 404, false);
+      }
+      const saved = await getPrisma().openCodeSession.findFirst({
+        where: { id: req.params.id, userId: owner },
+        select: { id: true },
+      });
+      if (!saved) throw new OpenCodeError('SESSION_NOT_FOUND', 'OpenCode session not found', 404, false);
+      res.status(204).send();
+      return;
+    }
+
+    let state: OpenCodeSessionStateDto | null = null;
+    try {
+      state = await liveState(live);
+    } catch (error) {
+      if (!persistentSessions) throw error;
+      openCodeLogger.warn(
+        { operation: 'session.archive.snapshot', sessionId: live.id, err: error },
+        'Archiving the last persisted OpenCode state because the runner snapshot was unavailable'
+      );
+    }
+    try {
+      await runnerFetch(`/sessions/${encodeURIComponent(live.id)}`, { method: 'DELETE' });
+    } catch (error) {
+      const missing = error instanceof OpenCodeError && [404, 503, 504].includes(error.status);
+      if (!missing) throw error;
+    }
+    forget(live.id);
+    if (state) {
+      state.session = { ...state.session, status: 'idle', availability: 'archived' };
+      state.attachments = [];
+      state.permissions = [];
+      state.questions = [];
+      await persistState(owner, state, live.workspaceOrigin);
+    }
+    openCodeLogger.info(
+      { operation: 'session.archive', sessionId: live.id, owner },
+      'OpenCode session archived'
+    );
+    res.status(204).send();
+  }));
+
+  // Permanent deletion remains available to an explicit future history-management UI.
   router.delete('/sessions/:id', asyncHandler(async (req, res) => {
-    requireOwnedSession(req);
-    await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}`, { method: 'DELETE' });
-    forget(req.params.id);
+    const owner = ownerFor(req);
+    const live = sessions.get(req.params.id);
+    if (live?.owner === owner) {
+      await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}`, { method: 'DELETE' });
+      forget(req.params.id);
+    }
+    const deleted = persistentSessions
+      ? await getPrisma().openCodeSession.deleteMany({ where: { id: req.params.id, userId: owner } })
+      : { count: 0 };
+    if (!live && deleted.count === 0) {
+      throw new OpenCodeError('SESSION_NOT_FOUND', 'OpenCode session not found', 404, false);
+    }
     res.status(204).send();
   }));
 
@@ -447,9 +806,8 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
       for (const session of [...sessions.values()]) {
         if (Date.now() - session.lastActivityAt < env.opencodeSessionIdleMs) continue;
         try {
-          const response = await runnerFetch(`/sessions/${encodeURIComponent(session.id)}`);
-          const dto = await response.json() as OpenCodeSessionDto;
-          session.dto = dto;
+          const state = await liveState(session);
+          const dto = state.session;
           if (dto.status === 'busy' || Date.parse(dto.expiresAt) > Date.now()) continue;
           await runnerFetch(`/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE' });
         } catch {

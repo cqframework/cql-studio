@@ -5,6 +5,9 @@
       <strong>OpenCode</strong>
       @if (session()) {
         <span class="badge text-bg-secondary text-truncate" [title]="session()!.model">{{ session()!.model }}</span>
+        @if (sessionArchived()) {
+          <span id="opencode-session-archived" class="badge text-bg-warning">Archived</span>
+        }
         <span class="badge text-bg-light text-truncate" [title]="'Bound environment: ' + sessionEnvironmentLabel()">
           <i class="bi bi-hdd-network me-1"></i>{{ sessionEnvironmentLabel() }}
         </span>
@@ -21,14 +24,14 @@
     @if (session()) {
       <div class="d-flex align-items-center gap-2">
         <label class="reasoning-toggle small" title="Mirror OpenCode workspace changes into the active editor without saving">
-          <input type="checkbox" [ngModel]="liveEditsEnabled()" (ngModelChange)="toggleLiveEdits($event)" [disabled]="environmentStale()">
+          <input type="checkbox" [ngModel]="liveEditsEnabled()" (ngModelChange)="toggleLiveEdits($event)" [disabled]="environmentStale() || sessionArchived()">
           Live edits
         </label>
         <label class="reasoning-toggle small" title="Enable the model's thinking variant for subsequent prompts">
-          <input type="checkbox" [ngModel]="reasoningEnabled()" (ngModelChange)="reasoningEnabled.set($event)">
+          <input type="checkbox" [ngModel]="reasoningEnabled()" (ngModelChange)="reasoningEnabled.set($event)" [disabled]="sessionArchived()">
           Reasoning
         </label>
-        <button type="button" class="btn btn-sm btn-outline-danger" (click)="endSession()" title="Delete this OpenCode session and workspace">
+        <button type="button" class="btn btn-sm btn-outline-secondary" (click)="endSession()" title="Archive this conversation and end its live runner workspace">
           <i class="bi bi-x-lg me-1"></i>End
         </button>
       </div>
@@ -55,14 +58,37 @@
       } @else {
         <p class="text-body-secondary">Open or create a CQL library first.</p>
       }
-      <button type="button" class="btn btn-primary" [disabled]="!canStart()" (click)="startSession()">
-        @if (status() === 'starting') { <span class="spinner-border spinner-border-sm me-2"></span> }
-        @else { <i class="bi bi-play-fill me-1"></i> }
-        Start OpenCode
-      </button>
+      <div class="d-flex flex-wrap justify-content-center gap-2">
+        <button type="button" class="btn btn-primary" [disabled]="!canStart()" (click)="startSession()">
+          @if (status() === 'starting') { <span class="spinner-border spinner-border-sm me-2"></span> }
+          @else { <i class="bi bi-play-fill me-1"></i> }
+          Start OpenCode
+        </button>
+        <button type="button" class="btn btn-outline-primary" [disabled]="!activeLibrary()" (click)="openResumePicker()">
+          <i class="bi bi-clock-history me-1"></i>Resume saved session
+        </button>
+      </div>
+      @if (showResumeSessions()) {
+        <section class="info-card border rounded p-3 text-start w-100">
+          <div class="d-flex justify-content-between gap-2"><strong>Saved sessions for this Library</strong><button class="btn-close" (click)="showResumeSessions.set(false)"></button></div>
+          @for (item of resumeSessions(); track item.id) {
+            <button type="button" class="session-row" (click)="resumeSession(item)">
+              <span>{{ item.title }}</span><small>Archived · {{ item.updatedAt }}</small>
+            </button>
+          } @empty { <p class="small text-body-secondary mb-0 mt-2">No archived sessions exist for the active Library.</p> }
+        </section>
+      }
       <small class="text-body-secondary">Only the active CQL file is writable. Dependencies and every MCP integration are read-only.</small>
     </div>
   } @else {
+    @if (sessionArchived()) {
+      <div id="opencode-session-archive-notice" class="alert alert-info rounded-0 mb-0 py-2 px-3 d-flex justify-content-between align-items-center gap-2" role="status">
+        <span>This saved session is read-only. Resume it to continue with the active Library's current files and AI provider.</span>
+        <button type="button" class="btn btn-sm btn-primary flex-shrink-0" (click)="openResumePicker()">
+          <i class="bi bi-play-fill me-1"></i>Resume
+        </button>
+      </div>
+    }
     @if (environmentStale()) {
       <div id="opencode-environment-stale" class="alert alert-warning rounded-0 mb-0 py-2 px-3" role="alert">
         <strong>Environment changed.</strong>
@@ -71,14 +97,14 @@
       </div>
     }
     <div #messageScroller class="messages flex-grow-1 overflow-auto p-3">
-      @if (showSessions()) {
+      @if (showResumeSessions()) {
         <section class="info-card border rounded p-3 mb-3">
-          <div class="d-flex justify-content-between gap-2"><strong>Live sessions</strong><button class="btn-close" (click)="showSessions.set(false)"></button></div>
-          @for (item of liveSessions(); track item.id) {
-            <button type="button" class="session-row" (click)="attachSession(item)">
-              <span>{{ item.title }}</span><small>{{ item.status }} · {{ item.updatedAt }}</small>
+          <div class="d-flex justify-content-between gap-2"><strong>Resume a saved session for this Library</strong><button class="btn-close" (click)="showResumeSessions.set(false)"></button></div>
+          @for (item of resumeSessions(); track item.id) {
+            <button type="button" class="session-row" (click)="resumeSession(item)">
+              <span>{{ item.title }}</span><small>Archived · {{ item.updatedAt }}</small>
             </button>
-          } @empty { <p class="small text-body-secondary mb-0 mt-2">No live sessions.</p> }
+          } @empty { <p class="small text-body-secondary mb-0 mt-2">No archived sessions exist for the active Library.</p> }
         </section>
       }
 
@@ -251,7 +277,7 @@
         <div class="d-flex gap-1">
           <input #attachmentInput type="file" class="d-none" multiple
             (change)="onAttachmentsSelected($event)">
-          <button type="button" class="btn btn-sm btn-outline-secondary" (click)="attachmentInput.click()" [disabled]="uploadingAttachments() || environmentStale()" title="Attach context files">
+          <button type="button" class="btn btn-sm btn-outline-secondary" (click)="attachmentInput.click()" [disabled]="uploadingAttachments() || environmentStale() || sessionArchived()" title="Attach context files">
             @if (uploadingAttachments()) { <span class="spinner-border spinner-border-sm"></span> }
             @else { <i class="bi bi-paperclip"></i> }
           </button>
@@ -306,7 +332,7 @@
             }
           </div>
         }
-        <textarea #promptInput class="form-control" rows="3" [ngModel]="promptText()" (ngModelChange)="onPromptChanged($event)" (keydown)="onPromptKeydown($event)" [disabled]="status() === 'busy' || environmentStale()" [placeholder]="inlineContext() ? 'Describe the focused inline edit…' : 'Ask OpenCode… Type / for commands or @ for CQL files'"></textarea>
+        <textarea #promptInput class="form-control" rows="3" [ngModel]="promptText()" (ngModelChange)="onPromptChanged($event)" (keydown)="onPromptKeydown($event)" [disabled]="status() === 'busy' || environmentStale()" [placeholder]="sessionArchived() ? 'Type /resume to continue this saved session' : inlineContext() ? 'Describe the focused inline edit…' : 'Ask OpenCode… Type / for commands or @ for CQL files'"></textarea>
         @if (visibleCommands().length) {
           <div class="suggestion-menu">
             @for (command of visibleCommands(); track command.name) { <button type="button" (click)="chooseCommand(command)"><code>/{{ command.name }}</code><span>{{ command.description }}</span></button> }

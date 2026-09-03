@@ -7,9 +7,11 @@ import { provideMarkdown } from 'ngx-markdown';
 import { provideTimeago, TimeagoIntl, TimeagoFormatter, TimeagoCustomFormatter } from 'ngx-timeago';
 import { provideCharts, withDefaultRegisterables } from 'ng2-charts';
 
+
 import { routes } from './app.routes';
 import { AuthService } from './services/auth.service';
 import { EnvironmentSwitchService } from './services/environment-switch.service';
+import { SettingsService } from './services/settings.service';
 
 const timeagoShortStrings = {
   suffixAgo: '',
@@ -50,11 +52,21 @@ export const appConfig: ApplicationConfig = {
     }),
     provideAppInitializer(async () => {
       const auth = inject(AuthService);
+      const settings = inject(SettingsService);
       const environmentSwitch = inject(EnvironmentSwitchService);
-      await auth.refreshSession();
-      if (auth.isAuthenticated()) {
-        await environmentSwitch.reloadWorkspaceCatalog();
+
+      const serverBase = settings.getEffectiveServerBaseUrl();
+      if (!serverBase?.trim()) {
+        throw new Error('CQL_STUDIO_SERVER_BASE_URL is required');
       }
+
+      await auth.refreshSession();
+      if (!auth.isAuthenticated()) {
+        return;
+      }
+
+      await settings.bootstrapFromServer();
+      await environmentSwitch.reloadWorkspaceCatalog();
     })
   ]
 };

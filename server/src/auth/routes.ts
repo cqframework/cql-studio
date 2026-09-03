@@ -15,7 +15,6 @@ import {
   clearSessionCookie,
   optionalAuth,
   publicUser,
-  requireSsoConfigured,
   SESSION_COOKIE,
   sessionCookieOptions,
   setSessionCookie,
@@ -68,16 +67,6 @@ function decodeLoginState(raw: string, secrets: readonly string[]): LoginState |
   }
 }
 
-function oauthObjectForLog(value: object): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(value)) {
-    if (typeof val !== 'function') {
-      out[key] = val;
-    }
-  }
-  return out;
-}
-
 function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void>
 ): (req: Request, res: Response, next: NextFunction) => void {
@@ -88,16 +77,11 @@ function asyncHandler(
 
 export function createAuthRouter(env: ServerEnv): Router {
   const router = Router();
-  const gate = requireSsoConfigured(env);
 
   router.get(
     '/session',
     optionalAuth(env),
     asyncHandler(async (req, res) => {
-      if (!env.ssoConfigured) {
-        res.json({ enabled: false, user: null });
-        return;
-      }
       res.json({
         enabled: true,
         user: req.user ? publicUser(req.user) : null,
@@ -107,7 +91,6 @@ export function createAuthRouter(env: ServerEnv): Router {
 
   router.get(
     '/login',
-    gate,
     asyncHandler(async (req, res) => {
       const config = await getOidcConfig(env);
       const codeVerifier = oidcClient.randomPKCECodeVerifier();
@@ -138,7 +121,6 @@ export function createAuthRouter(env: ServerEnv): Router {
 
   router.get(
     '/callback',
-    gate,
     asyncHandler(async (req, res) => {
       const rawState = req.cookies?.[LOGIN_STATE_COOKIE] as string | undefined;
       res.clearCookie(LOGIN_STATE_COOKIE, { path: '/' });
@@ -166,19 +148,6 @@ export function createAuthRouter(env: ServerEnv): Router {
       if (!claims?.sub) {
         res.status(400).json({ error: 'ID token missing sub claim' });
         return;
-      }
-
-      let userInfo: Record<string, unknown> | undefined;
-      try {
-        const config = await getOidcConfig(env);
-        userInfo = oauthObjectForLog(
-          await oidcClient.fetchUserInfo(config, tokens.access_token, claims.sub)
-        );
-      } catch (err) {
-        logger.debug(
-          { err: err instanceof Error ? err : undefined },
-          'SSO userinfo fetch failed'
-        );
       }
 
       const email =
@@ -223,8 +192,8 @@ export function createAuthRouter(env: ServerEnv): Router {
       setSessionCookie(res, session.id, env, expiresAt);
       logger.debug(
         {
-          accessToken: oauthObjectForLog(tokens),
-          userInfo,
+          userId: user.id,
+          issuer: env.ssoIssuerUrl,
         },
         'SSO login completed'
       );
@@ -234,7 +203,6 @@ export function createAuthRouter(env: ServerEnv): Router {
 
   router.post(
     '/logout',
-    gate,
     asyncHandler(async (req, res) => {
       const raw = req.cookies?.[SESSION_COOKIE] as string | undefined;
       if (raw) {

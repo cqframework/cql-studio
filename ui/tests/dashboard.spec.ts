@@ -33,26 +33,6 @@ test.describe('Dashboard Tests', () => {
       await expect(helpers.page.locator('#dashboard-title')).toBeVisible();
     });
 
-    test('should show back to home button', async () => {
-      await helpers.goToHome();
-      await helpers.loadFromIndex(ExamplePaths.INDEX_JSON);
-      
-      // Set up session storage for dashboard
-      await helpers.page.evaluate((indexUrl) => {
-        sessionStorage.setItem('indexUrl', indexUrl);
-      }, ExamplePaths.INDEX_JSON);
-      
-      await helpers.goToDashboard();
-      
-      // Should have back button
-      const backButton = helpers.page.locator('#back-to-home-btn');
-      await expect(backButton).toBeVisible();
-      
-      // Click back button should navigate to home
-      await backButton.click();
-      expect(await helpers.isOnHomePage()).toBe(true);
-    });
-
     test('should redirect to home when accessing dashboard without index data', async () => {
       await helpers.goToDashboard();
       

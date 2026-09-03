@@ -24,7 +24,7 @@ export class AuthService {
   readonly loaded = this._loaded.asReadonly();
   readonly isAuthenticated = computed(() => this._currentUser() != null);
 
-  /** Base URL for cql-studio-server (CQL_STUDIO_SERVER_BASE_URL / settings). */
+  /** Base URL for cql-studio-server (`CQL_STUDIO_SERVER_BASE_URL` deploy config). */
   apiBase(): string {
     return this.settings.getEffectiveServerBaseUrl().replace(/\/+$/, '');
   }
@@ -35,15 +35,15 @@ export class AuthService {
         credentials: 'include',
       });
       if (!res.ok) {
-        this._ssoEnabled.set(false);
+        this._ssoEnabled.set(true);
         this._currentUser.set(null);
         return;
       }
       const body = (await res.json()) as SessionResponse;
-      this._ssoEnabled.set(!!body.enabled);
+      this._ssoEnabled.set(true);
       this._currentUser.set(body.user ?? null);
     } catch {
-      this._ssoEnabled.set(false);
+      this._ssoEnabled.set(true);
       this._currentUser.set(null);
     } finally {
       this._loaded.set(true);

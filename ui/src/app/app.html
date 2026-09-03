@@ -1,6 +1,8 @@
 <div class="app-container" [attr.data-bs-theme]="settingsService.theme_effective()">
 
-  <app-navigation></app-navigation>
+  @if (authService.isAuthenticated()) {
+    <app-navigation></app-navigation>
+  }
 
   <main class="main-content">
     <router-outlet></router-outlet>

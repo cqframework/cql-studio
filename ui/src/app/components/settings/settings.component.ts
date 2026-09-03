@@ -36,17 +36,11 @@ export class SettingsComponent implements OnInit {
   readonly modelsError = signal<string | null>(null);
 
   ngOnInit() {
-    // Do not reload from localStorage on every visit — that discarded live
-    // patchSettings edits that had not been Saved yet. Import/Restore still reload.
     this.settingsService.setEffectiveTheme();
     const section = this.route.snapshot.queryParamMap.get('section');
     if (this.isValidSection(section)) {
       this.activeSection.set(section);
     }
-  }
-
-  reload() {
-    this.settingsService.reload();
   }
 
   themeTypes() {
@@ -58,7 +52,6 @@ export class SettingsComponent implements OnInit {
   }
 
   onThemePreferredChange(value: ThemeType): void {
-    // Theme takes effect immediately; persist like validateSchema.
     this.settingsService.updateSettings({ theme_preferred: value });
     this.themePreferenceChanged();
   }
@@ -116,17 +109,19 @@ export class SettingsComponent implements OnInit {
     }
   }
 
-  save() {
-    this.settingsService.saveSettings();
-    this.toastService.showSuccess(
-      'Settings saved locally. Provider API keys remain in memory only.',
-      'Settings Saved'
-    );
-  }
-
-  restore() {
-    this.settingsService.forceResetToDefaults();
-    this.toastService.showSuccess('All settings have been restored to their defaults.', 'Settings Restored');
+  async save(): Promise<void> {
+    try {
+      await this.settingsService.saveSettings();
+      this.toastService.showSuccess(
+        'Your settings were saved to CQL Studio Server. Provider API keys remain in memory only.',
+        'Settings Saved'
+      );
+    } catch (err) {
+      this.toastService.showError(
+        err instanceof Error ? err.message : 'Failed to save settings',
+        'Save Failed'
+      );
+    }
   }
 
   onResetClipboard(): void {
@@ -159,12 +154,14 @@ export class SettingsComponent implements OnInit {
     }
     const reader = new FileReader();
     reader.onload = () => {
-      const text = reader.result as string;
-      if (this.settingsService.importSettingsJson(text)) {
-        this.toastService.showSuccess('Settings loaded from file.', 'Settings Imported');
-      } else {
-        this.toastService.showError('File is not valid settings JSON.', 'Import Failed');
-      }
+      void (async () => {
+        const text = reader.result as string;
+        if (await this.settingsService.importSettingsJson(text)) {
+          this.toastService.showSuccess('Settings loaded from file.', 'Settings Imported');
+        } else {
+          this.toastService.showError('File is not valid settings JSON.', 'Import Failed');
+        }
+      })();
     };
     reader.readAsText(file);
   }

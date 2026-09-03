@@ -39,12 +39,6 @@ export class NavigationComponent {
 
   protected readonly showFileMenu = computed(() => this.navUrl() === '/results');
 
-  /** Re-check sessionStorage when route changes (INDEX_URL is set outside this component). */
-  protected readonly hasIndexUrl = computed(() => {
-    this.navUrl();
-    return !!sessionStorage.getItem(SessionStorageKeys.INDEX_URL);
-  });
-
   readonly activeEnvironmentName = computed(() => this.environmentService.activeEnvironment().name);
   readonly workspaceEnvironmentSections = this.environmentService.workspaceCatalogWithEnvironments;
 
@@ -85,15 +79,6 @@ export class NavigationComponent {
     }
   }
 
-  goBackToIndex(): void {
-    const indexUrl = sessionStorage.getItem(SessionStorageKeys.INDEX_URL);
-    if (indexUrl) {
-      this.router.navigate(['/results/open'], { queryParams: { index: indexUrl } });
-    } else {
-      this.router.navigate(['/results/open']);
-    }
-  }
-
   activateEnvironment(id: string): void {
     this.environmentSwitchService.activateEnvironment(id);
   }
@@ -108,10 +93,6 @@ export class NavigationComponent {
 
   isWorkspaceEnvironmentSelected(workspaceId: string, environmentId: string): boolean {
     return this.environmentService.isWorkspaceEnvironmentSelected(workspaceId, environmentId);
-  }
-
-  signIn(): void {
-    this.authService.login(this.router.url);
   }
 
   async signOut(): Promise<void> {

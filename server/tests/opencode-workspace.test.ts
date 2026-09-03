@@ -11,6 +11,7 @@ import {
   isOpenCodeSessionProgress,
   openCodeAttachmentMimeType,
 } from '../src/opencode/runtime.js';
+import { openCodeResumeMessages, openCodeResumeTranscript } from '../src/opencode/session-history.js';
 import { mcpBridgeExecutable, OpenCodeWorkspaceManager } from '../src/opencode/workspace.js';
 
 const activeCql = `library Example version '1.0.0'\nusing FHIR version '4.0.1'\ninclude Shared version '1.0.0'\ndefine Answer: 42\n`;
@@ -50,6 +51,20 @@ test('uses the lightweight tool-free path only for context-free conversation', (
 test('explicitly restores tools after a lightweight conversation turn', () => {
   assert.deepEqual(openCodeToolsForPrompt({ message: 'Hi' }), { '*': false });
   assert.deepEqual(openCodeToolsForPrompt({ message: 'Read the active CQL file' }), { '*': true });
+});
+
+test('builds resume context from chat text without internal or tool payloads', () => {
+  const messages = [
+    { info: { role: 'user' }, parts: [{ type: 'text', text: 'Review the measure.' }] },
+    { info: { role: 'user' }, parts: [{ type: 'text', text: '<cql-studio-editor-context>hidden selection</cql-studio-editor-context>' }] },
+    { info: { role: 'assistant' }, parts: [{ type: 'tool', state: { output: 'secret' } }, { type: 'text', text: 'The denominator needs a guard.' }] },
+  ];
+  const sanitized = JSON.stringify(openCodeResumeMessages(messages));
+  const transcript = openCodeResumeTranscript(messages);
+  assert.match(transcript, /User: Review the measure\./);
+  assert.match(transcript, /Assistant: The denominator needs a guard\./);
+  assert.doesNotMatch(transcript, /hidden selection|secret/);
+  assert.doesNotMatch(sanitized, /hidden selection|secret|state/);
 });
 
 test('resolves the MCP bridge beside the compiled monorepo server module', () => {

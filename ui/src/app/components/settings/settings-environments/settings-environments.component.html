@@ -70,7 +70,8 @@
             <div class="card-body pt-2">
               <app-settings-endpoint-editor idPrefix="settings-evaluation-server"
                 label="Evaluation server URL"
-                [placeholder]="settingsService.getDefaultFhirBaseUrl()"
+                [placeholder]="defaultEvaluationServerUrl()"
+                [disabled]="!!env.builtIn"
                 [(endpoint)]="env.evaluationServer"
                 (endpointChange)="onEvaluationServerChange()" />
             </div>
@@ -87,6 +88,7 @@
               <app-settings-endpoint-editor idPrefix="settings-data-endpoint"
                 label="Data endpoint URL"
                 [placeholder]="'Same as evaluation server'"
+                [disabled]="!!env.builtIn"
                 [(endpoint)]="env.dataEndpoint"
                 (endpointChange)="onDataEndpointChange()" />
             </div>
@@ -103,6 +105,7 @@
               <app-settings-endpoint-editor idPrefix="settings-terminology-endpoint"
                 label="Terminology endpoint URL"
                 [placeholder]="'Same as evaluation server'"
+                [disabled]="!!env.builtIn"
                 [(endpoint)]="env.terminologyEndpoint"
                 (endpointChange)="onTerminologyEndpointChange()" />
             </div>
@@ -119,6 +122,7 @@
               <app-settings-endpoint-editor idPrefix="settings-content-endpoint"
                 label="Content endpoint URL"
                 [placeholder]="'Same as evaluation server'"
+                [disabled]="!!env.builtIn"
                 [(endpoint)]="env.contentEndpoint"
                 (endpointChange)="onContentEndpointChange()" />
             </div>

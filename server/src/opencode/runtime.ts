@@ -31,6 +31,8 @@ import type {
 import { normalizeOpenCodeError, OpenCodeError } from './errors.js';
 import { openCodeLogger } from './logger.js';
 import { OpenCodeWorkspaceManager, providerFor, providerIdFor, type MaterializedWorkspace } from './workspace.js';
+import { openCodeResumeTranscript } from './session-history.js';
+export { openCodeResumeTranscript } from './session-history.js';
 
 type RuntimeEvent = Event | { type: string; properties: Record<string, unknown> };
 type EventListener = (event: OpenCodeEventEnvelope) => void;
@@ -51,6 +53,7 @@ interface RuntimeSession {
   browserRevision: number;
   lastWorkspaceContent: string;
   attachments: Map<string, OpenCodeAttachmentDto>;
+  seedMessages: unknown[];
 }
 
 const CQL_COMMANDS = new Set([
@@ -180,7 +183,7 @@ export class OpenCodeRuntime {
         status: 'idle',
         activeLibraryId: input.activeLibrary.id,
         activeFile: workspace.activeFile,
-        createdAt: now.toISOString(),
+        createdAt: input.resume?.createdAt ?? now.toISOString(),
         updatedAt: now.toISOString(),
         lastActivityAt: now.toISOString(),
         expiresAt: new Date(now.getTime() + this.idleMs).toISOString(),
@@ -202,7 +205,19 @@ export class OpenCodeRuntime {
         lastWorkspaceContent: input.activeLibrary.cqlContent,
         attachments: new Map(),
         toolBridge: input.toolBridge,
+        seedMessages: input.resume?.messages ?? [],
       };
+      if (input.resume?.messages.length) {
+        await client.session.promptAsync({
+          sessionID: openCodeSession.id,
+          noReply: true,
+          tools: { '*': false },
+          parts: [{
+            type: 'text',
+            text: `<cql-studio-resume-context>\n${openCodeResumeTranscript(input.resume.messages)}\n</cql-studio-resume-context>`,
+          }],
+        });
+      }
       this.sessions.set(dto.id, runtime);
       void this.pumpEvents(runtime);
       openCodeLogger.info({ operation: 'session.create', sessionId: dto.id, activeLibraryId: dto.activeLibraryId }, 'OpenCode session created');
@@ -396,7 +411,7 @@ export class OpenCodeRuntime {
     const commands = result.data ?? [];
     return commands
       .filter(command => !command.source || command.source === 'command')
-      .filter(command => !['connect', 'models', 'editor', 'init', 'export', 'themes', 'share', 'unshare', 'exit', 'undo', 'redo'].includes(command.name))
+      .filter(command => !['connect', 'models', 'sessions', 'editor', 'init', 'export', 'themes', 'share', 'unshare', 'exit', 'undo', 'redo'].includes(command.name))
       .map(command => ({
         name: command.name,
         description: command.description || `Run /${command.name}`,
@@ -419,7 +434,7 @@ export class OpenCodeRuntime {
   async messages(id: string): Promise<unknown[]> {
     const session = this.get(id);
     const result = await session.client.session.messages({ sessionID: session.dto.openCodeSessionId });
-    return result.data ?? [];
+    return [...session.seedMessages, ...(result.data ?? [])];
   }
 
   async diff(id: string): Promise<OpenCodeFileDiffDto[]> {

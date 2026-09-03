@@ -20,6 +20,7 @@ import {
   OpenCodeSessionState,
   OpenCodeUiMessage,
   OpenCodeValidation,
+  CreateOpenCodeSessionRequest,
 } from '../../../../models/opencode.model';
 import { IdeStateService } from '../../../../services/ide-state.service';
 import { OpenCodeApiError, OpenCodeService } from '../../../../services/opencode.service';
@@ -44,7 +45,7 @@ interface OpenCodeCommandArgumentHelp {
 const WEB_COMMANDS: OpenCodeCommand[] = [
   { name: 'help', description: 'Show supported OpenCode web commands', source: 'web', acceptsArguments: false },
   { name: 'new', description: 'Start a new workspace for the active library', source: 'web', acceptsArguments: false },
-  { name: 'sessions', description: 'Open the live session picker', source: 'web', acceptsArguments: false },
+  { name: 'resume', description: 'Resume a saved session for the active library', source: 'web', acceptsArguments: false },
   { name: 'details', description: 'Toggle detailed tool input and output', source: 'web', acceptsArguments: false },
   { name: 'thinking', description: 'Toggle display of reasoning content', source: 'web', acceptsArguments: false },
   { name: 'model', description: 'Switch the active provider model, or list available models', source: 'web', acceptsArguments: true },
@@ -93,7 +94,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   private readonly autoSendInlineRequest = signal(false);
 
   readonly session = signal<OpenCodeSession | null>(null);
-  readonly liveSessions = signal<OpenCodeSession[]>([]);
+  readonly resumeSessions = signal<OpenCodeSession[]>([]);
   readonly messages = signal<OpenCodeUiMessage[]>([]);
   readonly activities = signal<OpenCodeActivity[]>([]);
   readonly diffs = signal<OpenCodeFileDiff[]>([]);
@@ -120,7 +121,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   readonly liveConflict = signal<string | null>(null);
   readonly inlineContext = signal<OpenCodeEditorContext | null>(null);
   readonly showHelp = signal(false);
-  readonly showSessions = signal(false);
+  readonly showResumeSessions = signal(false);
   readonly repairAttempts = signal(0);
   readonly commandArgumentHelp = signal<OpenCodeCommandArgumentHelp | null>(null);
   readonly commandHelpLoading = signal(false);
@@ -137,9 +138,10 @@ export class AiTabComponent implements OnInit, OnDestroy {
     return this.isAvailable() && Boolean(library) && !library?.contentLoading && !library?.contentLoadError
       && Boolean(this.contentForLibrary(library!).trim()) && this.status() !== 'starting';
   });
+  readonly sessionArchived = computed(() => this.session()?.availability === 'archived');
   readonly environmentStale = computed(() => {
     const session = this.session();
-    return Boolean(session) && !this.openCodeService.isSessionEnvironmentCurrent(session);
+    return Boolean(session) && !this.sessionArchived() && !this.openCodeService.isSessionEnvironmentCurrent(session);
   });
   readonly sessionEnvironmentLabel = computed(() =>
     this.session()?.environmentBinding?.label ?? 'Unknown environment'
@@ -148,6 +150,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.openCodeService.currentEnvironmentBinding().label
   );
   readonly canSend = computed(() => Boolean(this.session())
+    && (!this.sessionArchived() || /^\/(?:resume|help|new|details|thinking)\b/i.test(this.promptText().trim()))
     && !this.environmentStale()
     && this.promptText().trim().length > 0
     && this.status() !== 'busy');
@@ -158,7 +161,9 @@ export class AiTabComponent implements OnInit, OnDestroy {
     return this.commands().filter(command => command.name.toLowerCase().includes(query)).slice(0, 24);
   });
   readonly hasValidationErrors = computed(() => Boolean(this.validation()?.diagnostics.some(item => item.severity === 'error')));
-  readonly canApplyAndSave = computed(() => Boolean(this.validation()?.valid) && !this.environmentStale());
+  readonly canApplyAndSave = computed(() => !this.sessionArchived()
+    && Boolean(this.validation()?.valid)
+    && !this.environmentStale());
   readonly selectedContext = computed<OpenCodeEditorContext | null>(() => {
     const selection = this.editorBridge.selection();
     const active = this.activeLibrary();
@@ -285,22 +290,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.resetConversation();
     this.status.set('starting');
     try {
-      const session = await this.openCodeService.createSession({
-        title: `${active.name} in CQL Studio`,
-        provider,
-        providers: this.allProviderConfigs(),
-        ollamaBaseUrl: this.settingsService.getEffectiveOllamaBaseUrl(),
-        ollamaModel: this.settingsService.getEffectiveOllamaModel(),
-        activeLibrary: { ...this.snapshot(active), cqlContent },
-        dependencies: await this.collectDependencies(active, cqlContent),
-        environment: this.settingsService.getActiveEnvironment(),
-        toolContext: {
-          vsacFhirBaseUrl: this.settingsService.getEffectiveVsacFhirBaseUrl(),
-          vsacApiUsername: this.settingsService.getEffectiveVsacApiUsername(),
-          vsacApiPassword: this.settingsService.getEffectiveVsacApiPassword(),
-          searxngBaseUrl: this.settingsService.getEffectiveSearxngBaseUrl(),
-        },
-      });
+      const session = await this.openCodeService.createSession(await this.sessionRequest(active, cqlContent, provider));
       this.session.set(session);
       this.activeProvider.set(this.settingsService.getEffectiveAiProvider());
       this.status.set(session.status === 'error' ? 'error' : 'idle');
@@ -343,15 +333,86 @@ export class AiTabComponent implements OnInit, OnDestroy {
     return providers;
   }
 
+  private async sessionRequest(
+    active: LibraryResource,
+    cqlContent: string,
+    provider = this.providerConfig()
+  ): Promise<CreateOpenCodeSessionRequest> {
+    return {
+      title: `${active.name} in CQL Studio`,
+      provider,
+      providers: this.allProviderConfigs(),
+      ollamaBaseUrl: this.settingsService.getEffectiveOllamaBaseUrl(),
+      ollamaModel: this.settingsService.getEffectiveOllamaModel(),
+      activeLibrary: { ...this.snapshot(active), cqlContent },
+      dependencies: await this.collectDependencies(active, cqlContent),
+      environment: this.settingsService.getActiveEnvironment(),
+      toolContext: {
+        vsacFhirBaseUrl: this.settingsService.getEffectiveVsacFhirBaseUrl(),
+        vsacApiUsername: this.settingsService.getEffectiveVsacApiUsername(),
+        vsacApiPassword: this.settingsService.getEffectiveVsacApiPassword(),
+        searxngBaseUrl: this.settingsService.getEffectiveSearxngBaseUrl(),
+      },
+    };
+  }
+
+  async openResumePicker(): Promise<void> {
+    const active = this.activeLibrary();
+    if (!active) {
+      this.error.set('Open the CQL Library whose session you want to resume.');
+      return;
+    }
+    try {
+      const sessions = await this.openCodeService.listSessions();
+      this.resumeSessions.set(sessions.filter(item =>
+        item.availability === 'archived' && item.activeLibraryId === active.id
+      ));
+      this.showResumeSessions.set(true);
+      this.error.set(null);
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
+  async resumeSession(saved: OpenCodeSession): Promise<void> {
+    const active = this.activeLibrary();
+    if (!active || saved.activeLibraryId !== active.id) {
+      this.error.set('Open the CQL Library associated with this saved session before resuming it.');
+      return;
+    }
+    const cqlContent = this.contentForLibrary(active);
+    if (!cqlContent.trim()) {
+      this.error.set('The active Library has no CQL content to restore into a live workspace.');
+      return;
+    }
+    const provider = this.providerConfig(this.settingsService.getEffectiveAiProvider());
+    this.status.set('starting');
+    this.error.set(null);
+    try {
+      const resumed = await this.openCodeService.resumeSession(
+        saved.id,
+        await this.sessionRequest(active, cqlContent, provider)
+      );
+      this.showResumeSessions.set(false);
+      await this.attachSession(resumed);
+    } catch (error) {
+      this.setError(error);
+    }
+  }
+
   async attachSession(session: OpenCodeSession): Promise<void> {
-    this.showSessions.set(false);
+    this.showResumeSessions.set(false);
     this.resetConversation();
     this.status.set('starting');
     this.activeProvider.set(session.model.startsWith('openai/') ? 'openai' : session.model.startsWith('ollama/') ? 'ollama' : 'openai-compatible');
     try {
       const state = await this.openCodeService.getState(session.id);
       this.hydrate(state);
-      this.connectEvents(session.id);
+      if (state.session.availability !== 'archived') {
+        this.connectEvents(session.id);
+      } else {
+        this.streamConnected.set(false);
+      }
     } catch (error) {
       this.setError(error);
     }
@@ -666,16 +727,15 @@ export class AiTabComponent implements OnInit, OnDestroy {
   async endSession(): Promise<void> {
     const session = this.session();
     if (!session) return;
-    this.eventSource?.close();
-    this.eventSource = null;
     try {
       await this.openCodeService.endSession(session.id);
-    } catch (error) {
-      this.setError(error);
-    } finally {
+      this.eventSource?.close();
+      this.eventSource = null;
       this.resetConversation();
       this.session.set(null);
       this.status.set('idle');
+    } catch (error) {
+      this.setError(error);
     }
   }
 
@@ -696,7 +756,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     const active = this.activeLibrary();
     try {
       const sessions = await this.openCodeService.listSessions();
-      this.liveSessions.set(sessions);
+      this.resumeSessions.set(sessions.filter(item => item.availability === 'archived' && (!active || item.activeLibraryId === active.id)));
       // The IDE's open-library state is not persisted across a full browser reload.
       // Reattach the newest owned session in that case so the conversation and diff
       // remain recoverable while the user reopens the matching Library.
@@ -762,6 +822,19 @@ export class AiTabComponent implements OnInit, OnDestroy {
       return;
     }
 
+    if (name === 'resume') {
+      this.commandHelpKey = 'command:resume';
+      this.commandHelpRequest += 1;
+      this.commandHelpLoading.set(false);
+      this.commandHelpError.set(null);
+      this.commandArgumentHelp.set({
+        ...baseHelp(),
+        usage: '/resume',
+        hint: 'Choose one of your archived sessions for the active CQL Library.',
+      });
+      return;
+    }
+
     if (name !== 'model') {
       this.commandHelpKey = `command:${name}`;
       this.commandHelpRequest += 1;
@@ -816,9 +889,13 @@ export class AiTabComponent implements OnInit, OnDestroy {
     }
     const [, name, args = ''] = match;
     this.promptText.set('');
+    if (this.sessionArchived() && !['help', 'resume', 'new', 'details', 'thinking'].includes(name.toLowerCase())) {
+      this.error.set('This session is read-only. Use /resume to continue it with the active CQL Library.');
+      return;
+    }
     switch (name) {
       case 'help':
-        this.showSessions.set(false);
+        this.showResumeSessions.set(false);
         this.showHelp.set(true);
         this.queueHelpScroll();
         return;
@@ -830,9 +907,8 @@ export class AiTabComponent implements OnInit, OnDestroy {
       case 'model':
         await this.handleModelCommand(args);
         return;
-      case 'sessions':
-        this.liveSessions.set(await this.openCodeService.listSessions());
-        this.showSessions.set(true);
+      case 'resume':
+        await this.openResumePicker();
         return;
       case 'new':
         this.eventSource?.close();
@@ -1123,7 +1199,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
       const text = typeof part['text'] === 'string' ? part['text'] : '';
       // Editor context is a model-only prompt part. The visible selection chip
       // communicates it without duplicating internal range markup in the chat.
-      if (text.includes('<cql-studio-editor-context')) return;
+      if (text.includes('<cql-studio-editor-context') || text.includes('<cql-studio-resume-context')) return;
       const parts = this.messageParts.get(messageId) ?? new Map<string, string>();
       parts.set(partId, text);
       this.messageParts.set(messageId, parts);

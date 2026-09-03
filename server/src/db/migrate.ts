@@ -22,12 +22,8 @@ function resolvePrismaCli(serverRoot: string): string {
 
 /**
  * Applies pending Prisma migrations (forward-only) before the HTTP server accepts traffic.
- * Only runs when SSO/team features are enabled (database required).
  */
 export async function applyPendingMigrations(env: ServerEnv): Promise<void> {
-  if (!env.ssoConfigured) {
-    return;
-  }
   if (!env.databaseUrl) {
     throw new Error('CQL_STUDIO_SERVER_DATABASE_URL is required to apply migrations');
   }

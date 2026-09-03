@@ -141,8 +141,12 @@ export class OpenCodeWorkspaceManager {
   }
 
   async create(input: CreateOpenCodeSessionRequest): Promise<MaterializedWorkspace> {
-    const id = randomUUID();
+    const requestedId = input.resume?.sessionId;
+    const id = requestedId && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedId)
+      ? requestedId
+      : randomUUID();
     const directory = path.join(this.root, id);
+    if (requestedId) await rm(directory, { recursive: true, force: true });
     const librariesDirectory = path.join(directory, 'libraries');
     const dependenciesDirectory = path.join(directory, 'dependencies');
     const metadataDirectory = path.join(directory, '.cql-studio');
