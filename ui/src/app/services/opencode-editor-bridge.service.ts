@@ -9,11 +9,21 @@ export interface OpenCodeEditorDocument {
   userRevision: number;
 }
 
+export interface OpenCodeInlineEditOptions {
+  prompt?: string;
+  autoSend?: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class OpenCodeEditorBridgeService {
   readonly document = signal<OpenCodeEditorDocument | null>(null);
   readonly selection = signal<OpenCodeEditorContext | null>(null);
-  readonly inlineRequest = signal<{ id: number; context: OpenCodeEditorContext } | null>(null);
+  readonly inlineRequest = signal<{
+    id: number;
+    context: OpenCodeEditorContext;
+    prompt?: string;
+    autoSend: boolean;
+  } | null>(null);
   private inlineSequence = 0;
 
   recordDocument(libraryId: string, content: string, userRevision: number): void {
@@ -28,8 +38,13 @@ export class OpenCodeEditorBridgeService {
     this.selection.set(context?.selectedText ? context : null);
   }
 
-  requestInlineEdit(context: OpenCodeEditorContext): void {
+  requestInlineEdit(context: OpenCodeEditorContext, options: OpenCodeInlineEditOptions = {}): void {
     this.selection.set(context);
-    this.inlineRequest.set({ id: ++this.inlineSequence, context: { ...context, mode: 'inline' } });
+    this.inlineRequest.set({
+      id: ++this.inlineSequence,
+      context: { ...context, mode: 'inline' },
+      prompt: options.prompt,
+      autoSend: Boolean(options.autoSend),
+    });
   }
 }

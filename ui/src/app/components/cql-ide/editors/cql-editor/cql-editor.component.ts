@@ -65,6 +65,10 @@ import {
   problemsIndicateValidSyntax
 } from '../../../../services/cql-problems-message.lib';
 import { RenameSymbolModalComponent } from '../../rename-symbol-modal/rename-symbol-modal.component';
+import {
+  buildCqlAiDiagnosticFixRequest,
+  CqlAiDiagnosticFixRequest,
+} from '../../../../services/cql-ai-diagnostic-fix.lib';
 
 const setReferenceHighlightEffect = StateEffect.define<DecorationSet>();
 const referenceHighlightField = StateField.define<DecorationSet>({
@@ -154,6 +158,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   contentChange = output<{ cursorPosition: { line: number; column: number }, wordCount: number, content: string, source: 'user' | 'ai', userRevision: number }>();
   selectionChange = output<OpenCodeEditorContext | null>();
   inlineAiEditRequested = output<OpenCodeEditorContext>();
+  diagnosticAiFixRequested = output<CqlAiDiagnosticFixRequest>();
   cursorChange = output<{ line: number; column: number }>();
   editorStateChange = output<IdeEditorState>();
   syntaxErrors = output<string[]>();
@@ -1539,6 +1544,31 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
     ];
   }
 
+  private withAiFixAction(diagnostic: Diagnostic): Diagnostic {
+    if (diagnostic.severity !== 'error' || this.readonly() || !this.openCodeService.isAvailable()) {
+      return diagnostic;
+    }
+    return {
+      ...diagnostic,
+      actions: [
+        ...(diagnostic.actions ?? []),
+        {
+          name: 'Fix with AI',
+          apply: (view, from, to) => {
+            this.diagnosticAiFixRequested.emit(buildCqlAiDiagnosticFixRequest({
+              doc: view.state.doc,
+              libraryId: this.libraryId(),
+              userRevision: this.userRevision,
+              message: diagnostic.message,
+              from,
+              to,
+            }));
+          },
+        },
+      ],
+    };
+  }
+
   private cancelValidationDebounce(): void {
     if (this.validationDebounceFrame !== undefined) {
       cancelAnimationFrame(this.validationDebounceFrame);
@@ -1590,7 +1620,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
 
       const resolvers = this.pendingLintResolvers;
       this.pendingLintResolvers = [];
-      resolvers.forEach(r => r(diagnostics.all));
+      resolvers.forEach(r => r(diagnostics.all.map(diagnostic => this.withAiFixAction(diagnostic))));
     } catch (error) {
       console.error('Validation error:', error);
       const resolvers = this.pendingLintResolvers;

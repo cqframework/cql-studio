@@ -38,6 +38,7 @@ import {
   getAllShortcuts as buildAllShortcuts,
   isMacPlatform as detectMacPlatform
 } from './cql-ide-shortcuts.lib';
+import { CqlAiDiagnosticFixRequest } from '../../services/cql-ai-diagnostic-fix.lib';
 
 // Import all the new components
 import { IdeStatusBarComponent } from './ide-status-bar/ide-status-bar.component';
@@ -741,6 +742,14 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
   onInlineAiEditRequested(context: OpenCodeEditorContext): void {
     this.openCodeEditorBridge.requestInlineEdit(context);
+    this.ideStateService.activateOpenCodeTab();
+  }
+
+  onDiagnosticAiFixRequested(request: CqlAiDiagnosticFixRequest): void {
+    this.openCodeEditorBridge.requestInlineEdit(request.context, {
+      prompt: request.prompt,
+      autoSend: true,
+    });
     this.ideStateService.activateOpenCodeTab();
   }
 

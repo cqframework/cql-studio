@@ -90,6 +90,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   private commandHelpKey = '';
   private commandHelpRequest = 0;
   private staleSessionAbortId: string | null = null;
+  private readonly autoSendInlineRequest = signal(false);
 
   readonly session = signal<OpenCodeSession | null>(null);
   readonly liveSessions = signal<OpenCodeSession[]>([]);
@@ -171,10 +172,18 @@ export class AiTabComponent implements OnInit, OnDestroy {
       const request = this.editorBridge.inlineRequest();
       if (!request || request.id === this.lastInlineRequestId) return;
       this.lastInlineRequestId = request.id;
+      queueMicrotask(() => void this.handleInlineRequest(request));
+    });
+
+    effect(() => {
+      const shouldSend = this.autoSendInlineRequest();
+      const session = this.session();
+      const status = this.status();
+      if (!shouldSend || !session || status !== 'idle' || this.environmentStale()) return;
       queueMicrotask(() => {
-        const session = this.session();
-        this.inlineContext.set({ ...request.context, file: session?.activeFile ?? '' });
-        this.promptInput?.nativeElement.focus();
+        if (!this.autoSendInlineRequest()) return;
+        this.autoSendInlineRequest.set(false);
+        void this.sendPrompt();
       });
     });
 
@@ -198,6 +207,32 @@ export class AiTabComponent implements OnInit, OnDestroy {
         }).catch(error => this.setError(error));
       }
     });
+  }
+
+  private async handleInlineRequest(request: {
+    context: OpenCodeEditorContext;
+    prompt?: string;
+    autoSend: boolean;
+  }): Promise<void> {
+    let session = this.session();
+    if (request.autoSend && (
+      !session ||
+      session.activeLibraryId !== request.context.libraryId ||
+      this.status() === 'error' ||
+      this.environmentStale()
+    )) {
+      await this.startSession();
+      session = this.session();
+    }
+
+    this.inlineContext.set({ ...request.context, file: session?.activeFile ?? '' });
+    if (request.prompt) this.promptText.set(request.prompt);
+
+    if (request.autoSend && session?.activeLibraryId === request.context.libraryId) {
+      this.autoSendInlineRequest.set(true);
+      return;
+    }
+    this.promptInput?.nativeElement.focus();
   }
 
   ngOnInit(): void {
@@ -1223,6 +1258,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.repairAttempts.set(0);
     this.repairInFlight = false;
     this.inlineContext.set(null);
+    this.autoSendInlineRequest.set(false);
     this.liveConflict.set(null);
     this.liveBaselines.clear();
     this.savedDiffFiles.set(new Set());

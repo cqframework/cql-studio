@@ -50,6 +50,7 @@
               (contentChange)="onEditorContentChange($event, library.id)"
               (selectionChange)="onEditorSelectionChange($event, library.id)"
               (inlineAiEditRequested)="onInlineAiEditRequested($event)"
+              (diagnosticAiFixRequested)="onDiagnosticAiFixRequested($event)"
               (syntaxErrors)="onEditorSyntaxErrors($event, library.id)"
               (findReferencesResultChange)="onFindReferencesResult($event)"
               (valuesetPeekResultChange)="onValuesetPeekResult($event)"
