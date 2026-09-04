@@ -6,6 +6,12 @@ import { Library } from 'fhir/r4';
 import { LibraryService } from './library.service';
 import { IdeStateService } from './ide-state.service';
 import { ElmIncludeRef } from './elm-include.lib';
+import { WorkspaceLibraryOrigin } from '../components/cql-ide/shared/ide-types';
+
+export interface PendingLibraryOpen {
+  library: Library;
+  workspaceOrigin?: WorkspaceLibraryOrigin;
+}
 
 @Injectable({
   providedIn: 'root'
@@ -14,7 +20,7 @@ export class CqlIdeLibraryOpenerService {
   private readonly libraryService = inject(LibraryService);
   private readonly ideStateService = inject(IdeStateService);
 
-  private readonly _pendingOpen = signal<Library | null>(null);
+  private readonly _pendingOpen = signal<PendingLibraryOpen | null>(null);
 
   readonly pendingOpen = this._pendingOpen.asReadonly();
 
@@ -23,14 +29,14 @@ export class CqlIdeLibraryOpenerService {
    * Prefer this over calling openLibraryFromServer across a route change
    * (avoids continuing async work on a destroyed source component).
    */
-  requestOpenFromServer(library: Library): void {
+  requestOpenFromServer(library: Library, workspaceOrigin?: WorkspaceLibraryOrigin): void {
     if (!library.id?.trim()) {
       return;
     }
-    this._pendingOpen.set(library);
+    this._pendingOpen.set({ library, ...(workspaceOrigin ? { workspaceOrigin } : {}) });
   }
 
-  consumePendingOpen(): Library | null {
+  consumePendingOpen(): PendingLibraryOpen | null {
     const pending = this._pendingOpen();
     this._pendingOpen.set(null);
     return pending;
@@ -62,13 +68,37 @@ export class CqlIdeLibraryOpenerService {
     return existing?.id ?? null;
   }
 
-  async openLibraryFromServer(library: Library): Promise<string | null> {
+  async openById(libraryId: string, workspaceOrigin?: WorkspaceLibraryOrigin): Promise<string | null> {
+    if (!libraryId.trim() || libraryId === 'FHIRHelpers') {
+      return null;
+    }
+    const existing = this.ideStateService.libraryResources().find(library => library.id === libraryId);
+    if (existing) {
+      this.ideStateService.selectLibraryResource(existing.id);
+      return existing.id;
+    }
+    try {
+      const library = await firstValueFrom(this.libraryService.get(libraryId));
+      return this.openLibraryFromServer(library, workspaceOrigin);
+    } catch (error) {
+      console.warn(`Unable to open library ${libraryId}`, error);
+      return null;
+    }
+  }
+
+  async openLibraryFromServer(
+    library: Library,
+    workspaceOrigin?: WorkspaceLibraryOrigin
+  ): Promise<string | null> {
     if (!library.id) {
       return null;
     }
 
     const existingId = this.findOpenLibraryTabId(library);
     if (existingId) {
+      if (workspaceOrigin) {
+        this.ideStateService.updateLibraryResource(existingId, { workspaceOrigin });
+      }
       this.ideStateService.selectLibraryResource(existingId);
       await this.waitForLibraryReady(existingId);
       return existingId;
@@ -79,7 +109,7 @@ export class CqlIdeLibraryOpenerService {
       freshLibrary = await firstValueFrom(this.libraryService.get(library.id));
     } catch (error) {
       console.error('Error fetching library from server:', error);
-      return this.openLibraryFromCachedData(library);
+      return this.openLibraryFromCachedData(library, workspaceOrigin);
     }
 
     if (!freshLibrary.id) {
@@ -103,7 +133,8 @@ export class CqlIdeLibraryOpenerService {
         isDirty: false,
         library: freshLibrary,
         contentLoading: true,
-        isReadOnly: true
+        isReadOnly: true,
+        ...(workspaceOrigin ? { workspaceOrigin } : {})
       };
       this.ideStateService.addLibraryResource(libraryResource);
       this.ideStateService.selectLibraryResource(freshLibrary.id);
@@ -133,7 +164,8 @@ export class CqlIdeLibraryOpenerService {
           isDirty: false,
           library: freshLibrary,
           contentLoading: false,
-          isReadOnly: false
+          isReadOnly: false,
+          ...(workspaceOrigin ? { workspaceOrigin } : {})
         };
         this.ideStateService.addLibraryResource(libraryResource);
         this.ideStateService.selectLibraryResource(freshLibrary.id!);
@@ -178,7 +210,10 @@ export class CqlIdeLibraryOpenerService {
     return this.openLibraryFromServer(library);
   }
 
-  private async openLibraryFromCachedData(library: Library): Promise<string | null> {
+  private async openLibraryFromCachedData(
+    library: Library,
+    workspaceOrigin?: WorkspaceLibraryOrigin
+  ): Promise<string | null> {
     const id = library.id;
     if (!id) {
       return null;
@@ -186,6 +221,9 @@ export class CqlIdeLibraryOpenerService {
 
     const existingId = this.findOpenLibraryTabId(library);
     if (existingId) {
+      if (workspaceOrigin) {
+        this.ideStateService.updateLibraryResource(existingId, { workspaceOrigin });
+      }
       this.ideStateService.selectLibraryResource(existingId);
       await this.waitForLibraryReady(existingId);
       return existingId;
@@ -208,7 +246,8 @@ export class CqlIdeLibraryOpenerService {
         isDirty: false,
         library,
         contentLoading: true,
-        isReadOnly: true
+        isReadOnly: true,
+        ...(workspaceOrigin ? { workspaceOrigin } : {})
       };
       this.ideStateService.addLibraryResource(libraryResource);
       this.ideStateService.selectLibraryResource(id);
@@ -238,7 +277,8 @@ export class CqlIdeLibraryOpenerService {
           isDirty: false,
           library,
           contentLoading: false,
-          isReadOnly: false
+          isReadOnly: false,
+          ...(workspaceOrigin ? { workspaceOrigin } : {})
         };
         this.ideStateService.addLibraryResource(libraryResource);
         this.ideStateService.selectLibraryResource(id);

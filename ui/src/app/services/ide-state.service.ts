@@ -74,7 +74,9 @@ export class IdeStateService {
     right: {
       id: 'right',
       isVisible: true,
-      size: 300,
+      // Give the OpenCode/FHIR side pane enough width for tool activity,
+      // command help, and model/provider details without wrapping every label.
+      size: 380,
       tabs: [],
       activeTabId: null,
       minSize: 300,
@@ -699,6 +701,11 @@ export class IdeStateService {
 
   activateOutputTab(): void {
     this.ensureTabActive('output-tab');
+    this.bumpUiRevision();
+  }
+
+  activateOpenCodeTab(): void {
+    this.ensureTabActive('ai-tab');
     this.bumpUiRevision();
   }
 

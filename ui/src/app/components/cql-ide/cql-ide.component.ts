@@ -16,11 +16,15 @@ import { TranslationService } from '../../services/translation.service';
 import { LibraryTranslationContextBuilder } from '../../services/library-translation-context.lib';
 import { CqlExecutionService } from '../../services/cql-execution.service';
 import { SettingsService } from '../../services/settings.service';
-import { AiService } from '../../services/ai.service';
+import { OpenCodeEditorBridgeService } from '../../services/opencode-editor-bridge.service';
+import { OpenCodeEditorContext, OpenCodeLibraryChange } from '../../models/opencode.model';
 import { CqlValidationService } from '../../services/cql-validation.service';
 import { ToastService } from '../../services/toast.service';
-import { CqlIdeLibraryOpenerService } from '../../services/cql-ide-library-opener.service';
-import { Library } from 'fhir/r4';
+import {
+  CqlIdeLibraryOpenerService,
+  PendingLibraryOpen,
+} from '../../services/cql-ide-library-opener.service';
+import type { Library } from 'fhir/r4';
 import { firstValueFrom } from 'rxjs';
 import { IdeExecutionSubject } from '../../models/ide-context.model';
 import { encodeUtf8Base64 } from '../../services/utf8-encoding.lib';
@@ -33,6 +37,8 @@ import {
   getAllShortcuts as buildAllShortcuts,
   isMacPlatform as detectMacPlatform
 } from './cql-ide-shortcuts.lib';
+import { CqlAiDiagnosticFixRequest } from '../../services/cql-ai-diagnostic-fix.lib';
+import { extractVsacCanonicalUrls, OpenCodeVsacImportService } from '../../services/opencode-vsac-import.service';
 
 // Import all the new components
 import { IdeStatusBarComponent } from './ide-status-bar/ide-status-bar.component';
@@ -71,12 +77,30 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   private libraryTranslationContextBuilder = inject(LibraryTranslationContextBuilder);
   private cqlExecutionService = inject(CqlExecutionService);
   public settingsService = inject(SettingsService);
-  private aiService = inject(AiService);
+  private openCodeEditorBridge = inject(OpenCodeEditorBridgeService);
   private cqlValidationService = inject(CqlValidationService);
   private toastService = inject(ToastService);
   private libraryOpenerService = inject(CqlIdeLibraryOpenerService);
+  private openCodeVsacImport = inject(OpenCodeVsacImportService);
 
   constructor() {
+    effect(() => {
+      const resources = this.ideStateService.libraryResources();
+      untracked(() => {
+        for (const library of resources) {
+          const current = this.openCodeEditorBridge.documentFor(library.id);
+          const revision = current?.userRevision ?? 0;
+          if (!current || current.content !== library.cqlContent) {
+            this.openCodeEditorBridge.recordDocument(library.id, library.cqlContent, revision);
+          }
+        }
+        const openIds = new Set(resources.map(library => library.id));
+        for (const libraryId of Object.keys(this.openCodeEditorBridge.documents())) {
+          if (!openIds.has(libraryId)) this.openCodeEditorBridge.clearDocument(libraryId);
+        }
+      });
+    });
+
     // Watch for editor action requests from tool orchestrator (effect must be in constructor)
     effect(() => {
       const lineNumber = this.ideStateService.navigateToLineRequest();
@@ -98,20 +122,23 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
         return;
       }
       untracked(() => {
-        const library = this.libraryOpenerService.consumePendingOpen();
-        if (!library) {
+        const request = this.libraryOpenerService.consumePendingOpen();
+        if (!request) {
           return;
         }
-        void this.openPendingLibrary(library);
+        void this.openPendingLibrary(request);
       });
     });
   }
 
-  private async openPendingLibrary(library: Library): Promise<void> {
-    const opened = await this.libraryOpenerService.openLibraryFromServer(library);
+  private async openPendingLibrary(request: PendingLibraryOpen): Promise<void> {
+    const opened = await this.libraryOpenerService.openLibraryFromServer(
+      request.library,
+      request.workspaceOrigin
+    );
     if (!opened) {
       this.toastService.showError(
-        `Could not open Library/${library.id} in the CQL IDE.`,
+        `Could not open Library/${request.library.id} in the CQL IDE.`,
         'Open Failed'
       );
     }
@@ -119,10 +146,6 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.initializeDefaultTabs();
-    
-    // Update AI tab availability when settings change
-    // Note: We'll call updateAiTabAvailability() when settings are updated
-    // This could be improved with a proper signal-based approach in the future
   }
 
   ngOnDestroy(): void {
@@ -139,6 +162,19 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     if (leftPanel && leftPanel.tabs.length > 0 && 
         rightPanel && rightPanel.tabs.length > 0 && 
         bottomPanel && bottomPanel.tabs.length > 0) {
+      // OpenCode is always available; ensure it exists if panels were initialized
+      // before the GA default (e.g. HMR / singleton panel state without the AI tab).
+      if (!rightPanel.tabs.some(tab => tab.type === 'ai')) {
+        this.ideStateService.addTabToPanel('right', {
+          id: 'ai-tab',
+          title: 'OpenCode',
+          icon: 'bi-terminal',
+          type: 'ai',
+          isActive: false,
+          isClosable: true,
+          component: null
+        });
+      }
       return;
     }
 
@@ -195,8 +231,8 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
     const aiTab = {
       id: 'ai-tab',
-      title: 'AI',
-      icon: 'bi-robot',
+      title: 'OpenCode',
+      icon: 'bi-terminal',
       type: 'ai',
       isActive: true,
       isClosable: true,
@@ -250,12 +286,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.addTabToPanel('right', fhirTab);
     this.ideStateService.addTabToPanel('right', elmTab);
     this.ideStateService.addTabToPanel('right', clipboardTab);
-    
-    // Only add AI tab if server proxy and Ollama are configured and AI is enabled
-    const aiTabAdded = this.aiService.isAiAssistantAvailable();
-    if (aiTabAdded) {
-      this.ideStateService.addTabToPanel('right', aiTab);
-    }
+    this.ideStateService.addTabToPanel('right', aiTab);
     
     this.ideStateService.addTabToPanel('bottom', outputTab);
     this.ideStateService.addTabToPanel('bottom', problemsTab);
@@ -264,13 +295,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
     this.ideStateService.setActiveTab('left', 'navigation-tab');
     this.ideStateService.setActiveTab('bottom', 'output-tab');
-    
-    // Set the active tab for the right panel: AI tab if available, otherwise FHIR tab
-    if (aiTabAdded) {
-      this.ideStateService.setActiveTab('right', 'ai-tab');
-    } else {
-      this.ideStateService.setActiveTab('right', 'fhir-tab');
-    }
+    this.ideStateService.setActiveTab('right', 'ai-tab');
   }
 
   private cleanupTabs(): void {
@@ -286,34 +311,6 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.setExecuting(false);
     this.ideStateService.setExecutionProgress(0);
     this.ideStateService.setExecutionStatus('');
-  }
-
-  /**
-   * Update AI tab availability based on settings
-   */
-  updateAiTabAvailability(): void {
-    const rightPanel = this.ideStateService.getPanel('right');
-    if (!rightPanel) return;
-
-    const hasAiTab = rightPanel.tabs.some(tab => tab.type === 'ai');
-    const shouldHaveAiTab = this.aiService.isAiAssistantAvailable();
-
-    if (shouldHaveAiTab && !hasAiTab) {
-      // Add AI tab
-      const aiTab = {
-        id: 'ai-tab',
-        title: 'AI',
-        icon: 'bi-robot',
-        type: 'ai',
-        isActive: false,
-        isClosable: true,
-        component: null
-      };
-      this.ideStateService.addTabToPanel('right', aiTab);
-    } else if (!shouldHaveAiTab && hasAiTab) {
-      // Remove AI tab
-      this.ideStateService.removeTabFromPanel('right', 'ai-tab');
-    }
   }
 
   // Panel management
@@ -374,7 +371,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     // Handle library description change
   }
 
-  async onSaveLibrary(): Promise<void> {
+  async onSaveLibrary(options: { skipVsacImport?: boolean } = {}): Promise<void> {
     const activeLibrary = this.ideStateService.getActiveLibraryResource();
     if (!activeLibrary) {
       console.warn('No active library to save');
@@ -451,6 +448,17 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
         this.ideStateService.setExecutionStatus('Saving library...');
       }
 
+      const vsacReferences = extractVsacCanonicalUrls(currentContent);
+      if (vsacReferences.length > 0 && !options.skipVsacImport) {
+        this.ideStateService.setExecutionStatus('Checking and importing VSAC terminology...');
+        const terminology = await this.openCodeVsacImport.importForCql(currentContent);
+        this.ideStateService.addTextOutput(
+          `VSAC Terminology Ready: ${activeLibrary.name || activeLibrary.id}`,
+          `${terminology.imported} ValueSet(s) imported and ${terminology.alreadyPresent} already present on ${terminology.target}.`,
+          'success'
+        );
+      }
+
       // Update the library resource with current content
       this.ideStateService.updateLibraryResource(activeLibrary.id, {
         cqlContent: currentContent,
@@ -512,6 +520,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     }
 
     this.ideStateService.removeLibraryResource(libraryId);
+    this.openCodeEditorBridge.clearDocument(libraryId);
   }
 
   // Translation
@@ -622,7 +631,74 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     }
   }
 
-  onEditorContentChange(event: { cursorPosition: { line: number; column: number }, wordCount: number, content: string }, libraryId: string): void {
+  async onApplyOpenCodeChange(change: OpenCodeLibraryChange): Promise<void> {
+    const library = this.ideStateService.libraryResources().find(item => item.id === change.libraryId);
+    if (!library) {
+      change.onSaveComplete?.(false);
+      this.toastService.showError('The library changed by OpenCode is no longer open.', 'OpenCode');
+      return;
+    }
+    if (library.isReadOnly) {
+      change.onSaveComplete?.(false);
+      this.toastService.showError(`Library "${library.name}" is read-only.`, 'OpenCode');
+      return;
+    }
+
+    if (change.mode === 'live' || change.mode === 'revert') {
+      this.ideStateService.selectLibraryResource(library.id);
+      const editor = this.cqlEditors().find(candidate => candidate.libraryId() === library.id);
+      if (!editor) {
+        this.toastService.showError('The active CQL editor is not available for live OpenCode edits.', 'OpenCode');
+        return;
+      }
+      editor.applyAiContent(change.cqlContent);
+      return;
+    }
+
+    if (change.save !== false) {
+      const candidate = { ...library, cqlContent: change.cqlContent, isDirty: true };
+      const translation = await this.translationService.translateCqlToElmAsync(
+        change.cqlContent,
+        this.libraryTranslationContextBuilder.fromLibraryResource(candidate)
+      );
+      if (translation.hasErrors || !translation.elmXml) {
+        this.ideStateService.setTranslationErrors(translation.errors);
+        this.ideStateService.setTranslationWarnings(translation.warnings);
+        this.ideStateService.setTranslationMessages(translation.messages);
+        this.toastService.showError('The OpenCode change could not be translated and was not applied or saved.', 'OpenCode');
+        this.ideStateService.addTextOutput(
+          `OpenCode Save Blocked: ${library.name}`,
+          translation.errors.join('\n') || 'CQL translation did not produce ELM.',
+          'error'
+        );
+        change.onSaveComplete?.(false);
+        return;
+      }
+    }
+
+    this.ideStateService.selectLibraryResource(library.id);
+    this.ideStateService.updateLibraryResource(library.id, {
+      cqlContent: change.cqlContent,
+      isDirty: change.cqlContent !== library.originalContent,
+    });
+    this.ideStateService.triggerReload(library.id);
+    if (change.save === false) {
+      this.toastService.showWarning(`Applied OpenCode changes to ${library.name} locally. The library remains unsaved.`, 'OpenCode');
+      return;
+    }
+    await this.onSaveLibrary({ skipVsacImport: change.vsacTerminologyReady });
+
+    const saved = this.ideStateService.libraryResources().find(item => item.id === library.id);
+    if (saved?.isDirty) {
+      change.onSaveComplete?.(false);
+      this.toastService.showWarning('The OpenCode change was applied locally, but the library was not saved.', 'OpenCode');
+    } else {
+      change.onSaveComplete?.(true);
+      this.toastService.showSuccess(`Applied and saved OpenCode changes to ${library.name}.`, 'OpenCode');
+    }
+  }
+
+  onEditorContentChange(event: { cursorPosition: { line: number; column: number }, wordCount: number, content: string, source: 'user' | 'ai', userRevision: number }, libraryId: string): void {
     this.ideStateService.updateEditorState({
       cursorPosition: event.cursorPosition,
       wordCount: event.wordCount
@@ -639,7 +715,26 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
         cqlContent: currentContent,
         isDirty: isDirty
       });
+      this.openCodeEditorBridge.recordDocument(libraryId, currentContent, event.userRevision);
     }
+  }
+
+  onEditorSelectionChange(context: OpenCodeEditorContext | null, libraryId: string): void {
+    if (this.ideStateService.activeLibraryId() !== libraryId) return;
+    this.openCodeEditorBridge.recordSelection(context);
+  }
+
+  onInlineAiEditRequested(context: OpenCodeEditorContext): void {
+    this.openCodeEditorBridge.requestInlineEdit(context);
+    this.ideStateService.activateOpenCodeTab();
+  }
+
+  onDiagnosticAiFixRequested(request: CqlAiDiagnosticFixRequest): void {
+    this.openCodeEditorBridge.requestInlineEdit(request.context, {
+      prompt: request.prompt,
+      autoSend: true,
+    });
+    this.ideStateService.activateOpenCodeTab();
   }
 
   onEditorSyntaxErrors(errors: string[], libraryId: string): void {

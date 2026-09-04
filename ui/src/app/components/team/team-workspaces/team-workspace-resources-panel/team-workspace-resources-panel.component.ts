@@ -336,7 +336,13 @@ export class TeamWorkspaceResourcesPanelComponent implements OnInit {
       ...(ref.canonicalUrl ? { url: ref.canonicalUrl } : {}),
       ...(ref.displayName ? { name: ref.displayName, title: ref.displayName } : {}),
     } as Library;
-    this.libraryOpener.requestOpenFromServer(library);
+    const workspace = this.workspace();
+    this.libraryOpener.requestOpenFromServer(library, {
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      resourceReferenceId: ref.id,
+      role: workspace.myRole,
+    });
     const navigated = await this.router.navigate(['/ide']);
     if (!navigated) {
       this.libraryOpener.clearPendingOpen();

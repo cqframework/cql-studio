@@ -3,12 +3,14 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Endpoint } from 'fhir/r4';
 import type { UserSettingsDto, UserSettingsPatch } from '@cql-studio/core';
+import { normalizeRunnerFhirBaseUrl } from '@cql-studio/core';
 import { BUILT_IN_ENVIRONMENT_ID, CqlEnvironment, EndpointHttpContext, EndpointRole } from '../models/environment.model';
-import { Settings, ThemeType } from '../models/settings.model';
+import { AiProviderType, Settings, ThemeType } from '../models/settings.model';
 import { ExamplePaths } from '../constants/example-paths.constants';
 import { DeployConfigKeys, readDeployConfig, readDeployConfigUrl } from './deploy-config.lib';
 import { buildFhirEndpoint, normalizeEndpointConfiguration } from './endpoint-config.lib';
 import { EnvironmentService, LegacyEnvironmentFields } from './environment.service';
+import { AiCredentialsService } from './ai-credentials.service';
 import { UserSettingsApiService } from './user-settings-api.service';
 
 interface LegacySettingsRecord extends Partial<Settings> {
@@ -21,6 +23,13 @@ interface LegacySettingsRecord extends Partial<Settings> {
   terminologyBaseUrl?: string;
   terminologyBasicAuthUsername?: string;
   terminologyBasicAuthPassword?: string;
+  ollamaApiKey?: string;
+  openaiApiKey?: string;
+  compatibleProviderApiKey?: string;
+  useMCPTools?: boolean;
+  allowAiWriteOperations?: boolean;
+  requireDiffPreview?: boolean;
+  planActSeparateModels?: boolean;
   themePreferred?: string;
 }
 
@@ -32,6 +41,7 @@ export class SettingsService {
   public static FORCE_RESET_KEY: string = 'cql_tests_ui_settings_force_reset';
 
   private readonly environmentService = inject(EnvironmentService);
+  private readonly aiCredentials = inject(AiCredentialsService);
   private readonly userSettingsApi = inject(UserSettingsApiService);
 
   public settings = signal<Settings>(new Settings());
@@ -70,6 +80,7 @@ export class SettingsService {
     if (raw) {
       try {
         const parsed = JSON.parse(raw) as LegacySettingsRecord;
+        this.absorbLegacyAiCredentials(parsed);
         const { settings } = this.normalizeParsedSettings(parsed);
         const dto = this.toUserSettingsDto(settings);
         const personalEnvs = this.personalEnvironmentsForPersist(settings.environments);
@@ -252,11 +263,11 @@ export class SettingsService {
   getEffectiveRunnerFhirBaseUrl(): string {
     const settingValue = this.settings().runnerFhirBaseUrl;
     if (settingValue?.trim()) {
-      return settingValue.trim().replace(/\/+$/, '');
+      return normalizeRunnerFhirBaseUrl(settingValue);
     }
     const envDefault = this.getDefaultRunnerFhirBaseUrl();
     if (envDefault) {
-      return envDefault;
+      return normalizeRunnerFhirBaseUrl(envDefault);
     }
     return this.getEffectiveDataEndpointAddress();
   }
@@ -275,6 +286,31 @@ export class SettingsService {
   getEffectiveOllamaModel(): string {
     const settingValue = this.settings().ollamaModel;
     return settingValue?.trim() ? settingValue : this.getDefaultOllamaModel();
+  }
+
+  getEffectiveAiProvider(): AiProviderType {
+    const provider = this.settings().aiProvider;
+    return provider === 'openai' || provider === 'openai-compatible' ? provider : 'ollama';
+  }
+
+  getEffectiveOllamaApiKey(): string { return this.aiCredentials.get('ollama'); }
+
+  getDefaultOpenAiModel(): string { return 'gpt-4o-mini'; }
+  getEffectiveOpenAiModel(): string {
+    return this.settings().openaiModel?.trim() || this.getDefaultOpenAiModel();
+  }
+  getEffectiveOpenAiApiKey(): string { return this.aiCredentials.get('openai'); }
+  getEffectiveCompatibleProviderName(): string {
+    return this.settings().compatibleProviderName?.trim() || 'My AI Provider';
+  }
+  getEffectiveCompatibleProviderBaseUrl(): string {
+    return (this.settings().compatibleProviderBaseUrl?.trim() || '').replace(/\/+$/, '');
+  }
+  getEffectiveCompatibleProviderModel(): string {
+    return this.settings().compatibleProviderModel?.trim() || '';
+  }
+  getEffectiveCompatibleProviderApiKey(): string {
+    return this.aiCredentials.get('openai-compatible');
   }
 
   /** Deploy config only — no per-user override. */
@@ -345,16 +381,22 @@ export class SettingsService {
     if (updates.vsacApiPassword !== undefined) body.vsacApiPassword = patch.vsacApiPassword;
     if (updates.ollamaBaseUrl !== undefined) body.ollamaBaseUrl = patch.ollamaBaseUrl;
     if (updates.ollamaModel !== undefined) body.ollamaModel = patch.ollamaModel;
+    if (updates.aiProvider !== undefined) body.aiProvider = patch.aiProvider;
+    if (updates.openaiModel !== undefined) body.openaiModel = patch.openaiModel;
+    if (updates.compatibleProviderName !== undefined) {
+      body.compatibleProviderName = patch.compatibleProviderName;
+    }
+    if (updates.compatibleProviderBaseUrl !== undefined) {
+      body.compatibleProviderBaseUrl = patch.compatibleProviderBaseUrl;
+    }
+    if (updates.compatibleProviderModel !== undefined) {
+      body.compatibleProviderModel = patch.compatibleProviderModel;
+    }
     if (updates.searxngBaseUrl !== undefined) body.searxngBaseUrl = patch.searxngBaseUrl;
     if (updates.enableAiAssistant !== undefined) body.enableAiAssistant = patch.enableAiAssistant;
-    if (updates.useMCPTools !== undefined) body.useMCPTools = patch.useMCPTools;
-    if (updates.allowAiWriteOperations !== undefined) {
-      body.allowAiWriteOperations = patch.allowAiWriteOperations;
-    }
     if (updates.autoApplyCodeEdits !== undefined) body.autoApplyCodeEdits = patch.autoApplyCodeEdits;
-    if (updates.requireDiffPreview !== undefined) body.requireDiffPreview = patch.requireDiffPreview;
-    if (updates.planActSeparateModels !== undefined) {
-      body.planActSeparateModels = patch.planActSeparateModels;
+    if (updates.enableAiCodePrediction !== undefined) {
+      body.enableAiCodePrediction = patch.enableAiCodePrediction;
     }
     if (Object.keys(body).length === 0) {
       return;
@@ -384,6 +426,7 @@ export class SettingsService {
   async importSettingsJson(json: string): Promise<boolean> {
     try {
       const parsed = JSON.parse(json) as LegacySettingsRecord;
+      this.absorbLegacyAiCredentials(parsed);
       const { settings } = this.normalizeParsedSettings(parsed);
       await this.userSettingsApi.putSettings(this.toUserSettingsDto(settings));
       await this.userSettingsApi.replaceEnvironments(
@@ -409,15 +452,17 @@ export class SettingsService {
       vsacFhirBaseUrl: settings.vsacFhirBaseUrl ?? '',
       vsacApiUsername: settings.vsacApiUsername ?? '',
       vsacApiPassword: settings.vsacApiPassword ?? '',
+      aiProvider: settings.aiProvider,
       ollamaBaseUrl: settings.ollamaBaseUrl ?? '',
       ollamaModel: settings.ollamaModel ?? '',
+      openaiModel: settings.openaiModel ?? '',
+      compatibleProviderName: settings.compatibleProviderName ?? '',
+      compatibleProviderBaseUrl: settings.compatibleProviderBaseUrl ?? '',
+      compatibleProviderModel: settings.compatibleProviderModel ?? '',
       searxngBaseUrl: settings.searxngBaseUrl ?? '',
       enableAiAssistant: !!settings.enableAiAssistant,
-      useMCPTools: !!settings.useMCPTools,
-      allowAiWriteOperations: !!settings.allowAiWriteOperations,
       autoApplyCodeEdits: !!settings.autoApplyCodeEdits,
-      requireDiffPreview: !!settings.requireDiffPreview,
-      planActSeparateModels: !!settings.planActSeparateModels,
+      enableAiCodePrediction: !!settings.enableAiCodePrediction,
     };
   }
 
@@ -428,21 +473,23 @@ export class SettingsService {
     settings.theme_preferred = this.parseTheme(dto.themePreferred);
     settings.validateSchema = dto.validateSchema;
     settings.runnerApiBaseUrl = dto.runnerApiBaseUrl;
-    settings.runnerFhirBaseUrl = dto.runnerFhirBaseUrl;
+    settings.runnerFhirBaseUrl = normalizeRunnerFhirBaseUrl(dto.runnerFhirBaseUrl);
     settings.defaultTestResultsIndexUrl = dto.defaultTestResultsIndexUrl;
     settings.fhirPackageRegistryBaseUrl = dto.fhirPackageRegistryBaseUrl;
     settings.vsacFhirBaseUrl = dto.vsacFhirBaseUrl;
     settings.vsacApiUsername = dto.vsacApiUsername;
     settings.vsacApiPassword = dto.vsacApiPassword;
+    settings.aiProvider = dto.aiProvider;
     settings.ollamaBaseUrl = dto.ollamaBaseUrl;
     settings.ollamaModel = dto.ollamaModel;
+    settings.openaiModel = dto.openaiModel;
+    settings.compatibleProviderName = dto.compatibleProviderName;
+    settings.compatibleProviderBaseUrl = dto.compatibleProviderBaseUrl;
+    settings.compatibleProviderModel = dto.compatibleProviderModel;
     settings.searxngBaseUrl = dto.searxngBaseUrl;
     settings.enableAiAssistant = dto.enableAiAssistant;
-    settings.useMCPTools = dto.useMCPTools;
-    settings.allowAiWriteOperations = dto.allowAiWriteOperations;
     settings.autoApplyCodeEdits = dto.autoApplyCodeEdits;
-    settings.requireDiffPreview = dto.requireDiffPreview;
-    settings.planActSeparateModels = dto.planActSeparateModels;
+    settings.enableAiCodePrediction = dto.enableAiCodePrediction;
     return settings;
   }
 
@@ -489,7 +536,7 @@ export class SettingsService {
     }
 
     let merged = { ...defaults, ...filtered } as Settings;
-    let migrated = false;
+    let migrated = this.containsRetiredAiSettings(parsed);
 
     if (!parsed.environments?.length) {
       const legacy: LegacyEnvironmentFields = {
@@ -507,5 +554,30 @@ export class SettingsService {
     }
 
     return { settings: merged, migrated };
+  }
+
+  private absorbLegacyAiCredentials(parsed: LegacySettingsRecord): void {
+    if (typeof parsed.ollamaApiKey === 'string' && !this.aiCredentials.ollamaApiKey()) {
+      this.aiCredentials.ollamaApiKey.set(parsed.ollamaApiKey);
+    }
+    if (typeof parsed.openaiApiKey === 'string' && !this.aiCredentials.openAiApiKey()) {
+      this.aiCredentials.openAiApiKey.set(parsed.openaiApiKey);
+    }
+    if (
+      typeof parsed.compatibleProviderApiKey === 'string'
+      && !this.aiCredentials.compatibleProviderApiKey()
+    ) {
+      this.aiCredentials.compatibleProviderApiKey.set(parsed.compatibleProviderApiKey);
+    }
+  }
+
+  private containsRetiredAiSettings(parsed: LegacySettingsRecord): boolean {
+    return parsed.ollamaApiKey !== undefined
+      || parsed.openaiApiKey !== undefined
+      || parsed.compatibleProviderApiKey !== undefined
+      || parsed.useMCPTools !== undefined
+      || parsed.allowAiWriteOperations !== undefined
+      || parsed.requireDiffPreview !== undefined
+      || parsed.planActSeparateModels !== undefined;
   }
 }

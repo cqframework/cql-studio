@@ -35,3 +35,14 @@
   border: none;
   box-shadow: none;
 }
+:host ::ng-deep .cm-ai-live-edit {
+  background: rgba(25, 135, 84, 0.2);
+  border-bottom: 1px solid rgba(25, 135, 84, 0.65);
+}
+
+:host ::ng-deep .cm-ai-prediction {
+  color: var(--bs-secondary-color);
+  opacity: 0.65;
+  white-space: pre-wrap;
+  pointer-events: none;
+}

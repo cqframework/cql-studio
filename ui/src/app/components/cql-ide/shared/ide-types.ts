@@ -1,6 +1,14 @@
 // Author: Preston Lee
 
 import { Library, Patient, Parameters } from 'fhir/r4';
+import { WorkspaceRole } from '../../../models/team.model';
+
+export interface WorkspaceLibraryOrigin {
+  workspaceId: string;
+  workspaceName: string;
+  resourceReferenceId: string;
+  role?: WorkspaceRole | null;
+}
 
 export interface EditorFile {
   id: string;
@@ -25,6 +33,7 @@ export interface LibraryResource {
   contentLoading?: boolean;
   isReadOnly?: boolean;
   contentLoadError?: string;
+  workspaceOrigin?: WorkspaceLibraryOrigin;
 }
 
 export interface OutlineItem {

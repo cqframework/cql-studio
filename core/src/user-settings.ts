@@ -14,15 +14,17 @@ export interface UserSettingsDto {
   vsacFhirBaseUrl: string;
   vsacApiUsername: string;
   vsacApiPassword: string;
+  aiProvider: 'ollama' | 'openai' | 'openai-compatible';
   ollamaBaseUrl: string;
   ollamaModel: string;
+  openaiModel: string;
+  compatibleProviderName: string;
+  compatibleProviderBaseUrl: string;
+  compatibleProviderModel: string;
   searxngBaseUrl: string;
   enableAiAssistant: boolean;
-  useMCPTools: boolean;
-  allowAiWriteOperations: boolean;
   autoApplyCodeEdits: boolean;
-  requireDiffPreview: boolean;
-  planActSeparateModels: boolean;
+  enableAiCodePrediction: boolean;
 }
 
 export type UserSettingsPatch = Partial<UserSettingsDto>;
@@ -97,4 +99,29 @@ export function parseHeaderLines(
     });
   }
   return out;
+}
+
+/** Previous compose DNS name for the HAPI service (pre cql-studio- prefix). */
+const LEGACY_HAPI_COMPOSE_HOST = 'hapi-r4-data';
+const CURRENT_HAPI_COMPOSE_HOST = 'cql-studio-hapi-r4-data';
+
+/**
+ * Rewrites persisted Runner FHIR URLs that still use the pre-rename compose
+ * service hostname so CQL Tests Runner containers can resolve HAPI.
+ */
+export function normalizeRunnerFhirBaseUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.hostname === LEGACY_HAPI_COMPOSE_HOST) {
+      parsed.hostname = CURRENT_HAPI_COMPOSE_HOST;
+      return parsed.toString().replace(/\/+$/, '');
+    }
+  } catch {
+    // Leave non-URL strings unchanged.
+  }
+  return trimmed;
 }

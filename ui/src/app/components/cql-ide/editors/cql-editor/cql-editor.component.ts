@@ -2,10 +2,10 @@
 
 import {Component, ChangeDetectionStrategy, input, output, viewChild, ElementRef, AfterViewInit, OnDestroy, signal, computed, effect, inject, DestroyRef, untracked} from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { EditorView, Decoration, DecorationSet, keymap } from '@codemirror/view';
-import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state';
+import { EditorView, Decoration, DecorationSet, keymap, WidgetType } from '@codemirror/view';
+import { Compartment, EditorState, Prec, StateEffect, StateField } from '@codemirror/state';
 import { linter, lintGutter, Diagnostic } from '@codemirror/lint';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, Subscription, timer } from 'rxjs';
 import { CqlGrammarManager } from '../../../../services/cql-grammar-manager.service';
 import { createCqlEditorBaseExtensions } from '../../../../services/cql-codemirror-extensions.lib';
 import { createCqlEditorThemeExtensions } from '../../../../services/cql-editor-theme.lib';
@@ -30,6 +30,8 @@ import {
 } from '../../../../services/elm-locator.lib';
 import { CqlIdeLibraryOpenerService } from '../../../../services/cql-ide-library-opener.service';
 import { SettingsService } from '../../../../services/settings.service';
+import { OpenCodeService } from '../../../../services/opencode.service';
+import { OpenCodeEditorContext } from '../../../../models/opencode.model';
 import {
   createEditorActionsExtension,
   CqlEditorAction,
@@ -63,6 +65,10 @@ import {
   problemsIndicateValidSyntax
 } from '../../../../services/cql-problems-message.lib';
 import { RenameSymbolModalComponent } from '../../rename-symbol-modal/rename-symbol-modal.component';
+import {
+  buildCqlAiDiagnosticFixRequest,
+  CqlAiDiagnosticFixRequest,
+} from '../../../../services/cql-ai-diagnostic-fix.lib';
 
 const setReferenceHighlightEffect = StateEffect.define<DecorationSet>();
 const referenceHighlightField = StateField.define<DecorationSet>({
@@ -80,6 +86,53 @@ const referenceHighlightField = StateField.define<DecorationSet>({
     return next;
   },
   provide: field => EditorView.decorations.from(field)
+});
+
+const setAiEditHighlightEffect = StateEffect.define<{ from: number; to: number } | null>();
+const aiEditHighlightField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    let next = transaction.docChanged ? Decoration.none : value.map(transaction.changes);
+    for (const stateEffect of transaction.effects) {
+      if (!stateEffect.is(setAiEditHighlightEffect)) continue;
+      const range = stateEffect.value;
+      next = range && range.to > range.from
+        ? Decoration.set([Decoration.mark({ class: 'cm-ai-live-edit' }).range(range.from, range.to)])
+        : Decoration.none;
+    }
+    return next;
+  },
+  provide: field => EditorView.decorations.from(field),
+});
+
+class CqlPredictionWidget extends WidgetType {
+  constructor(private readonly completion: string) { super(); }
+  override toDOM(): HTMLElement {
+    const span = document.createElement('span');
+    span.className = 'cm-ai-prediction';
+    span.textContent = this.completion;
+    span.title = 'AI prediction — Tab to accept, Escape to dismiss';
+    return span;
+  }
+  override eq(other: CqlPredictionWidget): boolean { return other.completion === this.completion; }
+  override ignoreEvent(): boolean { return true; }
+}
+
+const setPredictionEffect = StateEffect.define<{ from: number; text: string } | null>();
+const predictionField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, transaction) {
+    let next = transaction.docChanged ? Decoration.none : value.map(transaction.changes);
+    for (const stateEffect of transaction.effects) {
+      if (!stateEffect.is(setPredictionEffect)) continue;
+      const prediction = stateEffect.value;
+      next = prediction
+        ? Decoration.set([Decoration.widget({ widget: new CqlPredictionWidget(prediction.text), side: 1 }).range(prediction.from)])
+        : Decoration.none;
+    }
+    return next;
+  },
+  provide: field => EditorView.decorations.from(field),
 });
 
 @Component({
@@ -102,7 +155,10 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   contentLoadError = input<string | null>(null);
   isNewLibrary = input<boolean>(false);
   
-  contentChange = output<{ cursorPosition: { line: number; column: number }, wordCount: number, content: string }>();
+  contentChange = output<{ cursorPosition: { line: number; column: number }, wordCount: number, content: string, source: 'user' | 'ai', userRevision: number }>();
+  selectionChange = output<OpenCodeEditorContext | null>();
+  inlineAiEditRequested = output<OpenCodeEditorContext>();
+  diagnosticAiFixRequested = output<CqlAiDiagnosticFixRequest>();
   cursorChange = output<{ line: number; column: number }>();
   editorStateChange = output<IdeEditorState>();
   syntaxErrors = output<string[]>();
@@ -125,6 +181,11 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   private resizeObserver?: ResizeObserver;
   private viewDestroyed = false;
   private suppressOutputEmits = false;
+  private userRevision = 0;
+  private applyingAiChange = false;
+  private predictionSubscription?: Subscription;
+  private predictionAbort?: AbortController;
+  private pendingPrediction: { from: number; text: string; revision: number } | null = null;
 
   // Toolbar properties
   isExecuting: boolean = false;
@@ -145,6 +206,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
 
   private ideStateService = inject(IdeStateService);
   private settingsService = inject(SettingsService);
+  private openCodeService = inject(OpenCodeService);
   private cqlFormatterService = inject(CqlFormatterService);
   private cqlValidationService = inject(CqlValidationService);
   private libraryTranslationContextBuilder = inject(LibraryTranslationContextBuilder);
@@ -353,6 +415,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   private teardownEditor(): void {
     this.suppressOutputEmits = true;
     try {
+      this.cancelPrediction(false);
       this.resizeObserver?.disconnect();
       this.resizeObserver = undefined;
       if (this.editor) {
@@ -413,12 +476,27 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
           ...this.grammarManager.createExtensions([includeCompletion]),
           ...createEditorActionsExtension(this.createEditorActionsHandlers()),
           referenceHighlightField,
+          aiEditHighlightField,
+          predictionField,
           lintGutter(),
           linter(this.createLintSource()),
-          keymap.of([
+          Prec.highest(keymap.of([
+            {
+              key: 'Mod-i',
+              run: () => {
+                const context = this.editorContext('inline', true);
+                if (context) this.inlineAiEditRequested.emit(context);
+                return true;
+              }
+            },
+            {
+              key: 'Escape',
+              run: () => this.dismissPrediction()
+            },
             {
               key: 'Tab',
               run: (view) => {
+                if (this.acceptPrediction()) return true;
                 // Insert tab character at cursor position
                 const selection = view.state.selection.main;
                 view.dispatch({
@@ -456,7 +534,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
                 return true;
               }
             }
-          ]),
+          ])),
           this.themeCompartment.of(
             createCqlEditorThemeExtensions(this.settingsService.theme_effective(), this.height())
           ),
@@ -466,6 +544,9 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
             }
             if (update.docChanged) {
               const newValue = update.state.doc.toString();
+              const source: 'user' | 'ai' = this.applyingAiChange ? 'ai' : 'user';
+              if (source === 'user' && !this.isUpdatingFromReload) this.userRevision += 1;
+              this.cancelPrediction(false);
               this._value = newValue;
               this.invalidateElmDerivedNavigation(newValue);
               
@@ -479,11 +560,14 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
                 this.contentChange.emit({ 
                   cursorPosition: cursor || { line: 1, column: 1 }, 
                   wordCount: wordCount || 0,
-                  content: newValue
+                  content: newValue,
+                  source,
+                  userRevision: this.userRevision
                 });
                 
                 // Update canExecute state after content change
                 this.updateCanExecute();
+                if (source === 'user') this.schedulePrediction();
               }
               
               // Library resource update will be handled by parent component
@@ -495,6 +579,8 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
               const line = update.state.doc.lineAt(selection.from).number;
               const column = selection.from - update.state.doc.lineAt(selection.from).from;
               this.cursorChange.emit({ line, column });
+              this.selectionChange.emit(this.editorContext('selection', false));
+              if (!update.docChanged) queueMicrotask(() => this.cancelPrediction());
             }
             
             // Update word count
@@ -568,6 +654,26 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
       });
     }
   }
+
+  applyAiContent(value: string): void {
+    if (!this.editor || value === this.editor.state.doc.toString()) return;
+    const before = this.editor.state.doc.toString();
+    let prefix = 0;
+    while (prefix < before.length && prefix < value.length && before[prefix] === value[prefix]) prefix += 1;
+    let suffix = 0;
+    while (suffix < before.length - prefix && suffix < value.length - prefix &&
+      before[before.length - 1 - suffix] === value[value.length - 1 - suffix]) suffix += 1;
+    const highlightTo = Math.max(prefix, value.length - suffix);
+    this.applyingAiChange = true;
+    try {
+      this.editor.dispatch({
+        changes: { from: 0, to: before.length, insert: value },
+        effects: setAiEditHighlightEffect.of({ from: prefix, to: highlightTo }),
+      });
+    } finally {
+      this.applyingAiChange = false;
+    }
+  }
   
   focus(): void {
     this.editor?.focus();
@@ -609,6 +715,99 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
         }
       });
     }
+  }
+
+  private editorContext(mode: 'selection' | 'inline', useCurrentLine: boolean): OpenCodeEditorContext | null {
+    if (!this.editor) return null;
+    const selection = this.editor.state.selection.main;
+    let from = selection.from;
+    let to = selection.to;
+    if (from === to && useCurrentLine) {
+      const line = this.editor.state.doc.lineAt(selection.head);
+      from = line.from;
+      to = line.to;
+    }
+    if (from === to && !useCurrentLine) return null;
+    const start = this.editor.state.doc.lineAt(from);
+    const end = this.editor.state.doc.lineAt(to);
+    return {
+      libraryId: this.libraryId(),
+      file: '',
+      selectedText: this.editor.state.doc.sliceString(from, to),
+      startLine: start.number,
+      startColumn: from - start.from,
+      endLine: end.number,
+      endColumn: to - end.from,
+      documentRevision: this.userRevision,
+      mode,
+    };
+  }
+
+  private schedulePrediction(): void {
+    if (!this.settingsService.settings().enableAiCodePrediction || !this.openCodeService.isAvailable() || this.readonly() || !this.editor?.hasFocus) return;
+    const selection = this.editor.state.selection.main;
+    if (!selection.empty) return;
+    this.predictionSubscription?.unsubscribe();
+    this.predictionAbort?.abort();
+    const position = selection.head;
+    const revision = this.userRevision;
+    this.predictionSubscription = timer(900).subscribe(() => void this.loadPrediction(position, revision));
+  }
+
+  private async loadPrediction(position: number, revision: number): Promise<void> {
+    const editor = this.editor;
+    if (!editor || revision !== this.userRevision || editor.state.selection.main.head !== position || !editor.hasFocus) return;
+    this.predictionAbort = new AbortController();
+    const source = editor.state.doc.toString();
+    try {
+      const raw = await this.openCodeService.predictCql(
+        source.slice(Math.max(0, position - 6_000), position),
+        source.slice(position, position + 2_000),
+        this.predictionAbort.signal
+      );
+      if (!this.editor || revision !== this.userRevision || this.editor.state.selection.main.head !== position) return;
+      const text = this.cleanPrediction(raw);
+      if (!text) return;
+      this.pendingPrediction = { from: position, text, revision };
+      this.editor.dispatch({ effects: setPredictionEffect.of({ from: position, text }) });
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) console.debug('CQL prediction unavailable', error);
+    }
+  }
+
+  private cleanPrediction(raw: string): string {
+    let value = raw.replace(/^\s*```(?:cql)?\s*/i, '').replace(/\s*```\s*$/i, '');
+    value = value.replace(/^<CURSOR>/i, '');
+    return value.slice(0, 800);
+  }
+
+  private acceptPrediction(): boolean {
+    const prediction = this.pendingPrediction;
+    if (!prediction || !this.editor || prediction.revision !== this.userRevision ||
+      this.editor.state.selection.main.head !== prediction.from) return false;
+    this.pendingPrediction = null;
+    this.editor.dispatch({
+      changes: { from: prediction.from, insert: prediction.text },
+      selection: { anchor: prediction.from + prediction.text.length },
+      effects: setPredictionEffect.of(null),
+    });
+    return true;
+  }
+
+  private dismissPrediction(): boolean {
+    if (!this.pendingPrediction) return false;
+    this.cancelPrediction();
+    return true;
+  }
+
+  private cancelPrediction(dispatch = true): void {
+    this.predictionSubscription?.unsubscribe();
+    this.predictionSubscription = undefined;
+    this.predictionAbort?.abort();
+    this.predictionAbort = undefined;
+    const hadPrediction = Boolean(this.pendingPrediction);
+    this.pendingPrediction = null;
+    if (dispatch && hadPrediction && this.editor) this.editor.dispatch({ effects: setPredictionEffect.of(null) });
   }
   
   formatCode(): void {
@@ -1345,6 +1544,31 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
     ];
   }
 
+  private withAiFixAction(diagnostic: Diagnostic): Diagnostic {
+    if (diagnostic.severity !== 'error' || this.readonly() || !this.openCodeService.isAvailable()) {
+      return diagnostic;
+    }
+    return {
+      ...diagnostic,
+      actions: [
+        ...(diagnostic.actions ?? []),
+        {
+          name: 'Fix with AI',
+          apply: (view, from, to) => {
+            this.diagnosticAiFixRequested.emit(buildCqlAiDiagnosticFixRequest({
+              doc: view.state.doc,
+              libraryId: this.libraryId(),
+              userRevision: this.userRevision,
+              message: diagnostic.message,
+              from,
+              to,
+            }));
+          },
+        },
+      ],
+    };
+  }
+
   private cancelValidationDebounce(): void {
     if (this.validationDebounceFrame !== undefined) {
       cancelAnimationFrame(this.validationDebounceFrame);
@@ -1396,7 +1620,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
 
       const resolvers = this.pendingLintResolvers;
       this.pendingLintResolvers = [];
-      resolvers.forEach(r => r(diagnostics.all));
+      resolvers.forEach(r => r(diagnostics.all.map(diagnostic => this.withAiFixAction(diagnostic))));
     } catch (error) {
       console.error('Validation error:', error);
       const resolvers = this.pendingLintResolvers;

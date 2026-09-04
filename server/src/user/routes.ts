@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import type { SharedEnvironmentConfig, UserSettingsDto } from '@cql-studio/core';
+import { normalizeRunnerFhirBaseUrl } from '@cql-studio/core';
 import { getPrisma } from '../db/prisma.js';
 import type { ServerEnv } from '../config/env.js';
 import { requireAuth } from '../auth/session.js';
@@ -33,15 +34,17 @@ const SETTINGS_SELECT = {
   vsacFhirBaseUrl: true,
   vsacApiUsername: true,
   vsacApiPassword: true,
+  aiProvider: true,
   ollamaBaseUrl: true,
   ollamaModel: true,
+  openaiModel: true,
+  compatibleProviderName: true,
+  compatibleProviderBaseUrl: true,
+  compatibleProviderModel: true,
   searxngBaseUrl: true,
   enableAiAssistant: true,
-  useMCPTools: true,
-  allowAiWriteOperations: true,
   autoApplyCodeEdits: true,
-  requireDiffPreview: true,
-  planActSeparateModels: true,
+  enableAiCodePrediction: true,
 } as const;
 
 function toSettingsDto(row: {
@@ -56,17 +59,26 @@ function toSettingsDto(row: {
   vsacFhirBaseUrl: string;
   vsacApiUsername: string;
   vsacApiPassword: string;
+  aiProvider: string;
   ollamaBaseUrl: string;
   ollamaModel: string;
+  openaiModel: string;
+  compatibleProviderName: string;
+  compatibleProviderBaseUrl: string;
+  compatibleProviderModel: string;
   searxngBaseUrl: string;
   enableAiAssistant: boolean;
-  useMCPTools: boolean;
-  allowAiWriteOperations: boolean;
   autoApplyCodeEdits: boolean;
-  requireDiffPreview: boolean;
-  planActSeparateModels: boolean;
+  enableAiCodePrediction: boolean;
 }): UserSettingsDto {
-  return { ...row };
+  const aiProvider = row.aiProvider === 'openai' || row.aiProvider === 'openai-compatible'
+    ? row.aiProvider
+    : 'ollama';
+  return {
+    ...row,
+    aiProvider,
+    runnerFhirBaseUrl: normalizeRunnerFhirBaseUrl(row.runnerFhirBaseUrl),
+  };
 }
 
 function parseBoolean(value: unknown): boolean | undefined {
@@ -100,21 +112,29 @@ function settingsPatchFromBody(body: unknown): Partial<UserSettingsDto> {
   str('themePreferred');
   bool('validateSchema');
   str('runnerApiBaseUrl');
-  str('runnerFhirBaseUrl');
+  const runnerFhirBaseUrl = parseString(b['runnerFhirBaseUrl']);
+  if (runnerFhirBaseUrl !== undefined) {
+    patch.runnerFhirBaseUrl = normalizeRunnerFhirBaseUrl(runnerFhirBaseUrl);
+  }
   str('defaultTestResultsIndexUrl');
   str('fhirPackageRegistryBaseUrl');
   str('vsacFhirBaseUrl');
   str('vsacApiUsername');
   str('vsacApiPassword');
+  const aiProvider = parseString(b['aiProvider']);
+  if (aiProvider === 'ollama' || aiProvider === 'openai' || aiProvider === 'openai-compatible') {
+    patch.aiProvider = aiProvider;
+  }
   str('ollamaBaseUrl');
   str('ollamaModel');
+  str('openaiModel');
+  str('compatibleProviderName');
+  str('compatibleProviderBaseUrl');
+  str('compatibleProviderModel');
   str('searxngBaseUrl');
   bool('enableAiAssistant');
-  bool('useMCPTools');
-  bool('allowAiWriteOperations');
   bool('autoApplyCodeEdits');
-  bool('requireDiffPreview');
-  bool('planActSeparateModels');
+  bool('enableAiCodePrediction');
   return patch;
 }
 
@@ -171,15 +191,17 @@ export function createUserSettingsRouter(env: ServerEnv): Router {
         vsacFhirBaseUrl: patch.vsacFhirBaseUrl ?? '',
         vsacApiUsername: patch.vsacApiUsername ?? '',
         vsacApiPassword: patch.vsacApiPassword ?? '',
+        aiProvider: patch.aiProvider ?? 'ollama',
         ollamaBaseUrl: patch.ollamaBaseUrl ?? '',
         ollamaModel: patch.ollamaModel ?? '',
+        openaiModel: patch.openaiModel ?? '',
+        compatibleProviderName: patch.compatibleProviderName ?? '',
+        compatibleProviderBaseUrl: patch.compatibleProviderBaseUrl ?? '',
+        compatibleProviderModel: patch.compatibleProviderModel ?? '',
         searxngBaseUrl: patch.searxngBaseUrl ?? '',
-        enableAiAssistant: patch.enableAiAssistant ?? false,
-        useMCPTools: patch.useMCPTools ?? false,
-        allowAiWriteOperations: patch.allowAiWriteOperations ?? false,
-        autoApplyCodeEdits: patch.autoApplyCodeEdits ?? false,
-        requireDiffPreview: patch.requireDiffPreview ?? false,
-        planActSeparateModels: patch.planActSeparateModels ?? false,
+        enableAiAssistant: patch.enableAiAssistant ?? true,
+        autoApplyCodeEdits: patch.autoApplyCodeEdits ?? true,
+        enableAiCodePrediction: patch.enableAiCodePrediction ?? true,
       };
       const row = await getPrisma().user.update({
         where: { id: user.id },

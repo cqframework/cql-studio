@@ -69,7 +69,7 @@ export class IdeTabRegistryService {
 
     this.registerTabType({
       type: 'ai',
-      title: 'AI',
+      title: 'OpenCode',
       component: null as any,
       allowedPanels: ['right'],
       defaultPanel: 'right'

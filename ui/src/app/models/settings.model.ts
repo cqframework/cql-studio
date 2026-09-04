@@ -10,6 +10,8 @@ export enum ThemeType {
 
 export type ActiveEnvironmentSource = 'personal' | 'workspace';
 
+export type AiProviderType = 'ollama' | 'openai' | 'openai-compatible';
+
 export interface ActiveWorkspaceEnvironmentRef {
     workspaceId: string;
     environmentId: string;
@@ -35,15 +37,18 @@ export class Settings {
     public vsacApiPassword: string = '';
 
     // AI Settings
+    public aiProvider: AiProviderType = 'ollama';
     public ollamaBaseUrl: string = '';
     public ollamaModel: string = '';
+    public openaiModel: string = '';
+    public compatibleProviderName: string = '';
+    public compatibleProviderBaseUrl: string = '';
+    public compatibleProviderModel: string = '';
+    public serverBaseUrl: string = '';
     public searxngBaseUrl: string = '';
-    public enableAiAssistant: boolean = false;
-    public useMCPTools: boolean = false;
-    public allowAiWriteOperations: boolean = false;
-    public autoApplyCodeEdits: boolean = false;
-    public requireDiffPreview: boolean = false;
-    public planActSeparateModels: boolean = false;
+    public enableAiAssistant: boolean = true;
+    public autoApplyCodeEdits: boolean = true;
+    public enableAiCodePrediction: boolean = true;
 
     public static DEFAULT_THEME = ThemeType.AUTOMATIC;
 }

@@ -103,6 +103,37 @@ test('GET /api/ollama/tags proxies to upstream and returns JSON', async () => {
   }
 });
 
+test('Ollama API key is forwarded as a bearer credential when supplied', async () => {
+  const mockFetch = mock.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const url = typeof input === 'string'
+      ? input
+      : input instanceof Request
+        ? input.url
+        : input.href;
+    if (url === `${OLLAMA_BASE}/api/version`) {
+      assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer ollama-secret');
+      return new Response(JSON.stringify({ version: '0.17.7' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+    return realFetch(input as RequestInfo | URL, init);
+  });
+  mock.method(globalThis, 'fetch', mockFetch as typeof fetch);
+
+  try {
+    const app = createApp();
+    await withServer(app, async (baseUrl) => {
+      const res = await fetch(`${baseUrl}/api/ollama/version`, {
+        headers: { [BASE_HEADER]: OLLAMA_BASE, 'x-ollama-api-key': 'ollama-secret' }
+      });
+      assert.equal(res.status, 200);
+    });
+  } finally {
+    restoreFetch();
+  }
+});
+
 test('GET /api/ollama/version proxies to upstream', async () => {
   const mockFetch = mock.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input instanceof Request ? input.url : (input as URL).href;

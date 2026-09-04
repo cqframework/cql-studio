@@ -4,10 +4,11 @@
 `cql-studio` is an integrated developer suite and web application for Clinical Quality Language (CQL), FHIR quality artifacts, and SQL on FHIR.
 
 - **Monorepo Structure**:
-  - `core/` – Shared domain models, authentication, team/workspace, and MCP tool definitions (`@cql-studio/core`)
-  - `server/` – Express + Node ESM backend, Prisma ORM, MCP tool orchestrator, Ollama and VSAC proxies (`@cql-studio/server`)
+  - `core/` – Shared domain models, authentication, team/workspace, MCP tool definitions, and OpenCode DTOs/helpers (`@cql-studio/core`)
+  - `server/` – Express + Node ESM backend, Prisma ORM, MCP tool orchestrator, Ollama and VSAC proxies, OpenCode gateway (`@cql-studio/server`)
+  - `opencode/` – Private OpenCode runner process and workspace filesystem (`@cql-studio/opencode`); image `hlseven/quality-cql-studio-opencode`
   - `ui/` – Angular standalone UI with CodeMirror 6, Bootstrap 5, and PGlite (`@cql-studio/ui`)
-  - `docker/` – Local stack with PostgreSQL, Authentik (SSO/OIDC), and HAPI FHIR
+  - `docker/` – Local stack with PostgreSQL, Authentik (SSO/OIDC), HAPI FHIR, and OpenCode runner
   - `doc/` – PlantUML diagrams and architectural documentation
 
 - **Sibling Projects**:
@@ -49,6 +50,7 @@
 ### Node & Express Backend
 - Full ESM (`type: "module"`).
 - All server environment variables must be prefixed with `CQL_STUDIO_SERVER_`.
+- All OpenCode runner environment variables must be prefixed with `CQL_STUDIO_OPENCODE_`.
 - Clean separation between route handlers, business services, and database layers.
 
 ### Angular & UI
@@ -67,7 +69,8 @@
 - Use popular patterns for AI integration into coding IDEs and make suggestions based on established UX paradigms.
 - User chat messages should not include debug statements.
 - Use popular open source libraries instead of writing custom code, if friendly to Angular web applications.
-- Currently only integrate with the Ollama API and model runner.
+- Route model access through the OpenCode provider abstraction. Supported provider types are Ollama, OpenAI, and OpenAI-compatible APIs.
+- Provider API keys must not be persisted in browser storage or exported with user settings. Keep them in memory until server-side secret storage is available.
 - When working with LLM and MCP servers, always check work directly against the APIs before requesting manual testing.
 - MCP tool names are referenced in code as well as prompts. Make sure changes are applied across the entire codebase.
 - Never hardcode MCP tool names into AI prompt strings. Reference internal tools by static references to fields within `MCPToolNames` from `@cql-studio/core` (or static field references within individual tool type classes).
@@ -82,17 +85,24 @@
 - Don't automatically make git commits or write git transactions without explicit permission.
 - Assume `npm run start` / dev server is already running. Avoid starting redundant server processes; kill temporary server processes if started.
 
+### External APIs (Portainer, etc.)
+- Credentials for external control-plane APIs live in `private/credentials.md` (never commit this file).
+- Read-only API calls (GET / HEAD / OPTIONS, and equivalent list/inspect queries) may be made without confirmation when needed for diagnosis or status.
+- Any API call that creates, updates, deletes, restarts, redeploys, or otherwise mutates state requires explicit user confirmation first.
+
 ---
 
 ## Key Commands & Workflow
 - **Build All**: `npm run build`
 - **Build Core**: `npm run build:core`
+- **Build OpenCode**: `npm run build:opencode`
 - **Server Dev**: `npm run start:server` (or `npm run dev --workspace=@cql-studio/server`)
+- **OpenCode Dev**: `npm run start:opencode` (or `npm run dev --workspace=@cql-studio/opencode`)
 - **UI Dev**: `npm run start:ui`
 - **Prisma Migrations**:
   - `npm run prisma:migrate` (or in server workspace: `cd server && npx prisma migrate dev --name <short_snake_case_name>`)
   - Apply existing: `npm run prisma:deploy` (or `cd server && npx prisma migrate deploy`)
   - Generate Client only: `npm run prisma:generate` (or `cd server && npx prisma generate`)
-- **Docker Stack**: `npm run docker:up` / `npm run docker:down`
+- **Docker Stack**: `npm run docker:up` / `npm run docker:down` (infra only); `npm run docker:full:up` / `npm run docker:full:down` (infra + pre-built UI/server/OpenCode images)
 - **Diagrams**: `npm run diagram`
 - **Verification**: Always run workspace typechecks or builds after editing code to ensure zero compilation regressions.

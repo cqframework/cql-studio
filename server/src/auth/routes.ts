@@ -67,16 +67,6 @@ function decodeLoginState(raw: string, secrets: readonly string[]): LoginState |
   }
 }
 
-function oauthObjectForLog(value: object): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, val] of Object.entries(value)) {
-    if (typeof val !== 'function') {
-      out[key] = val;
-    }
-  }
-  return out;
-}
-
 function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<void>
 ): (req: Request, res: Response, next: NextFunction) => void {
@@ -160,19 +150,6 @@ export function createAuthRouter(env: ServerEnv): Router {
         return;
       }
 
-      let userInfo: Record<string, unknown> | undefined;
-      try {
-        const config = await getOidcConfig(env);
-        userInfo = oauthObjectForLog(
-          await oidcClient.fetchUserInfo(config, tokens.access_token, claims.sub)
-        );
-      } catch (err) {
-        logger.debug(
-          { err: err instanceof Error ? err : undefined },
-          'SSO userinfo fetch failed'
-        );
-      }
-
       const email =
         typeof claims.email === 'string'
           ? claims.email
@@ -215,8 +192,8 @@ export function createAuthRouter(env: ServerEnv): Router {
       setSessionCookie(res, session.id, env, expiresAt);
       logger.debug(
         {
-          accessToken: oauthObjectForLog(tokens),
-          userInfo,
+          userId: user.id,
+          issuer: env.ssoIssuerUrl,
         },
         'SSO login completed'
       );

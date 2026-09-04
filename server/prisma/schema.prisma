@@ -57,15 +57,21 @@ model User {
   vsacFhirBaseUrl            String  @default("")
   vsacApiUsername            String  @default("")
   vsacApiPassword            String  @default("")
+  aiProvider                 String  @default("ollama")
   ollamaBaseUrl              String  @default("")
   ollamaModel                String  @default("")
+  openaiModel                String  @default("")
+  compatibleProviderName     String  @default("")
+  compatibleProviderBaseUrl  String  @default("")
+  compatibleProviderModel    String  @default("")
   searxngBaseUrl             String  @default("")
-  enableAiAssistant          Boolean @default(false)
+  enableAiAssistant          Boolean @default(true)
   useMCPTools                Boolean @default(false)
   allowAiWriteOperations     Boolean @default(false)
-  autoApplyCodeEdits         Boolean @default(false)
+  autoApplyCodeEdits         Boolean @default(true)
   requireDiffPreview         Boolean @default(false)
   planActSeparateModels      Boolean @default(false)
+  enableAiCodePrediction     Boolean @default(true)
 
   sessions              Session[]
   teamMemberships       TeamMembership[]
@@ -75,12 +81,36 @@ model User {
   workspaceActivity     WorkspaceActivity[]
   createdResourceRefs   WorkspaceResourceReference[]
   environments          UserEnvironment[]
+  openCodeSessions      OpenCodeSession[]
 
   @@unique([ssoIssuer, ssoSubject])
   @@index([email])
   @@index([createdAt])
   @@index([updatedAt])
   @@index([lastLoginAt])
+}
+
+model OpenCodeSession {
+  id                String   @id @db.Uuid
+  userId            String   @db.Uuid
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  openCodeSessionId String
+  title             String
+  status            String
+  activeLibraryId   String?
+  activeFile        String?
+  model             String
+  reasoningEnabled  Boolean  @default(false)
+  runnerCreatedAt   DateTime
+  lastActivityAt    DateTime
+  expiresAt         DateTime
+  workspaceOrigin   Json?
+  state             Json
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId, updatedAt])
+  @@index([expiresAt])
 }
 
 model Session {

@@ -36,7 +36,7 @@ describe('deploy-config.lib', () => {
   it('readDeployConfig falls back to explicit override or central default', () => {
     expect(readDeployConfig('CQL_STUDIO_MISSING', 'fallback')).toBe('fallback');
     expect(readDeployConfig(DeployConfigKeys.SERVER_BASE_URL)).toBe('http://localhost:3003');
-    expect(readDeployConfig(DeployConfigKeys.RUNNER_BASE_URL)).toBe('http://localhost:3000');
+    expect(readDeployConfig(DeployConfigKeys.RUNNER_BASE_URL)).toBe('http://localhost:8091');
   });
 
   it('readDeployConfigUrl strips trailing slashes', () => {

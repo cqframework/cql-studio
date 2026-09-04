@@ -25,19 +25,12 @@
             },
             "allowedCommonJsDependencies": [
               "ajv",
-              "ajv-formats",
-              "pdfjs-dist",
-              "mammoth"
+              "ajv-formats"
             ],
             "assets": [
               {
                 "glob": "**/*",
                 "input": "public"
-              },
-              {
-                "glob": "pdf.worker.mjs",
-                "input": "node_modules/pdfjs-dist/build",
-                "output": "/"
               },
               {
                 "glob": "*.wasm",
@@ -76,6 +69,11 @@
           },
           "configurations": {
             "production": {
+              "optimization": {
+                "fonts": {
+                  "inline": false
+                }
+              },
               "budgets": [
                 {
                   "type": "initial",
@@ -124,6 +122,9 @@
     }
   },
   "cli": {
-    "analytics": false
+    "analytics": false,
+    "cache": {
+      "enabled": false
+    }
   }
 }
