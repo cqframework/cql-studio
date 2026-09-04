@@ -83,6 +83,7 @@ test.describe('OpenCode browser integration', () => {
       status: 'idle',
       activeLibraryId: 'BrowserOpenCode',
       activeFile: 'libraries/BrowserOpenCode.cql',
+      libraryIds: ['BrowserOpenCode'],
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,

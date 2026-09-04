@@ -3,6 +3,7 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { Endpoint } from 'fhir/r4';
 import type { UserSettingsDto, UserSettingsPatch } from '@cql-studio/core';
+import { normalizeRunnerFhirBaseUrl } from '@cql-studio/core';
 import { BUILT_IN_ENVIRONMENT_ID, CqlEnvironment, EndpointHttpContext, EndpointRole } from '../models/environment.model';
 import { AiProviderType, Settings, ThemeType } from '../models/settings.model';
 import { ExamplePaths } from '../constants/example-paths.constants';
@@ -262,11 +263,11 @@ export class SettingsService {
   getEffectiveRunnerFhirBaseUrl(): string {
     const settingValue = this.settings().runnerFhirBaseUrl;
     if (settingValue?.trim()) {
-      return settingValue.trim().replace(/\/+$/, '');
+      return normalizeRunnerFhirBaseUrl(settingValue);
     }
     const envDefault = this.getDefaultRunnerFhirBaseUrl();
     if (envDefault) {
-      return envDefault;
+      return normalizeRunnerFhirBaseUrl(envDefault);
     }
     return this.getEffectiveDataEndpointAddress();
   }
@@ -472,7 +473,7 @@ export class SettingsService {
     settings.theme_preferred = this.parseTheme(dto.themePreferred);
     settings.validateSchema = dto.validateSchema;
     settings.runnerApiBaseUrl = dto.runnerApiBaseUrl;
-    settings.runnerFhirBaseUrl = dto.runnerFhirBaseUrl;
+    settings.runnerFhirBaseUrl = normalizeRunnerFhirBaseUrl(dto.runnerFhirBaseUrl);
     settings.defaultTestResultsIndexUrl = dto.defaultTestResultsIndexUrl;
     settings.fhirPackageRegistryBaseUrl = dto.fhirPackageRegistryBaseUrl;
     settings.vsacFhirBaseUrl = dto.vsacFhirBaseUrl;

@@ -30,6 +30,7 @@ export interface OpenCodeToolContext {
     vsacApiPassword?: string;
     searxngBaseUrl?: string;
   };
+  requestCreateDraft?: (name: string) => Promise<{ libraryId: string; name: string; file?: string }>;
 }
 
 const ROLE_FIELD: Record<EndpointRole, keyof SessionEnvironment> = {
@@ -138,6 +139,19 @@ const cqlTools: MCPTool[] = [
       required: ['id'],
     },
   },
+  {
+    name: MCPToolNames.CQL_LIBRARY_CREATE_DRAFT,
+    description: 'Ask CQL Studio to open a new local draft CQL Library editor tab in the IDE and add it to the OpenCode workspace. Does not create or save a FHIR Library. Use when no suitable writable library is open.',
+    allowedInPlanMode: false,
+    statusMessage: 'Creating a draft CQL library in the IDE…',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Draft library name / title (CQL identifier).' },
+      },
+      required: ['name'],
+    },
+  },
 ];
 
 export class OpenCodeToolExecutor {
@@ -185,6 +199,8 @@ export class OpenCodeToolExecutor {
         return this.cqlLibrarySearch(params, context.environment);
       case MCPToolNames.CQL_LIBRARY_READ:
         return this.cqlLibraryRead(params, context.environment);
+      case MCPToolNames.CQL_LIBRARY_CREATE_DRAFT:
+        return this.cqlLibraryCreateDraft(params, context);
       default:
         if (!(await this.definitions()).some(tool => tool.name === name)) {
           throw new Error(`OpenCode tool is not allowed: ${name}`);
@@ -237,6 +253,25 @@ export class OpenCodeToolExecutor {
           type: library.type,
         };
       }),
+    };
+  }
+
+  private async cqlLibraryCreateDraft(
+    params: Record<string, unknown>,
+    context: OpenCodeToolContext
+  ): Promise<unknown> {
+    if (!context.requestCreateDraft) {
+      throw new Error('Draft library creation is unavailable for this OpenCode session');
+    }
+    const name = String(params['name'] ?? '').trim();
+    if (!name) throw new Error('name is required');
+    const created = await context.requestCreateDraft(name);
+    return {
+      created: true,
+      libraryId: created.libraryId,
+      name: created.name,
+      file: created.file ?? `libraries/${created.name}.cql`,
+      message: `Draft library "${created.name}" is open in the IDE and writable under libraries/.`,
     };
   }
 

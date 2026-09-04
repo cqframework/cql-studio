@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable, signal } from '@angular/core';
+import { Injectable, computed, signal } from '@angular/core';
 import { OpenCodeEditorContext } from '../models/opencode.model';
 
 export interface OpenCodeEditorDocument {
@@ -16,7 +16,12 @@ export interface OpenCodeInlineEditOptions {
 
 @Injectable({ providedIn: 'root' })
 export class OpenCodeEditorBridgeService {
-  readonly document = signal<OpenCodeEditorDocument | null>(null);
+  readonly documents = signal<Record<string, OpenCodeEditorDocument>>({});
+  readonly document = computed(() => {
+    const docs = this.documents();
+    const ids = Object.keys(docs);
+    return ids.length ? docs[ids[ids.length - 1]] : null;
+  });
   readonly selection = signal<OpenCodeEditorContext | null>(null);
   readonly inlineRequest = signal<{
     id: number;
@@ -27,11 +32,27 @@ export class OpenCodeEditorBridgeService {
   private inlineSequence = 0;
 
   recordDocument(libraryId: string, content: string, userRevision: number): void {
-    this.document.set({ libraryId, content, userRevision });
+    this.documents.update(current => ({
+      ...current,
+      [libraryId]: { libraryId, content, userRevision },
+    }));
     const selection = this.selection();
     if (selection && selection.libraryId === libraryId && selection.documentRevision !== userRevision) {
       this.selection.set(null);
     }
+  }
+
+  clearDocument(libraryId: string): void {
+    this.documents.update(current => {
+      if (!(libraryId in current)) return current;
+      const next = { ...current };
+      delete next[libraryId];
+      return next;
+    });
+  }
+
+  documentFor(libraryId: string): OpenCodeEditorDocument | null {
+    return this.documents()[libraryId] ?? null;
   }
 
   recordSelection(context: OpenCodeEditorContext | null): void {

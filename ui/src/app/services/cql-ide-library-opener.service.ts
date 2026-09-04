@@ -68,6 +68,24 @@ export class CqlIdeLibraryOpenerService {
     return existing?.id ?? null;
   }
 
+  async openById(libraryId: string, workspaceOrigin?: WorkspaceLibraryOrigin): Promise<string | null> {
+    if (!libraryId.trim() || libraryId === 'FHIRHelpers') {
+      return null;
+    }
+    const existing = this.ideStateService.libraryResources().find(library => library.id === libraryId);
+    if (existing) {
+      this.ideStateService.selectLibraryResource(existing.id);
+      return existing.id;
+    }
+    try {
+      const library = await firstValueFrom(this.libraryService.get(libraryId));
+      return this.openLibraryFromServer(library, workspaceOrigin);
+    } catch (error) {
+      console.warn(`Unable to open library ${libraryId}`, error);
+      return null;
+    }
+  }
+
   async openLibraryFromServer(
     library: Library,
     workspaceOrigin?: WorkspaceLibraryOrigin

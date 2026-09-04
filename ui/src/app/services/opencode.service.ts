@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import { Injectable, inject } from '@angular/core';
+import { Injectable, inject, signal } from '@angular/core';
 import {
   CreateOpenCodeSessionRequest,
   OpenCodeApiErrorBody,
@@ -17,6 +17,8 @@ import {
   OpenCodeAttachment,
   OpenCodeEnvironmentBinding,
   OpenCodeIdeDiagnostics,
+  OpenCodeHealthStatus,
+  OpenCodeWorkspaceSyncRequest,
 } from '../models/opencode.model';
 import { SettingsService } from './settings.service';
 import type { AiProviderType } from '../models/settings.model';
@@ -28,6 +30,9 @@ export class OpenCodeService {
   private readonly settingsService = inject(SettingsService);
   private readonly authService = inject(AuthService);
   private readonly environmentBinding = inject(OpenCodeEnvironmentBindingService);
+
+  /** Increments when owned sessions are bulk-deleted so open IDE views can drop stale state. */
+  readonly sessionsEpoch = signal(0);
 
   isAvailable(): boolean {
     const settings = this.settingsService.settings();
@@ -44,8 +49,52 @@ export class OpenCodeService {
     );
   }
 
-  health(): Promise<{ healthy: boolean; sessions: number; serverUrl?: string }> {
-    return this.request('/health');
+  async health(): Promise<OpenCodeHealthStatus> {
+    try {
+      const payload = await this.request<OpenCodeHealthStatus>('/health');
+      return {
+        healthy: payload.healthy !== false,
+        sessions: payload.sessions ?? 0,
+        serverUrl: payload.serverUrl,
+        code: payload.code,
+        message: payload.message,
+      };
+    } catch (error) {
+      if (!(error instanceof OpenCodeApiError)) {
+        return {
+          healthy: false,
+          sessions: 0,
+          code: 'OPENCODE_GATEWAY_UNREACHABLE',
+          message: error instanceof Error ? error.message : 'Unable to reach CQL Studio Server for OpenCode',
+          retryable: true,
+        };
+      }
+      if (error.status === 401) {
+        return {
+          healthy: false,
+          sessions: 0,
+          code: 'OPENCODE_UNAUTHORIZED',
+          message: 'Sign in to use OpenCode.',
+          retryable: true,
+        };
+      }
+      if (error.status === 404) {
+        return {
+          healthy: false,
+          sessions: 0,
+          code: 'OPENCODE_DISABLED',
+          message: 'OpenCode is not enabled on CQL Studio Server.',
+          retryable: false,
+        };
+      }
+      return {
+        healthy: false,
+        sessions: 0,
+        code: error.code,
+        message: error.message,
+        retryable: error.retryable,
+      };
+    }
   }
 
   async createSession(input: CreateOpenCodeSessionRequest): Promise<OpenCodeSession> {
@@ -135,11 +184,31 @@ export class OpenCodeService {
     }).then(() => undefined);
   }
 
-  syncActiveFile(sessionId: string, content: string, documentRevision: number): Promise<void> {
+  syncActiveFile(sessionId: string, content: string, documentRevision: number, libraryId?: string): Promise<void> {
     this.assertSessionEnvironment(sessionId);
     return this.request(`/sessions/${encodeURIComponent(sessionId)}/active-file`, {
       method: 'PUT',
-      body: JSON.stringify({ content, documentRevision }),
+      body: JSON.stringify({ content, documentRevision, libraryId }),
+    }).then(() => undefined);
+  }
+
+  syncWorkspace(sessionId: string, input: OpenCodeWorkspaceSyncRequest): Promise<OpenCodeSession> {
+    this.assertSessionEnvironment(sessionId);
+    return this.request<OpenCodeSession>(`/sessions/${encodeURIComponent(sessionId)}/workspace`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }).then(session => this.environmentBinding.restore(session));
+  }
+
+  ackIdeAction(
+    sessionId: string,
+    actionId: string,
+    body: { ok: boolean; libraryId?: string; name?: string; file?: string; error?: string }
+  ): Promise<void> {
+    this.assertSessionEnvironment(sessionId);
+    return this.request(`/sessions/${encodeURIComponent(sessionId)}/ide-actions/${encodeURIComponent(actionId)}`, {
+      method: 'POST',
+      body: JSON.stringify(body),
     }).then(() => undefined);
   }
 
@@ -233,6 +302,16 @@ export class OpenCodeService {
     await this.request(`/sessions/${encodeURIComponent(sessionId)}/archive`, { method: 'POST' });
   }
 
+  async deleteAllSessions(): Promise<{ deleted: number }> {
+    const result = await this.request<{ deleted: number }>('/sessions', { method: 'DELETE' });
+    const deleted = typeof result?.deleted === 'number' && Number.isFinite(result.deleted)
+      ? Math.max(0, Math.trunc(result.deleted))
+      : 0;
+    this.environmentBinding.retain([]);
+    this.sessionsEpoch.update(value => value + 1);
+    return { deleted };
+  }
+
   events(
     sessionId: string,
     onEvent: (event: OpenCodeEventEnvelope) => void,
@@ -285,23 +364,45 @@ export class OpenCodeService {
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const headers = new Headers(init.headers);
     if (init.body) headers.set('content-type', 'application/json');
-    const response = await fetch(`${this.baseUrl()}${path}`, {
-      cache: 'no-store',
-      ...init,
-      headers,
-      credentials: 'include',
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${this.baseUrl()}${path}`, {
+        cache: 'no-store',
+        ...init,
+        headers,
+        credentials: 'include',
+      });
+    } catch (error) {
+      throw new OpenCodeApiError({
+        code: 'OPENCODE_GATEWAY_UNREACHABLE',
+        message: error instanceof Error && error.message
+          ? `Unable to reach CQL Studio Server for OpenCode: ${error.message}`
+          : 'Unable to reach CQL Studio Server for OpenCode',
+        retryable: true,
+      }, 503);
+    }
     if (!response.ok) {
       const payload = await response.json().catch(() => null) as (Partial<OpenCodeApiErrorBody> & { error?: string }) | null;
+      const runnerDown = response.status === 503 || response.status === 504;
       throw new OpenCodeApiError({
-        code: payload?.code || 'OPENCODE_REQUEST_FAILED',
-        message: payload?.message || payload?.error || `OpenCode request failed with HTTP ${response.status}`,
+        code: payload?.code || (runnerDown ? 'RUNNER_UNAVAILABLE' : 'OPENCODE_REQUEST_FAILED'),
+        message: payload?.message || payload?.error || (
+          runnerDown ? 'The OpenCode runner is unavailable' : `OpenCode request failed with HTTP ${response.status}`
+        ),
         retryable: payload?.retryable ?? response.status >= 500,
         details: payload?.details,
       }, response.status);
     }
     if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
+    try {
+      return await response.json() as T;
+    } catch {
+      throw new OpenCodeApiError({
+        code: 'OPENCODE_REQUEST_FAILED',
+        message: 'OpenCode returned an unreadable response',
+        retryable: true,
+      }, 502);
+    }
   }
 }
 
@@ -316,5 +417,13 @@ export class OpenCodeApiError extends Error {
     this.code = body.code;
     this.retryable = body.retryable;
     this.details = body.details;
+  }
+
+  get isRunnerOutage(): boolean {
+    return this.code === 'RUNNER_UNAVAILABLE'
+      || this.code === 'RUNNER_TIMEOUT'
+      || this.code === 'RUNNER_ERROR'
+      || this.code === 'EMPTY_EVENT_STREAM'
+      || this.code === 'OPENCODE_GATEWAY_UNREACHABLE';
   }
 }

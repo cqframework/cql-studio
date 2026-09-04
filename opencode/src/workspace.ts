@@ -1,12 +1,13 @@
 // Author: Preston Lee
 
 import { createHash, randomUUID } from 'node:crypto';
+import { accessSync, constants } from 'node:fs';
 import { mkdir, readFile, readdir, rm, writeFile, chmod } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import path from 'node:path';
-import { MCPToolNames } from '@cql-studio/core';
+import { MCPToolNames, normalizeOpenCodeLibraries } from '@cql-studio/core';
 import type {
   CreateOpenCodeSessionRequest,
   OpenCodeAttachmentDto,
@@ -14,12 +15,56 @@ import type {
   OpenCodeProviderConfig,
   OpenCodeFileDiffDto,
   OpenCodeWorkspaceManifest,
+  OpenCodeWorkspaceSyncRequest,
 } from '@cql-studio/core';
+import { OpenCodeExitCode, OpenCodeFatalError } from './fatal.js';
 
 const execFileAsync = promisify(execFile);
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_CONVERTED_BYTES = 4 * 1024 * 1024;
-const MARKITDOWN_BIN = process.env.CQL_STUDIO_SERVER_MARKITDOWN_BIN || '/opt/markitdown/bin/markitdown';
+/** MarkItDown CLI name; must resolve via PATH at runner startup. */
+export const MARKITDOWN_BIN = 'markitdown';
+
+export interface OpenCodeWorkspaceOptions {
+  rewriteLocalhost?: boolean;
+  mcpBridgeBin?: string;
+}
+
+/**
+ * Resolve an executable by searching PATH.
+ */
+export function resolveExecutableOnPath(
+  bin: string,
+  pathEnv: string = process.env.PATH ?? ''
+): string | undefined {
+  const trimmed = bin.trim();
+  if (!trimmed) return undefined;
+  for (const dir of pathEnv.split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, trimmed);
+    try {
+      accessSync(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // try next candidate
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Fail fast when MarkItDown is missing so PDF/DOCX uploads do not fail mid-session.
+ * Returns the resolved absolute path when found on PATH.
+ */
+export function assertMarkitdownAvailable(pathEnv: string = process.env.PATH ?? ''): string {
+  const resolved = resolveExecutableOnPath(MARKITDOWN_BIN, pathEnv);
+  if (resolved) return resolved;
+  throw new OpenCodeFatalError(
+    `MarkItDown is required for PDF/DOCX attachment conversion but "${MARKITDOWN_BIN}" was not found on PATH. Install with: python3 -m pip install 'markitdown[pdf,docx]==0.1.7' (or run the opencode Docker image) and ensure the binary is on PATH.`,
+    OpenCodeExitCode.UNAVAILABLE
+  );
+}
+
 const TEXT_EXTENSIONS = new Set([
   '.txt', '.text', '.md', '.markdown', '.csv', '.tsv', '.json', '.jsonl', '.ndjson', '.xml',
   '.yaml', '.yml', '.html', '.htm', '.css', '.scss', '.js', '.jsx', '.ts', '.tsx', '.py',
@@ -37,7 +82,7 @@ const BINARY_EXTENSIONS = new Set([
 
 export function mcpBridgeExecutable(
   moduleUrl = import.meta.url,
-  configured = process.env.CQL_STUDIO_SERVER_MCP_BRIDGE_BIN
+  configured = process.env.CQL_STUDIO_OPENCODE_MCP_BRIDGE_BIN
 ): string {
   return configured?.trim() || fileURLToPath(new URL('./mcp-bridge.js', moduleUrl));
 }
@@ -45,6 +90,7 @@ export function mcpBridgeExecutable(
 export interface MaterializedWorkspace {
   id: string;
   directory: string;
+  /** Focused writable relative path, or empty when no writable libraries exist. */
   activeFile: string;
   manifest: OpenCodeWorkspaceManifest;
   baselineByFile: Map<string, string>;
@@ -59,6 +105,18 @@ function safeSegment(value: string, fallback: string): string {
     .replace(/^[.-]+|[.-]+$/g, '')
     .slice(0, 100);
   return normalized || fallback;
+}
+
+/** Allocate a unique basename under `usedNames` (lowercase keys). */
+function uniqueCqlFileName(name: string, fallback: string, usedNames: Set<string>): string {
+  const base = safeSegment(name, fallback).replace(/\.cql$/i, '');
+  let candidate = `${base}.cql`;
+  let index = 2;
+  while (usedNames.has(candidate.toLowerCase())) {
+    candidate = `${base}-${index++}.cql`;
+  }
+  usedNames.add(candidate.toLowerCase());
+  return candidate;
 }
 
 function sha256(value: string): string {
@@ -86,12 +144,9 @@ function countChangedLines(before: string, after: string): { additions: number; 
   };
 }
 
-function normalizeOllamaBaseUrl(raw: string): string {
+function normalizeOllamaBaseUrl(raw: string, rewriteLocalhost: boolean): string {
   const url = new URL(raw);
-  if (
-    process.env.CQL_STUDIO_SERVER_OPENCODE_RUNNER_REWRITE_LOCALHOST !== 'false' &&
-    (url.hostname === 'localhost' || url.hostname === '127.0.0.1')
-  ) {
+  if (rewriteLocalhost && (url.hostname === 'localhost' || url.hostname === '127.0.0.1')) {
     url.hostname = 'host.docker.internal';
   }
   const withoutSlash = url.toString().replace(/\/+$/, '');
@@ -123,9 +178,26 @@ export function providerIdFor(provider: OpenCodeProviderConfig): string {
 
 export class OpenCodeWorkspaceManager {
   private readonly root: string;
+  private readonly rewriteLocalhost: boolean;
+  private markitdownBinPath: string;
+  private readonly mcpBridgeBin?: string;
 
-  constructor(root = process.env.CQL_STUDIO_SERVER_OPENCODE_WORKSPACE_ROOT || '/workspaces') {
+  constructor(
+    root = process.env.CQL_STUDIO_OPENCODE_WORKSPACE_ROOT || '/workspaces',
+    options: OpenCodeWorkspaceOptions = {}
+  ) {
     this.root = path.resolve(root);
+    this.rewriteLocalhost =
+      options.rewriteLocalhost ??
+      process.env.CQL_STUDIO_OPENCODE_RUNNER_REWRITE_LOCALHOST !== 'false';
+    this.markitdownBinPath = MARKITDOWN_BIN;
+    this.mcpBridgeBin = options.mcpBridgeBin?.trim() || undefined;
+  }
+
+  /** Prefer the absolute path verified at runner startup. */
+  useMarkitdownBin(bin: string): void {
+    const trimmed = bin.trim();
+    if (trimmed) this.markitdownBinPath = trimmed;
   }
 
   async initialize(): Promise<void> {
@@ -161,50 +233,55 @@ export class OpenCodeWorkspaceManager {
     await mkdir(validateVsacSkillDirectory, { recursive: true, mode: 0o700 });
     await mkdir(attachmentsDirectory, { recursive: true, mode: 0o700 });
 
+    const libraries = normalizeOpenCodeLibraries(input);
+    const writableIds = new Set(libraries.map(library => library.id));
+    const focusedId = input.focusedLibraryId && writableIds.has(input.focusedLibraryId)
+      ? input.focusedLibraryId
+      : libraries[0]?.id;
     const usedNames = new Set<string>();
-    const uniqueFile = (name: string, fallback: string): string => {
-      const base = safeSegment(name, fallback).replace(/\.cql$/i, '');
-      let candidate = `${base}.cql`;
-      let index = 2;
-      while (usedNames.has(candidate.toLowerCase())) {
-        candidate = `${base}-${index++}.cql`;
-      }
-      usedNames.add(candidate.toLowerCase());
-      return candidate;
-    };
-
-    const activeName = uniqueFile(input.activeLibrary.name, input.activeLibrary.id);
-    const activeFile = `libraries/${activeName}`;
-    await writeFile(path.join(directory, activeFile), input.activeLibrary.cqlContent, {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
 
     const manifest: OpenCodeWorkspaceManifest = {
       schemaVersion: 1,
       sessionId: id,
       createdAt: new Date().toISOString(),
-      activeLibraryId: input.activeLibrary.id,
-      files: {
-        [activeFile]: {
-          libraryId: input.activeLibrary.id,
-          name: input.activeLibrary.name,
-          version: input.activeLibrary.version,
-          canonicalUrl: input.activeLibrary.canonicalUrl,
-          fhirVersionId: input.activeLibrary.fhirVersionId,
-          sourceHash: sha256(input.activeLibrary.originalContent ?? input.activeLibrary.cqlContent),
-          draft: (input.activeLibrary.originalContent ?? input.activeLibrary.cqlContent) !== input.activeLibrary.cqlContent,
-          writable: true,
-        },
-      },
+      activeLibraryId: focusedId ?? '',
+      files: {},
     };
+    const baselineByFile = new Map<string, string>();
+    let activeFile = '';
+
+    for (const library of libraries) {
+      // Empty/whitespace CQL is allowed so brand-new open editors stay writable.
+      if (!library.id || typeof library.cqlContent !== 'string') continue;
+      const fileName = uniqueCqlFileName(library.name, library.id, usedNames);
+      const relativeFile = `libraries/${fileName}`;
+      await writeFile(path.join(directory, relativeFile), library.cqlContent, {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+      manifest.files[relativeFile] = {
+        libraryId: library.id,
+        name: library.name,
+        version: library.version,
+        canonicalUrl: library.canonicalUrl,
+        fhirVersionId: library.fhirVersionId,
+        sourceHash: sha256(library.originalContent ?? library.cqlContent),
+        draft: (library.originalContent ?? library.cqlContent) !== library.cqlContent,
+        writable: true,
+      };
+      baselineByFile.set(relativeFile, library.cqlContent);
+      if (library.id === focusedId) activeFile = relativeFile;
+    }
+    if (!activeFile) {
+      activeFile = Object.keys(manifest.files).find(file => file.startsWith('libraries/')) ?? '';
+      if (activeFile) manifest.activeLibraryId = manifest.files[activeFile]?.libraryId ?? '';
+    }
 
     for (const dependency of input.dependencies ?? []) {
-      if (!dependency.cqlContent.trim() || dependency.id === input.activeLibrary.id) continue;
-      const dependencyName = uniqueFile(dependency.name, dependency.id);
+      if (!dependency.cqlContent.trim() || writableIds.has(dependency.id)) continue;
+      const dependencyName = uniqueCqlFileName(dependency.name, dependency.id, usedNames);
       const relativeFile = `dependencies/${dependencyName}`;
-      const absoluteFile = path.join(directory, relativeFile);
-      await writeFile(absoluteFile, dependency.cqlContent, { encoding: 'utf8', mode: 0o400 });
+      await writeFile(path.join(directory, relativeFile), dependency.cqlContent, { encoding: 'utf8', mode: 0o400 });
       manifest.files[relativeFile] = {
         libraryId: dependency.id,
         name: dependency.name,
@@ -218,38 +295,81 @@ export class OpenCodeWorkspaceManager {
     }
     await chmod(dependenciesDirectory, 0o500);
 
+    await this.writeAgentInstructions(directory, activeFile, manifest);
+    await this.writeCommands(directory, commandsDirectory, validateVsacSkillDirectory, activeFile);
+    await this.writeOpenCodeConfig(directory, input, activeFile);
+    await writeFile(path.join(metadataDirectory, 'manifest.json'), JSON.stringify(manifest, null, 2), {
+      encoding: 'utf8',
+      mode: 0o400,
+    });
+
+    return {
+      id,
+      directory,
+      activeFile,
+      manifest,
+      baselineByFile,
+    };
+  }
+
+  private async writeAgentInstructions(
+    directory: string,
+    activeFile: string,
+    manifest: OpenCodeWorkspaceManifest
+  ): Promise<void> {
+    const writableFiles = Object.entries(manifest.files)
+      .filter(([, entry]) => entry.writable)
+      .map(([file]) => file);
+    const focusLine = activeFile
+      ? `The focused writable CQL library is \`${activeFile}\`.`
+      : 'There is currently no writable CQL library. Call the create-draft MCP tool to open a new draft in the IDE, then edit under `libraries/`.';
+    const writableList = writableFiles.length
+      ? `Writable libraries:\n${writableFiles.map(file => `- \`${file}\``).join('\n')}`
+      : 'Writable libraries: (none)';
     const agentInstructions = [
       '# CQL Studio OpenCode workspace',
       '',
-      `The active writable CQL library is \`${activeFile}\`.`,
+      focusLine,
+      writableList,
       'Files in `dependencies/` are reference-only and must not be edited.',
       'Only edit files under `libraries/`.',
+      `When no suitable open library exists, call \`${MCPToolNames.CQL_LIBRARY_CREATE_DRAFT}\` so CQL Studio can open a draft editor tab.`,
       'Preserve the CQL library name and version unless the user explicitly asks to change them.',
-      'When repairing CQL, treat the current CQL Studio Problems context as the initial diagnostic set and then run cql_validate after editing.',
-      'Before adding or changing a FHIR conversion helper call, read `dependencies/FHIRHelpers.cql` and use only a function declared there. Preserve the active library\'s existing FHIRHelpers alias, or add the 4.0.1 include when needed.',
+      `When repairing CQL, treat the current CQL Studio Problems context as the initial diagnostic set and then run ${MCPToolNames.CQL_VALIDATE} after editing.`,
+      'Before adding or changing a FHIR conversion helper call, read `dependencies/FHIRHelpers.cql` and use only a function declared there. Preserve each library\'s existing FHIRHelpers alias, or add the 4.0.1 include when needed.',
       'Never invent ValueSet, CodeSystem, or VSAC canonical URLs.',
       'Do not access paths outside this workspace and do not run destructive commands.',
       'CQL Studio will validate and review every file diff before saving it to FHIR.',
       '',
     ].join('\n');
-    await writeFile(path.join(directory, 'AGENTS.md'), agentInstructions, { encoding: 'utf8', mode: 0o400 });
+    const agentsPath = path.join(directory, 'AGENTS.md');
+    await chmod(agentsPath, 0o600).catch(() => undefined);
+    await writeFile(agentsPath, agentInstructions, { encoding: 'utf8', mode: 0o400 });
+  }
 
+  private async writeCommands(
+    directory: string,
+    commandsDirectory: string,
+    validateVsacSkillDirectory: string,
+    activeFile: string
+  ): Promise<void> {
+    const focusRef = activeFile || 'libraries/*.cql';
     const commands: Record<string, { description: string; template: string }> = {
       validate: {
-        description: 'Validate active CQL without editing',
-        template: `Validate @${activeFile} with ${MCPToolNames.CQL_VALIDATE}. Report errors and warnings with locations. Do not edit unless explicitly asked.`,
+        description: 'Validate writable CQL without editing',
+        template: `Validate ${activeFile ? `@${activeFile}` : 'all writable libraries under libraries/'} with ${MCPToolNames.CQL_VALIDATE}. Report errors and warnings with locations. Do not edit unless explicitly asked.`,
       },
       review: {
-        description: 'Validate and review active CQL',
-        template: `First validate @${activeFile} with ${MCPToolNames.CQL_VALIDATE}. Then review it for CQL correctness, clinical intent, dependency usage, terminology accuracy, and maintainability. Use the other read-only MCP tools when external context is needed. Do not edit unless explicitly asked.`,
+        description: 'Validate and review writable CQL',
+        template: `First validate ${activeFile ? `@${activeFile}` : 'writable libraries'} with ${MCPToolNames.CQL_VALIDATE}. Then review for CQL correctness, clinical intent, dependency usage, terminology accuracy, and maintainability. Use the other read-only MCP tools when external context is needed. Do not edit unless explicitly asked.`,
       },
       explain: {
-        description: 'Explain active CQL with an optional focus',
-        template: `Explain the requested CQL in @${activeFile} for a CQL author. Focus on: $ARGUMENTS`,
+        description: 'Explain CQL with an optional focus',
+        template: `Explain the requested CQL in ${activeFile ? `@${activeFile}` : 'the writable libraries'} for a CQL author. Focus on: $ARGUMENTS`,
       },
       dependencies: {
         description: 'Inspect includes and resolve dependency problems',
-        template: `Inspect @${activeFile} and the dependency files, then run ${MCPToolNames.CQL_VALIDATE}. Explain every include, missing or conflicting version, and dependency-related diagnostic. For an unresolved Library include, use ${MCPToolNames.CQL_LIBRARY_SEARCH} and ${MCPToolNames.CQL_LIBRARY_READ} against the configured read-only endpoints. Do not edit or save FHIR resources.`,
+        template: `Inspect ${activeFile ? `@${activeFile}` : 'writable libraries'} and the dependency files, then run ${MCPToolNames.CQL_VALIDATE}. Explain every include, missing or conflicting version, and dependency-related diagnostic. For an unresolved Library include, use ${MCPToolNames.CQL_LIBRARY_SEARCH} and ${MCPToolNames.CQL_LIBRARY_READ} against the configured read-only endpoints. Do not edit or save FHIR resources.`,
       },
       library: {
         description: 'Research read-only FHIR Library resources',
@@ -276,28 +396,30 @@ export class OpenCodeWorkspaceManager {
         template: `Research this terminology request using the configured read-only tools. Use ${MCPToolNames.VSAC_SEARCH} for VSAC discovery, ${MCPToolNames.VALIDATE_VSAC} only for an exact user-supplied or existing reference, ${MCPToolNames.VALUESET_EXPAND} for concepts, and ${MCPToolNames.FHIR_READ} or ${MCPToolNames.FHIR_SEARCH} for other configured terminology resources. Never guess a canonical URL or identifier: $ARGUMENTS`,
       },
       'validate-vsac': {
-        description: 'Validate VSAC references in active CQL or an exact URL/OID',
-        template: `Load the validate-vsac skill. Validate $ARGUMENTS when it contains an exact VSAC canonical URL or OID. When no argument is supplied, inspect @${activeFile} and validate every declared VSAC ValueSet reference. Report whether each reference is authoritative in VSAC and whether it is present on the configured terminology endpoint. Do not write any FHIR resource.`,
+        description: 'Validate VSAC references in writable CQL or an exact URL/OID',
+        template: `Load the validate-vsac skill. Validate $ARGUMENTS when it contains an exact VSAC canonical URL or OID. When no argument is supplied, inspect ${activeFile ? `@${activeFile}` : 'writable libraries'} and validate every declared VSAC ValueSet reference. Report whether each reference is authoritative in VSAC and whether it is present on the configured terminology endpoint. Do not write any FHIR resource.`,
       },
     };
-    await Promise.all(Object.entries(commands).map(([name, command]) =>
-      writeFile(
-        path.join(commandsDirectory, `${name}.md`),
+    await Promise.all(Object.entries(commands).map(async ([name, command]) => {
+      const commandPath = path.join(commandsDirectory, `${name}.md`);
+      await chmod(commandPath, 0o600).catch(() => undefined);
+      await writeFile(
+        commandPath,
         `---\ndescription: ${command.description}\n---\n${command.template}\n`,
         { encoding: 'utf8', mode: 0o400 }
-      )
-    ));
+      );
+    }));
 
     const validateVsacSkill = [
       '---',
       'name: validate-vsac',
-      'description: Validate exact VSAC ValueSet URLs or OIDs, and audit VSAC ValueSet declarations in the active CQL Library without guessing identifiers or modifying FHIR.',
+      'description: Validate exact VSAC ValueSet URLs or OIDs, and audit VSAC ValueSet declarations in writable CQL Libraries without guessing identifiers or modifying FHIR.',
       'compatibility: opencode',
       '---',
       '',
       '# Validate VSAC terminology',
       '',
-      `1. Read \`${activeFile}\` when no exact reference was supplied.`,
+      `1. Read \`${focusRef}\` when no exact reference was supplied.`,
       `2. For an exact canonical URL or OID supplied by the user or declared in CQL, call \`${MCPToolNames.VALIDATE_VSAC}\`.`,
       `3. If only a clinical name or topic is known, use \`${MCPToolNames.VSAC_SEARCH}\` for discovery instead of guessing an identifier.`,
       `4. Use \`${MCPToolNames.FHIR_SEARCH}\` with the terminology role and an exact canonical URL to determine whether a verified ValueSet is already present on the configured terminology server.`,
@@ -307,12 +429,20 @@ export class OpenCodeWorkspaceManager {
       'This skill is read-only. Never call a write endpoint, never invent or normalize a canonical URL, and never treat a general web search result as authoritative VSAC evidence.',
       '',
     ].join('\n');
+    const skillPath = path.join(validateVsacSkillDirectory, 'SKILL.md');
+    await chmod(skillPath, 0o600).catch(() => undefined);
     await writeFile(
-      path.join(validateVsacSkillDirectory, 'SKILL.md'),
+      skillPath,
       validateVsacSkill,
       { encoding: 'utf8', mode: 0o400 }
     );
+  }
 
+  private async writeOpenCodeConfig(
+    directory: string,
+    input: CreateOpenCodeSessionRequest,
+    activeFile: string
+  ): Promise<void> {
     const provider = providerFor(input);
     const providerId = providerIdFor(provider);
     const modelId = provider.model || input.ollamaModel;
@@ -321,10 +451,9 @@ export class OpenCodeWorkspaceManager {
     const providerConfigs = Object.fromEntries(configuredProviders.map(candidate => {
       const candidateId = providerIdFor(candidate);
       const candidateBaseUrl = candidate.type === 'ollama'
-        ? normalizeOllamaBaseUrl(candidate.baseUrl || input.ollamaBaseUrl)
+        ? normalizeOllamaBaseUrl(candidate.baseUrl || input.ollamaBaseUrl, this.rewriteLocalhost)
         : normalizeProviderBaseUrl(candidate.baseUrl || 'https://api.openai.com/v1');
       const candidateOptions: Record<string, unknown> = { baseURL: candidateBaseUrl };
-      // The documented provider configuration path for API-key authentication.
       if (candidate.apiKey?.trim()) candidateOptions.apiKey = candidate.apiKey.trim();
       const candidateModel = candidate.model || modelId;
       return [candidateId, {
@@ -351,11 +480,6 @@ export class OpenCodeWorkspaceManager {
       small_model: `${providerId}/${modelId}`,
       instructions: ['AGENTS.md'],
       permission: {
-        // OpenCode 1.18.x currently hides native edit/write tools when a granular
-        // catch-all deny is present, then applies that deny before a file-specific
-        // allow at call time. Filesystem modes are the authoritative boundary:
-        // the active file is 0600; dependencies, config, manifest, commands, and
-        // instructions are 0400. MCP tools remain read-only.
         edit: 'allow',
         bash: 'deny',
         webfetch: 'deny',
@@ -368,15 +492,15 @@ export class OpenCodeWorkspaceManager {
         mcp: {
           'cql-studio': {
             type: 'local',
-            command: [process.execPath, mcpBridgeExecutable()],
+            command: [process.execPath, mcpBridgeExecutable(import.meta.url, this.mcpBridgeBin)],
             environment: {
-              CQL_STUDIO_SERVER_MCP_BRIDGE_URL: input.toolBridge.baseUrl,
-              CQL_STUDIO_SERVER_MCP_CAPABILITY: input.toolBridge.capability,
-              CQL_STUDIO_SERVER_MCP_WORKSPACE: directory,
-              CQL_STUDIO_SERVER_MCP_ACTIVE_FILE: activeFile,
+              CQL_STUDIO_OPENCODE_MCP_BRIDGE_URL: input.toolBridge.baseUrl,
+              CQL_STUDIO_OPENCODE_MCP_CAPABILITY: input.toolBridge.capability,
+              CQL_STUDIO_OPENCODE_MCP_WORKSPACE: directory,
+              CQL_STUDIO_OPENCODE_MCP_ACTIVE_FILE: activeFile,
             },
             enabled: true,
-            timeout: 15_000,
+            timeout: 25_000,
           },
         },
       } : {}),
@@ -385,18 +509,6 @@ export class OpenCodeWorkspaceManager {
       encoding: 'utf8',
       mode: 0o400,
     });
-    await writeFile(path.join(metadataDirectory, 'manifest.json'), JSON.stringify(manifest, null, 2), {
-      encoding: 'utf8',
-      mode: 0o400,
-    });
-
-    return {
-      id,
-      directory,
-      activeFile,
-      manifest,
-      baselineByFile: new Map([[activeFile, input.activeLibrary.cqlContent]]),
-    };
   }
 
   async diff(workspace: MaterializedWorkspace): Promise<OpenCodeFileDiffDto[]> {
@@ -416,14 +528,143 @@ export class OpenCodeWorkspaceManager {
     return diffs;
   }
 
-  async syncActiveFile(workspace: MaterializedWorkspace, content: string): Promise<void> {
-    const absolute = this.resolveReference(workspace, workspace.activeFile);
+  async syncActiveFile(workspace: MaterializedWorkspace, content: string, libraryId?: string): Promise<void> {
+    const targetFile = libraryId
+      ? Object.entries(workspace.manifest.files).find(([, entry]) => entry.writable && entry.libraryId === libraryId)?.[0]
+      : workspace.activeFile;
+    if (!targetFile) throw new Error('No writable CQL library is available to synchronize');
+    const absolute = this.resolveReference(workspace, targetFile);
     await writeFile(absolute, content, { encoding: 'utf8', mode: 0o600 });
-    workspace.baselineByFile.set(workspace.activeFile, content);
+    workspace.baselineByFile.set(targetFile, content);
+  }
+
+  async syncWorkspace(
+    workspace: MaterializedWorkspace,
+    input: OpenCodeWorkspaceSyncRequest,
+    options: { allowRemove?: boolean } = {}
+  ): Promise<void> {
+    const allowRemove = options.allowRemove !== false;
+    const dependenciesDirectory = path.join(workspace.directory, 'dependencies');
+    await chmod(dependenciesDirectory, 0o700).catch(() => undefined);
+
+    const writableIds = new Set(input.libraries.map(library => library.id));
+    const focusedId = input.focusedLibraryId && writableIds.has(input.focusedLibraryId)
+      ? input.focusedLibraryId
+      : input.libraries[0]?.id;
+    const usedNames = new Set<string>();
+
+    const nextFiles: OpenCodeWorkspaceManifest['files'] = {};
+    const nextBaselines = new Map<string, string>();
+    let activeFile = '';
+
+    const existingByLibraryId = new Map(
+      Object.entries(workspace.manifest.files).map(([file, entry]) => [entry.libraryId, { file, entry }])
+    );
+
+    for (const library of input.libraries) {
+      if (!library.id || typeof library.cqlContent !== 'string') continue;
+      const existing = existingByLibraryId.get(library.id);
+      let relativeFile: string;
+      if (existing?.file.startsWith('libraries/')) {
+        relativeFile = existing.file;
+        usedNames.add(path.basename(relativeFile).toLowerCase());
+      } else {
+        relativeFile = `libraries/${uniqueCqlFileName(library.name, library.id, usedNames)}`;
+      }
+      await writeFile(path.join(workspace.directory, relativeFile), library.cqlContent, {
+        encoding: 'utf8',
+        mode: 0o600,
+      });
+      nextFiles[relativeFile] = {
+        libraryId: library.id,
+        name: library.name,
+        version: library.version,
+        canonicalUrl: library.canonicalUrl,
+        fhirVersionId: library.fhirVersionId,
+        sourceHash: sha256(library.originalContent ?? library.cqlContent),
+        draft: (library.originalContent ?? library.cqlContent) !== library.cqlContent,
+        writable: true,
+      };
+      nextBaselines.set(relativeFile, library.cqlContent);
+      if (library.id === focusedId) activeFile = relativeFile;
+    }
+
+    for (const dependency of input.dependencies ?? []) {
+      if (!dependency.cqlContent.trim() || writableIds.has(dependency.id)) continue;
+      const existing = existingByLibraryId.get(dependency.id);
+      let relativeFile: string;
+      if (existing?.file.startsWith('dependencies/') && !writableIds.has(dependency.id)) {
+        relativeFile = existing.file;
+        usedNames.add(path.basename(relativeFile).toLowerCase());
+      } else {
+        relativeFile = `dependencies/${uniqueCqlFileName(dependency.name, dependency.id, usedNames)}`;
+      }
+      await writeFile(path.join(workspace.directory, relativeFile), dependency.cqlContent, {
+        encoding: 'utf8',
+        mode: 0o400,
+      }).catch(async () => {
+        await chmod(path.join(workspace.directory, relativeFile), 0o600).catch(() => undefined);
+        await writeFile(path.join(workspace.directory, relativeFile), dependency.cqlContent, {
+          encoding: 'utf8',
+          mode: 0o400,
+        });
+      });
+      nextFiles[relativeFile] = {
+        libraryId: dependency.id,
+        name: dependency.name,
+        version: dependency.version,
+        canonicalUrl: dependency.canonicalUrl,
+        fhirVersionId: dependency.fhirVersionId,
+        sourceHash: sha256(dependency.originalContent ?? dependency.cqlContent),
+        draft: false,
+        writable: false,
+      };
+    }
+
+    if (!activeFile) {
+      activeFile = Object.keys(nextFiles).find(file => file.startsWith('libraries/')) ?? '';
+    }
+
+    if (allowRemove) {
+      for (const [file] of Object.entries(workspace.manifest.files)) {
+        if (nextFiles[file]) continue;
+        await rm(path.join(workspace.directory, file), { force: true }).catch(() => undefined);
+      }
+    }
+
+    workspace.manifest.files = nextFiles;
+    workspace.manifest.activeLibraryId = activeFile ? (nextFiles[activeFile]?.libraryId ?? '') : '';
+    workspace.activeFile = activeFile;
+    workspace.baselineByFile = nextBaselines;
+    await chmod(dependenciesDirectory, 0o500).catch(() => undefined);
+    await this.writeAgentInstructions(workspace.directory, activeFile, workspace.manifest);
+    const commandsDirectory = path.join(workspace.directory, '.opencode', 'commands');
+    const validateVsacSkillDirectory = path.join(workspace.directory, '.opencode', 'skills', 'validate-vsac');
+    await mkdir(commandsDirectory, { recursive: true, mode: 0o700 });
+    await mkdir(validateVsacSkillDirectory, { recursive: true, mode: 0o700 });
+    await this.writeCommands(workspace.directory, commandsDirectory, validateVsacSkillDirectory, activeFile);
+    const manifestPath = path.join(workspace.directory, '.cql-studio', 'manifest.json');
+    await chmod(manifestPath, 0o600).catch(() => undefined);
+    await writeFile(manifestPath, JSON.stringify(workspace.manifest, null, 2), { encoding: 'utf8', mode: 0o400 });
   }
 
   async readActiveFile(workspace: MaterializedWorkspace): Promise<string> {
+    if (!workspace.activeFile) return '';
     return readFile(this.resolveReference(workspace, workspace.activeFile), 'utf8');
+  }
+
+  async readFileContent(workspace: MaterializedWorkspace, relativeFile: string): Promise<string> {
+    return readFile(this.resolveReference(workspace, relativeFile), 'utf8');
+  }
+
+  fileForLibrary(workspace: MaterializedWorkspace, libraryId: string): string | undefined {
+    return Object.entries(workspace.manifest.files).find(([, entry]) => entry.libraryId === libraryId)?.[0];
+  }
+
+  writableLibraryIds(workspace: MaterializedWorkspace): string[] {
+    return Object.values(workspace.manifest.files)
+      .filter(entry => entry.writable)
+      .map(entry => entry.libraryId);
   }
 
   async addAttachment(workspace: MaterializedWorkspace, input: OpenCodeAttachmentInput): Promise<OpenCodeAttachmentDto> {
@@ -462,7 +703,7 @@ export class OpenCodeWorkspaceManager {
       let content: string;
       if (converted) {
         try {
-          const result = await execFileAsync(MARKITDOWN_BIN, [temporary], {
+          const result = await execFileAsync(this.markitdownBinPath, [temporary], {
             encoding: 'utf8',
             timeout: 30_000,
             maxBuffer: MAX_CONVERTED_BYTES,
@@ -537,11 +778,20 @@ export class OpenCodeWorkspaceManager {
     }
   }
 
-  isActiveFile(workspace: MaterializedWorkspace, candidate: string): boolean {
+  isWritableFile(workspace: MaterializedWorkspace, candidate: string): boolean {
     const normalized = candidate.replace(/\\/g, '/').replace(/^\.\//, '');
-    if (normalized === workspace.activeFile) return true;
+    const entry = workspace.manifest.files[normalized];
+    if (entry?.writable) return true;
     const absolute = path.resolve(workspace.directory, candidate);
-    return absolute === this.resolveReference(workspace, workspace.activeFile);
+    return Object.entries(workspace.manifest.files).some(([file, fileEntry]) => {
+      if (!fileEntry.writable) return false;
+      return absolute === this.resolveReference(workspace, file);
+    });
+  }
+
+  /** @deprecated Use isWritableFile. */
+  isActiveFile(workspace: MaterializedWorkspace, candidate: string): boolean {
+    return this.isWritableFile(workspace, candidate);
   }
 
   references(workspace: MaterializedWorkspace, query = '', limit = 30): Array<{ path: string; name: string; writable: boolean }> {
@@ -568,8 +818,11 @@ export class OpenCodeWorkspaceManager {
     activeFile: string;
     files: Array<{ path: string; content: string; writable: boolean }>;
   }> {
-    const activeFile = requestedFile || workspace.activeFile;
-    this.resolveReference(workspace, activeFile);
+    const activeFile = requestedFile || workspace.activeFile ||
+      Object.keys(workspace.manifest.files).find(file => workspace.manifest.files[file]?.writable) ||
+      Object.keys(workspace.manifest.files)[0] ||
+      '';
+    if (activeFile) this.resolveReference(workspace, activeFile);
     const files = await Promise.all(Object.entries(workspace.manifest.files).map(async ([file, entry]) => ({
       path: file,
       content: await readFile(this.resolveReference(workspace, file), 'utf8'),

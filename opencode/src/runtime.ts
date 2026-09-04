@@ -1,8 +1,10 @@
 // Author: Preston Lee
 
 import path from 'node:path';
+import { createRequire } from 'node:module';
+import { readFileSync, statSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { MCPToolNames } from '@cql-studio/core';
+import { MCPToolNames, normalizeOpenCodeLibraries } from '@cql-studio/core';
 import {
   createOpencode,
   createOpencodeClient,
@@ -17,6 +19,7 @@ import type {
   OpenCodeModelSwitchRequest,
   OpenCodeCommandDto,
   OpenCodeActiveFileSyncRequest,
+  OpenCodeWorkspaceSyncRequest,
   OpenCodeEventEnvelope,
   OpenCodeFileDiffDto,
   OpenCodeFileReferenceDto,
@@ -28,11 +31,63 @@ import type {
   OpenCodeSessionStateDto,
   OpenCodeValidationDto,
 } from '@cql-studio/core';
-import { normalizeOpenCodeError, OpenCodeError } from './errors.js';
+import { normalizeOpenCodeError, OpenCodeError, openCodeResumeTranscript } from '@cql-studio/core';
+import type { OpenCodeEnv } from './config/env.js';
+import { loadEnv } from './config/env.js';
+import { OpenCodeExitCode, OpenCodeFatalError } from './fatal.js';
 import { openCodeLogger } from './logger.js';
-import { OpenCodeWorkspaceManager, providerFor, providerIdFor, type MaterializedWorkspace } from './workspace.js';
-import { openCodeResumeTranscript } from './session-history.js';
-export { openCodeResumeTranscript } from './session-history.js';
+import {
+  assertMarkitdownAvailable,
+  OpenCodeWorkspaceManager,
+  providerFor,
+  providerIdFor,
+  type MaterializedWorkspace,
+} from './workspace.js';
+export { openCodeResumeTranscript } from '@cql-studio/core';
+
+const require = createRequire(import.meta.url);
+
+/**
+ * Fail fast when the opencode-ai CLI was never installed (common after
+ * --ignore-scripts) so startup exits with a clear UNAVAILABLE message instead
+ * of an opaque spawn ENOEXEC from createOpencode.
+ */
+export function assertOpenCodeCliAvailable(): void {
+  let packageJson: string;
+  try {
+    packageJson = require.resolve('opencode-ai/package.json');
+  } catch {
+    throw new OpenCodeFatalError(
+      'The opencode-ai package is not installed. Run npm install from the monorepo root.',
+      OpenCodeExitCode.UNAVAILABLE
+    );
+  }
+  const binPath = path.join(path.dirname(packageJson), 'bin', 'opencode.exe');
+  let size = 0;
+  try {
+    size = statSync(binPath).size;
+  } catch {
+    throw new OpenCodeFatalError(
+      `The opencode CLI binary is missing at ${binPath}. Reinstall opencode-ai or run: node node_modules/opencode-ai/postinstall.mjs`,
+      OpenCodeExitCode.UNAVAILABLE
+    );
+  }
+  // The published package ships a tiny shell stub until postinstall replaces it.
+  if (size < 10_000) {
+    let head = '';
+    try {
+      head = readFileSync(binPath).subarray(0, 200).toString('utf8');
+    } catch {
+      head = '';
+    }
+    if (head.includes('postinstall script was not run') || size < 2_000) {
+      throw new OpenCodeFatalError(
+        'opencode-ai postinstall did not install the native CLI binary. Fix: node node_modules/opencode-ai/postinstall.mjs (or reinstall without --ignore-scripts).',
+        OpenCodeExitCode.UNAVAILABLE
+      );
+    }
+  }
+}
 
 type RuntimeEvent = Event | { type: string; properties: Record<string, unknown> };
 type EventListener = (event: OpenCodeEventEnvelope) => void;
@@ -50,8 +105,9 @@ interface RuntimeSession {
   toolBridge?: { baseUrl: string; capability: string };
   stallTimer?: NodeJS.Timeout;
   stallGeneration: number;
-  browserRevision: number;
-  lastWorkspaceContent: string;
+  browserRevisions: Map<string, number>;
+  lastWorkspaceContentByFile: Map<string, string>;
+  pendingWorkspaceSync?: OpenCodeWorkspaceSyncRequest;
   attachments: Map<string, OpenCodeAttachmentDto>;
   seedMessages: unknown[];
 }
@@ -118,16 +174,28 @@ export function openCodeToolsForPrompt(input: Pick<OpenCodePromptRequest,
 }
 
 export class OpenCodeRuntime {
-  private readonly workspaces = new OpenCodeWorkspaceManager();
+  private readonly env: OpenCodeEnv;
+  private readonly workspaces: OpenCodeWorkspaceManager;
   private readonly sessions = new Map<string, RuntimeSession>();
   private server: Awaited<ReturnType<typeof createOpencode>> | null = null;
   private cleanupTimer: NodeJS.Timeout | null = null;
-  private readonly idleMs = Number.parseInt(process.env.CQL_STUDIO_SERVER_OPENCODE_SESSION_IDLE_MS || '3600000', 10);
-  private readonly cleanupMs = Number.parseInt(process.env.CQL_STUDIO_SERVER_OPENCODE_CLEANUP_INTERVAL_MS || '60000', 10);
+  private readonly idleMs: number;
+  private readonly cleanupMs: number;
   // Ollama can spend time loading a cold model, but a request must not leave
   // the browser spinning indefinitely when the provider never produces an event.
   // Deployments with slower hardware can override this value explicitly.
-  private readonly providerStallMs = Number.parseInt(process.env.CQL_STUDIO_SERVER_OPENCODE_PROVIDER_STALL_MS || '180000', 10);
+  private readonly providerStallMs: number;
+
+  constructor(env: OpenCodeEnv = loadEnv()) {
+    this.env = env;
+    this.workspaces = new OpenCodeWorkspaceManager(env.workspaceRoot, {
+      rewriteLocalhost: env.rewriteLocalhost,
+      mcpBridgeBin: env.mcpBridgeBin,
+    });
+    this.idleMs = env.sessionIdleMs;
+    this.cleanupMs = env.cleanupIntervalMs;
+    this.providerStallMs = env.providerStallMs;
+  }
 
   private modelFor(session: RuntimeSession): { providerID: string; modelID: string; model: string } {
     const separator = session.dto.model.indexOf('/');
@@ -138,13 +206,36 @@ export class OpenCodeRuntime {
   }
 
   async initialize(): Promise<void> {
-    await this.workspaces.initialize();
-    this.server = await createOpencode({
-      hostname: '127.0.0.1',
-      port: Number.parseInt(process.env.CQL_STUDIO_SERVER_OPENCODE_INTERNAL_PORT || '4096', 10),
-      timeout: 20_000,
-      config: { autoupdate: false, share: 'disabled', logLevel: 'WARN' },
-    });
+    try {
+      await this.workspaces.initialize();
+    } catch (error) {
+      if (error instanceof OpenCodeFatalError) throw error;
+      const detail = error instanceof Error ? error.message : String(error);
+      throw new OpenCodeFatalError(
+        `Failed to initialize OpenCode workspace root at "${this.env.workspaceRoot}": ${detail}`,
+        OpenCodeExitCode.OSERR
+      );
+    }
+    assertOpenCodeCliAvailable();
+    this.workspaces.useMarkitdownBin(assertMarkitdownAvailable());
+    try {
+      this.server = await createOpencode({
+        hostname: '127.0.0.1',
+        port: this.env.internalPort,
+        timeout: 20_000,
+        config: { autoupdate: false, share: 'disabled', logLevel: 'WARN' },
+      });
+    } catch (error) {
+      if (error instanceof OpenCodeFatalError) throw error;
+      const detail = error instanceof Error ? error.message : String(error);
+      const hint = /ENOENT|ENOEXEC|not found/i.test(detail)
+        ? ' Ensure the opencode CLI is on PATH (npm installs it under node_modules/.bin) and that opencode-ai postinstall completed.'
+        : '';
+      throw new OpenCodeFatalError(
+        `Failed to start embedded OpenCode server on 127.0.0.1:${this.env.internalPort}: ${detail}.${hint}`,
+        OpenCodeExitCode.UNAVAILABLE
+      );
+    }
     this.cleanupTimer = setInterval(() => void this.removeExpired(), this.cleanupMs);
     this.cleanupTimer.unref();
   }
@@ -159,7 +250,8 @@ export class OpenCodeRuntime {
 
   async create(input: CreateOpenCodeSessionRequest): Promise<OpenCodeSessionDto> {
     if (!this.server) throw new OpenCodeError('RUNNER_UNAVAILABLE', 'OpenCode runtime is not initialized', 503, true);
-    const workspace = await this.workspaces.create(input);
+    const libraries = normalizeOpenCodeLibraries(input);
+    const workspace = await this.workspaces.create({ ...input, libraries });
     try {
       const client = createOpencodeClient({
         baseUrl: this.server.server.url,
@@ -169,20 +261,26 @@ export class OpenCodeRuntime {
       const provider = providerFor(input);
       const providerId = providerIdFor(provider);
       const modelId = provider.model || input.ollamaModel;
+      const title = input.title
+        || (libraries.length === 1 ? libraries[0].name : undefined)
+        || (libraries.length > 1 ? `${libraries.length} libraries in CQL Studio` : undefined)
+        || 'CQL Studio';
       const created = await client.session.create({
-        title: input.title || input.activeLibrary.name,
+        title,
         model: { id: modelId, providerID: providerId, variant: 'fast' },
       });
       const openCodeSession = created.data;
       if (!openCodeSession) throw new Error('OpenCode did not return a session');
       const now = new Date();
+      const libraryIds = this.workspaces.writableLibraryIds(workspace);
       const dto: OpenCodeSessionDto = {
         id: workspace.id,
         openCodeSessionId: openCodeSession.id,
-        title: input.title || input.activeLibrary.name,
+        title,
         status: 'idle',
-        activeLibraryId: input.activeLibrary.id,
-        activeFile: workspace.activeFile,
+        activeLibraryId: workspace.manifest.activeLibraryId || undefined,
+        activeFile: workspace.activeFile || undefined,
+        libraryIds,
         createdAt: input.resume?.createdAt ?? now.toISOString(),
         updatedAt: now.toISOString(),
         lastActivityAt: now.toISOString(),
@@ -190,6 +288,15 @@ export class OpenCodeRuntime {
         model: `${providerId}/${modelId}`,
         reasoningEnabled: false,
       };
+      const browserRevisions = new Map<string, number>();
+      const lastWorkspaceContentByFile = new Map<string, string>();
+      for (const [file, content] of workspace.baselineByFile) {
+        const libraryId = workspace.manifest.files[file]?.libraryId;
+        if (libraryId) {
+          browserRevisions.set(libraryId, 0);
+          lastWorkspaceContentByFile.set(file, content);
+        }
+      }
       const runtime: RuntimeSession = {
         dto,
         workspace,
@@ -201,8 +308,8 @@ export class OpenCodeRuntime {
         validation: null,
         validationPending: false,
         stallGeneration: 0,
-        browserRevision: 0,
-        lastWorkspaceContent: input.activeLibrary.cqlContent,
+        browserRevisions,
+        lastWorkspaceContentByFile,
         attachments: new Map(),
         toolBridge: input.toolBridge,
         seedMessages: input.resume?.messages ?? [],
@@ -220,7 +327,7 @@ export class OpenCodeRuntime {
       }
       this.sessions.set(dto.id, runtime);
       void this.pumpEvents(runtime);
-      openCodeLogger.info({ operation: 'session.create', sessionId: dto.id, activeLibraryId: dto.activeLibraryId }, 'OpenCode session created');
+      openCodeLogger.info({ operation: 'session.create', sessionId: dto.id, libraryIds: dto.libraryIds }, 'OpenCode session created');
       return dto;
     } catch (error) {
       await this.workspaces.remove(workspace);
@@ -240,21 +347,28 @@ export class OpenCodeRuntime {
 
   async prompt(id: string, input: OpenCodePromptRequest): Promise<void> {
     const session = this.get(id);
-    if (input.editorContext && input.editorContext.file !== session.workspace.activeFile) {
-      throw new OpenCodeError('INVALID_EDITOR_CONTEXT', 'Editor context does not match the active CQL file', 400, false);
+    const writableFiles = new Set(
+      Object.entries(session.workspace.manifest.files)
+        .filter(([, entry]) => entry.writable)
+        .map(([file]) => file)
+    );
+    if (input.editorContext && !writableFiles.has(input.editorContext.file)) {
+      throw new OpenCodeError('INVALID_EDITOR_CONTEXT', 'Editor context does not match a writable CQL library', 400, false);
     }
     const lightweightConversation = isLightweightOpenCodeConversation(input);
     const ideDiagnostics = lightweightConversation ? undefined : input.ideDiagnostics;
-    if (ideDiagnostics && (
-      ideDiagnostics.libraryId !== session.dto.activeLibraryId
-      || ideDiagnostics.documentRevision !== session.browserRevision
-    )) {
-      throw new OpenCodeError(
-        'STALE_IDE_DIAGNOSTICS',
-        'The IDE Problems context does not match the synchronized active CQL document',
-        409,
-        true
-      );
+    if (ideDiagnostics) {
+      const expectedRevision = session.browserRevisions.get(ideDiagnostics.libraryId);
+      const file = this.workspaces.fileForLibrary(session.workspace, ideDiagnostics.libraryId);
+      const writable = file ? session.workspace.manifest.files[file]?.writable : false;
+      if (!writable || expectedRevision === undefined || ideDiagnostics.documentRevision !== expectedRevision) {
+        throw new OpenCodeError(
+          'STALE_IDE_DIAGNOSTICS',
+          'The IDE Problems context does not match a synchronized writable CQL document',
+          409,
+          true
+        );
+      }
     }
     this.touch(session);
     session.dto.status = 'busy';
@@ -278,10 +392,11 @@ export class OpenCodeRuntime {
       });
     }
     if (ideDiagnostics?.diagnostics.length) {
+      const diagnosticsFile = this.workspaces.fileForLibrary(session.workspace, ideDiagnostics.libraryId) || session.workspace.activeFile;
       const diagnostics = ideDiagnostics.diagnostics.slice(0, 100).map(item => ({
         severity: item.severity,
         message: item.message.slice(0, 2_000),
-        file: session.workspace.activeFile,
+        file: diagnosticsFile,
         line: item.line,
         column: item.column,
       }));
@@ -289,7 +404,7 @@ export class OpenCodeRuntime {
       parts.push({
         type: 'text',
         text: [
-          `<cql-studio-problems-context library="${session.dto.activeLibraryId}" revision="${session.browserRevision}">`,
+          `<cql-studio-problems-context library="${ideDiagnostics.libraryId}" revision="${ideDiagnostics.documentRevision}">`,
           serialized,
           '</cql-studio-problems-context>',
           'These are the current diagnostics shown in the CQL Studio Problems tab. Use them as the initial repair target, then run cql_validate after editing.',
@@ -322,9 +437,6 @@ export class OpenCodeRuntime {
       const absolute = path.join(session.workspace.directory, attachment.path);
       parts.push({
         type: 'file',
-        // Every accepted non-converted attachment has already been validated
-        // and materialized as UTF-8 text. Normalize its provider-facing MIME
-        // type so uncommon extensions are not mistaken for binary content.
         mime: openCodeAttachmentMimeType(attachment.converted),
         filename: attachment.converted ? `${attachment.name}.md` : attachment.name,
         url: pathToFileURL(absolute).href,
@@ -482,15 +594,80 @@ export class OpenCodeRuntime {
       throw new OpenCodeError('SESSION_BUSY', 'Wait for OpenCode to finish before synchronizing the editor', 409, true);
     }
     if (Buffer.byteLength(input.content, 'utf8') > 1_048_576) {
-      throw new OpenCodeError('ACTIVE_FILE_TOO_LARGE', 'The active CQL file exceeds the 1 MiB OpenCode limit', 413, false);
+      throw new OpenCodeError('ACTIVE_FILE_TOO_LARGE', 'The CQL file exceeds the 1 MiB OpenCode limit', 413, false);
     }
-    const contentChanged = input.content !== session.lastWorkspaceContent;
-    await this.workspaces.syncActiveFile(session.workspace, input.content);
-    session.browserRevision = Math.max(0, Math.trunc(input.documentRevision));
-    session.lastWorkspaceContent = input.content;
+    const libraryId = input.libraryId || session.dto.activeLibraryId;
+    const file = libraryId
+      ? this.workspaces.fileForLibrary(session.workspace, libraryId)
+      : session.workspace.activeFile;
+    if (!file) throw new OpenCodeError('INVALID_ACTIVE_FILE', 'No writable CQL library is available to synchronize', 400, false);
+    const previous = session.lastWorkspaceContentByFile.get(file);
+    const contentChanged = input.content !== previous;
+    await this.workspaces.syncActiveFile(session.workspace, input.content, libraryId);
+    if (libraryId) session.browserRevisions.set(libraryId, Math.max(0, Math.trunc(input.documentRevision)));
+    session.lastWorkspaceContentByFile.set(file, input.content);
     if (contentChanged) session.validation = null;
-    // Browser content establishes the baseline for the next AI turn. Automatic
-    // validation is reserved for changes OpenCode subsequently makes.
+    session.validationPending = false;
+    this.touch(session);
+  }
+
+  async syncWorkspace(id: string, input: OpenCodeWorkspaceSyncRequest): Promise<OpenCodeSessionDto> {
+    const session = this.get(id);
+    if (session.dto.status === 'busy') {
+      session.pendingWorkspaceSync = input;
+      this.touch(session);
+      return session.dto;
+    }
+    await this.applyWorkspaceSync(session, input);
+    return session.dto;
+  }
+
+  private async applyWorkspaceSync(session: RuntimeSession, input: OpenCodeWorkspaceSyncRequest): Promise<void> {
+    for (const library of input.libraries) {
+      if (Buffer.byteLength(library.cqlContent, 'utf8') > 1_048_576) {
+        throw new OpenCodeError('ACTIVE_FILE_TOO_LARGE', `Library ${library.name} exceeds the 1 MiB OpenCode limit`, 413, false);
+      }
+    }
+    const pendingDiffs = await this.workspaces.diff(session.workspace);
+    const pendingLibraryIds = new Set(pendingDiffs.map(diff => diff.libraryId));
+    const nextWritableIds = new Set(input.libraries.map(library => library.id));
+    const protectedIds = [...pendingLibraryIds].filter(libraryId => !nextWritableIds.has(libraryId));
+    if (protectedIds.length) {
+      // Keep libraries with outstanding runner diffs writable until the user discards/applies them.
+      for (const libraryId of protectedIds) {
+        const file = this.workspaces.fileForLibrary(session.workspace, libraryId);
+        const entry = file ? session.workspace.manifest.files[file] : undefined;
+        if (!file || !entry) continue;
+        const content = session.lastWorkspaceContentByFile.get(file)
+          ?? await this.workspaces.readFileContent(session.workspace, file);
+        input.libraries.push({
+          id: libraryId,
+          name: entry.name,
+          version: entry.version,
+          canonicalUrl: entry.canonicalUrl,
+          fhirVersionId: entry.fhirVersionId,
+          cqlContent: content,
+          originalContent: content,
+        });
+        nextWritableIds.add(libraryId);
+      }
+    }
+    await this.workspaces.syncWorkspace(session.workspace, input, { allowRemove: true });
+    session.dto.libraryIds = this.workspaces.writableLibraryIds(session.workspace);
+    session.dto.activeLibraryId = session.workspace.manifest.activeLibraryId || undefined;
+    session.dto.activeFile = session.workspace.activeFile || undefined;
+    const nextRevisions = new Map<string, number>();
+    const nextContents = new Map<string, string>();
+    for (const [file, entry] of Object.entries(session.workspace.manifest.files)) {
+      if (!entry.writable) continue;
+      const revision = input.revisions?.[entry.libraryId] ?? session.browserRevisions.get(entry.libraryId) ?? 0;
+      nextRevisions.set(entry.libraryId, Math.max(0, Math.trunc(revision)));
+      nextContents.set(file, session.workspace.baselineByFile.get(file) ?? '');
+    }
+    session.browserRevisions = nextRevisions;
+    session.lastWorkspaceContentByFile = nextContents;
+    session.pendingWorkspaceSync = undefined;
+    session.validation = null;
     session.validationPending = false;
     this.touch(session);
   }
@@ -633,16 +810,20 @@ export class OpenCodeRuntime {
         if (eventSessionId && eventSessionId !== session.dto.openCodeSessionId) continue;
         if ((typed.type === 'file.edited' || typed.type === 'file.watcher.updated') &&
             typeof properties['file'] === 'string' &&
-            this.workspaces.isActiveFile(session.workspace, properties['file'])) {
-          await this.emitWorkspaceChange(session);
+            this.workspaces.isWritableFile(session.workspace, properties['file'])) {
+          await this.emitWorkspaceChange(session, properties['file']);
         }
         if (typed.type === 'session.status') {
           session.dto.status = properties['status']?.type === 'busy' ? 'busy' : 'idle';
-          if (session.dto.status === 'idle') this.clearStallTimer(session);
+          if (session.dto.status === 'idle') {
+            this.clearStallTimer(session);
+            await this.flushPendingWorkspaceSync(session);
+          }
         } else if (typed.type === 'session.idle') {
           session.dto.status = 'idle';
           this.clearStallTimer(session);
           this.touch(session);
+          await this.flushPendingWorkspaceSync(session);
         } else if (typed.type === 'session.error') {
           session.dto.status = 'error';
           this.clearStallTimer(session);
@@ -665,19 +846,39 @@ export class OpenCodeRuntime {
     }
   }
 
-  private async emitWorkspaceChange(session: RuntimeSession): Promise<void> {
-    const content = await this.workspaces.readActiveFile(session.workspace);
-    if (content === session.lastWorkspaceContent) return;
-    session.lastWorkspaceContent = content;
+  private async flushPendingWorkspaceSync(session: RuntimeSession): Promise<void> {
+    const pending = session.pendingWorkspaceSync;
+    if (!pending || session.dto.status === 'busy') return;
+    try {
+      await this.applyWorkspaceSync(session, pending);
+    } catch (error) {
+      this.emit(session, {
+        type: 'runner.error',
+        properties: {
+          message: error instanceof Error ? error.message : String(error),
+          code: 'WORKSPACE_SYNC_FAILED',
+          retryable: true,
+        },
+      });
+    }
+  }
+
+  private async emitWorkspaceChange(session: RuntimeSession, relativeFile?: string): Promise<void> {
+    const file = relativeFile?.replace(/\\/g, '/').replace(/^\.\//, '') || session.workspace.activeFile;
+    if (!file || !session.workspace.manifest.files[file]?.writable) return;
+    const content = await this.workspaces.readFileContent(session.workspace, file);
+    if (content === session.lastWorkspaceContentByFile.get(file)) return;
+    session.lastWorkspaceContentByFile.set(file, content);
     session.validation = null;
     session.validationPending = true;
+    const libraryId = session.workspace.manifest.files[file].libraryId;
     this.emit(session, {
       type: 'cql.workspace.changed',
       properties: {
-        file: session.workspace.activeFile,
-        libraryId: session.dto.activeLibraryId,
+        file,
+        libraryId,
         content,
-        baseRevision: session.browserRevision,
+        baseRevision: session.browserRevisions.get(libraryId) ?? 0,
       },
     });
     if (session.dto.status !== 'busy') this.validatePendingWorkspace(session);
@@ -713,7 +914,7 @@ export class OpenCodeRuntime {
         type: 'runner.error',
         properties: {
           code: 'OLLAMA_STALLED',
-          message: `The AI provider produced no progress for ${Math.round(this.providerStallMs / 1000)} seconds. The request was stopped; retry after the model finishes loading or increase CQL_STUDIO_SERVER_OPENCODE_PROVIDER_STALL_MS.`,
+          message: `The AI provider produced no progress for ${Math.round(this.providerStallMs / 1000)} seconds. The request was stopped; retry after the model finishes loading or increase CQL_STUDIO_OPENCODE_PROVIDER_STALL_MS.`,
           retryable: true,
         },
       });

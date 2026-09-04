@@ -29,6 +29,7 @@ test('gateway strips browser-only context and retains trusted local Workspace or
     status: 'idle' as const,
     activeLibraryId: 'library-1',
     activeFile: 'libraries/Test.cql',
+    libraryIds: ['library-1'],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     lastActivityAt: new Date().toISOString(),
@@ -83,7 +84,7 @@ test('gateway strips browser-only context and retains trusted local Workspace or
     opencodeEnabled: true,
     opencodeRunnerUrl: baseUrl(runnerServer),
     opencodeRunnerToken: 'test-runner-token',
-    opencodeToolBridgeUrl: 'http://host.docker.internal:3003/api/opencode/tool-bridge',
+    opencodeToolBridgeUrl: 'http://127.0.0.1:3003/api/opencode/tool-bridge',
     opencodeSessionIdleMs: 60_000,
     opencodeCleanupIntervalMs: 60_000,
     opencodeMaxSessionsPerUser: 0,
@@ -132,8 +133,11 @@ test('gateway strips browser-only context and retains trusted local Workspace or
   assert.equal('environment' in runnerInput, false);
   assert.equal('toolContext' in runnerInput, false);
   assert.equal('resume' in runnerInput, false);
-  const activeLibrary = runnerInput['activeLibrary'] as Record<string, unknown>;
-  assert.equal('workspaceOrigin' in activeLibrary, false);
+  const libraries = runnerInput['libraries'] as Array<Record<string, unknown>>;
+  assert.equal(Array.isArray(libraries), true);
+  assert.equal(libraries.length, 1);
+  assert.equal(libraries[0]['id'], 'library-1');
+  assert.equal('workspaceOrigin' in libraries[0], false);
   const bridge = runnerInput['toolBridge'] as { baseUrl: string; capability: string };
   assert.equal(bridge.baseUrl, env.opencodeToolBridgeUrl);
   assert.notEqual(bridge.capability, 'attacker');
@@ -173,4 +177,172 @@ test('gateway strips browser-only context and retains trusted local Workspace or
     { method: 'POST' }
   );
   assert.equal(archiveResponse.status, 204);
+});
+
+test('gateway DELETE /sessions removes every live session owned by the caller', async t => {
+  const deletedRunnerIds: string[] = [];
+  const runnerSession = {
+    id: 'runner-session-purge',
+    openCodeSessionId: 'opencode-session-purge',
+    title: 'Purge test',
+    status: 'idle' as const,
+    activeLibraryId: 'library-1',
+    activeFile: 'libraries/Test.cql',
+    libraryIds: ['library-1'],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    lastActivityAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    model: 'ollama/test',
+    reasoningEnabled: false,
+  };
+
+  const runner = express();
+  runner.use(express.json({ limit: '20mb' }));
+  runner.delete('/sessions', (_req, res) => res.status(204).send());
+  runner.post('/sessions', (_req, res) => {
+    res.status(201).json(runnerSession);
+  });
+  runner.delete('/sessions/:id', (req, res) => {
+    deletedRunnerIds.push(req.params.id);
+    res.status(204).send();
+  });
+  const runnerServer = await listen(runner);
+  t.after(() => runnerServer.close());
+
+  const env: ServerEnv = {
+    port: 3003,
+    nodeEnv: 'development',
+    logLevel: 'silent',
+    corsOrigin: 'http://localhost:4200',
+    uiBaseUrl: 'http://localhost:4200',
+    ssoIssuerUrl: '',
+    ssoClientId: '',
+    ssoClientSecret: '',
+    ssoClientSecretPrevious: [],
+    ssoRedirectUrl: '',
+    ssoScopes: 'openid profile email',
+    sessionSecret: '',
+    sessionSecrets: [],
+    databaseUrl: '',
+    opencodeEnabled: true,
+    opencodeRunnerUrl: baseUrl(runnerServer),
+    opencodeRunnerToken: 'test-runner-token',
+    opencodeToolBridgeUrl: 'http://127.0.0.1:3003/api/opencode/tool-bridge',
+    opencodeSessionIdleMs: 60_000,
+    opencodeCleanupIntervalMs: 60_000,
+    opencodeMaxSessionsPerUser: 0,
+    opencodeMaxSessionsGlobal: 0,
+    cqlAssetsDirectory: undefined,
+    cqlAssetsUrl: 'http://localhost:4200/cql',
+  };
+
+  const gateway = express();
+  gateway.use(express.json({ limit: '20mb' }));
+  gateway.use('/api/opencode', createOpenCodeGateway(env));
+  const gatewayServer = await listen(gateway);
+  t.after(() => gatewayServer.close());
+
+  const createResponse = await fetch(`${baseUrl(gatewayServer)}/api/opencode/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      provider: { type: 'ollama', model: 'test', baseUrl: 'http://localhost:11434' },
+      ollamaBaseUrl: 'http://localhost:11434',
+      ollamaModel: 'test',
+      activeLibrary: {
+        id: 'library-1',
+        name: 'Test',
+        cqlContent: "library Test version '1.0.0'",
+      },
+      dependencies: [],
+    }),
+  });
+  assert.equal(createResponse.status, 201);
+  const created = await createResponse.json() as { id: string };
+  assert.equal(created.id, 'runner-session-purge');
+
+  const listBefore = await fetch(`${baseUrl(gatewayServer)}/api/opencode/sessions`);
+  assert.equal(listBefore.status, 200);
+  assert.equal(((await listBefore.json()) as unknown[]).length, 1);
+
+  const deleteResponse = await fetch(`${baseUrl(gatewayServer)}/api/opencode/sessions`, {
+    method: 'DELETE',
+  });
+  assert.equal(deleteResponse.status, 200);
+  assert.deepEqual(await deleteResponse.json(), { deleted: 1 });
+  assert.deepEqual(deletedRunnerIds, ['runner-session-purge']);
+
+  const listAfter = await fetch(`${baseUrl(gatewayServer)}/api/opencode/sessions`);
+  assert.equal(listAfter.status, 200);
+  assert.deepEqual(await listAfter.json(), []);
+});
+
+test('gateway health and session create stay graceful when the runner is down', async t => {
+  const env: ServerEnv = {
+    port: 3003,
+    nodeEnv: 'development',
+    logLevel: 'silent',
+    corsOrigin: 'http://localhost:4200',
+    uiBaseUrl: 'http://localhost:4200',
+    ssoIssuerUrl: '',
+    ssoClientId: '',
+    ssoClientSecret: '',
+    ssoClientSecretPrevious: [],
+    ssoRedirectUrl: '',
+    ssoScopes: 'openid profile email',
+    sessionSecret: '',
+    sessionSecrets: [],
+    databaseUrl: '',
+    opencodeEnabled: true,
+    opencodeRunnerUrl: 'http://127.0.0.1:1',
+    opencodeRunnerToken: 'test-runner-token',
+    opencodeToolBridgeUrl: 'http://127.0.0.1:3003/api/opencode/tool-bridge',
+    opencodeSessionIdleMs: 60_000,
+    opencodeCleanupIntervalMs: 60_000,
+    opencodeMaxSessionsPerUser: 0,
+    opencodeMaxSessionsGlobal: 0,
+    cqlAssetsDirectory: undefined,
+    cqlAssetsUrl: 'http://localhost:4200/cql',
+  };
+
+  const gateway = express();
+  gateway.use(express.json({ limit: '20mb' }));
+  gateway.use('/api/opencode', createOpenCodeGateway(env));
+  const gatewayServer = await listen(gateway);
+  t.after(() => gatewayServer.close());
+
+  const healthResponse = await fetch(`${baseUrl(gatewayServer)}/api/opencode/health`);
+  assert.equal(healthResponse.status, 503);
+  const health = await healthResponse.json() as {
+    healthy: boolean;
+    code: string;
+    message: string;
+    retryable: boolean;
+  };
+  assert.equal(health.healthy, false);
+  assert.equal(health.code, 'RUNNER_UNAVAILABLE');
+  assert.equal(health.retryable, true);
+  assert.match(health.message, /unavailable/i);
+
+  const createResponse = await fetch(`${baseUrl(gatewayServer)}/api/opencode/sessions`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      provider: { type: 'ollama', model: 'test', baseUrl: 'http://localhost:11434' },
+      ollamaBaseUrl: 'http://localhost:11434',
+      ollamaModel: 'test',
+      activeLibrary: {
+        id: 'library-1',
+        name: 'Test',
+        cqlContent: "library Test version '1.0.0'",
+      },
+      dependencies: [],
+    }),
+  });
+  assert.equal(createResponse.status, 503);
+  const created = await createResponse.json() as { code: string; message: string; retryable: boolean };
+  assert.equal(created.code, 'RUNNER_UNAVAILABLE');
+  assert.equal(created.retryable, true);
+  assert.match(created.message, /unavailable/i);
 });

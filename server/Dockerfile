@@ -1,5 +1,5 @@
 # Build from the monorepo root:
-#   docker build -f server/Dockerfile -t p3000/cql-studio-server:latest .
+#   docker build -f server/Dockerfile -t hlseven/quality-cql-studio-server:latest .
 
 FROM node:26-alpine AS builder
 LABEL maintainer="Preston Lee"
@@ -12,6 +12,7 @@ COPY core/src ./core/src
 COPY server/package.json server/tsconfig.json server/prisma.config.ts ./server/
 COPY server/prisma ./server/prisma
 COPY server/src ./server/src
+COPY opencode/package.json ./opencode/
 COPY ui/package.json ./ui/
 
 RUN npm ci --workspace=@cql-studio/server --workspace=@cql-studio/core --include-workspace-root

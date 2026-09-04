@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-import {Component, ChangeDetectionStrategy, OnInit, computed, inject, signal} from '@angular/core';
+import {Component, ChangeDetectionStrategy, OnInit, computed, effect, inject, signal} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -61,6 +61,7 @@ export class TeamWorkspacesComponent implements OnInit {
 
   private detailLoadToken = 0;
   private sessionLoadToken = 0;
+  private lastSessionsEpoch = 0;
 
   readonly workspaces = signal<Workspace[]>([]);
   readonly teams = signal<Team[]>([]);
@@ -108,6 +109,21 @@ export class TeamWorkspacesComponent implements OnInit {
         this.selected.set(null);
         this.closeDeleteModal();
       }
+    });
+
+    effect(() => {
+      const epoch = this.openCodeService.sessionsEpoch();
+      if (epoch === this.lastSessionsEpoch) return;
+      this.lastSessionsEpoch = epoch;
+      if (epoch === 0) return;
+      const workspaceId = this.selected()?.id;
+      if (!workspaceId) {
+        this.openCodeSessions.set([]);
+        this.selectedOpenCodeSession.set(null);
+        this.openCodeMessages.set([]);
+        return;
+      }
+      queueMicrotask(() => void this.reloadOpenCodeSessions(workspaceId));
     });
   }
 
@@ -218,16 +234,9 @@ export class TeamWorkspacesComponent implements OnInit {
       this.environments.set(environments);
       this.resources.set(resources);
       this.activity.set(activity.items);
-      try {
-        const sessions = await this.openCodeService.listSessions(id);
-        if (token !== this.detailLoadToken) return;
-        this.openCodeSessions.set(sessions);
-        if (this.activeTab() === 'sessions' && sessions[0]) {
-          void this.selectOpenCodeSession(sessions[0]);
-        }
-      } catch (e) {
-        if (token !== this.detailLoadToken) return;
-        this.openCodeSessionsError.set((e as Error).message || 'Failed to load OpenCode sessions');
+      await this.reloadOpenCodeSessions(id, token);
+      if (token !== this.detailLoadToken) {
+        return;
       }
       const previousKey = this.environmentSwitchService.currentSelectionKey();
       this.environmentService.replaceWorkspaceEnvironments(id, environments, workspace.name);
@@ -238,6 +247,32 @@ export class TeamWorkspacesComponent implements OnInit {
       }
       this.detailError.set((e as Error).message || 'Failed to load workspace');
       this.selected.set(null);
+    }
+  }
+
+  private async reloadOpenCodeSessions(workspaceId: string, detailToken = this.detailLoadToken): Promise<void> {
+    this.openCodeSessionsError.set('');
+    try {
+      const sessions = await this.openCodeService.listSessions(workspaceId);
+      if (detailToken !== this.detailLoadToken) return;
+      this.openCodeSessions.set(sessions);
+      const selectedId = this.selectedOpenCodeSession()?.id;
+      if (selectedId && sessions.some(session => session.id === selectedId)) {
+        const selected = sessions.find(session => session.id === selectedId);
+        if (selected) void this.selectOpenCodeSession(selected);
+        return;
+      }
+      this.selectedOpenCodeSession.set(null);
+      this.openCodeMessages.set([]);
+      if (this.activeTab() === 'sessions' && sessions[0]) {
+        void this.selectOpenCodeSession(sessions[0]);
+      }
+    } catch (e) {
+      if (detailToken !== this.detailLoadToken) return;
+      this.openCodeSessions.set([]);
+      this.selectedOpenCodeSession.set(null);
+      this.openCodeMessages.set([]);
+      this.openCodeSessionsError.set((e as Error).message || 'Failed to load OpenCode sessions');
     }
   }
 

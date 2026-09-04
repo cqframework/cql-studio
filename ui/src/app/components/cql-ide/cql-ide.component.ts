@@ -16,7 +16,6 @@ import { TranslationService } from '../../services/translation.service';
 import { LibraryTranslationContextBuilder } from '../../services/library-translation-context.lib';
 import { CqlExecutionService } from '../../services/cql-execution.service';
 import { SettingsService } from '../../services/settings.service';
-import { OpenCodeService } from '../../services/opencode.service';
 import { OpenCodeEditorBridgeService } from '../../services/opencode-editor-bridge.service';
 import { OpenCodeEditorContext, OpenCodeLibraryChange } from '../../models/opencode.model';
 import { CqlValidationService } from '../../services/cql-validation.service';
@@ -78,7 +77,6 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   private libraryTranslationContextBuilder = inject(LibraryTranslationContextBuilder);
   private cqlExecutionService = inject(CqlExecutionService);
   public settingsService = inject(SettingsService);
-  private openCodeService = inject(OpenCodeService);
   private openCodeEditorBridge = inject(OpenCodeEditorBridgeService);
   private cqlValidationService = inject(CqlValidationService);
   private toastService = inject(ToastService);
@@ -87,14 +85,18 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
   constructor() {
     effect(() => {
-      const activeId = this.ideStateService.activeLibraryId();
-      const active = this.ideStateService.libraryResources().find(library => library.id === activeId);
-      if (!active) return;
+      const resources = this.ideStateService.libraryResources();
       untracked(() => {
-        const current = this.openCodeEditorBridge.document();
-        const revision = current?.libraryId === active.id ? current.userRevision : 0;
-        if (current?.libraryId !== active.id || current.content !== active.cqlContent) {
-          this.openCodeEditorBridge.recordDocument(active.id, active.cqlContent, revision);
+        for (const library of resources) {
+          const current = this.openCodeEditorBridge.documentFor(library.id);
+          const revision = current?.userRevision ?? 0;
+          if (!current || current.content !== library.cqlContent) {
+            this.openCodeEditorBridge.recordDocument(library.id, library.cqlContent, revision);
+          }
+        }
+        const openIds = new Set(resources.map(library => library.id));
+        for (const libraryId of Object.keys(this.openCodeEditorBridge.documents())) {
+          if (!openIds.has(libraryId)) this.openCodeEditorBridge.clearDocument(libraryId);
         }
       });
     });
@@ -144,10 +146,6 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.initializeDefaultTabs();
-    
-    // Update AI tab availability when settings change
-    // Note: We'll call updateAiTabAvailability() when settings are updated
-    // This could be improved with a proper signal-based approach in the future
   }
 
   ngOnDestroy(): void {
@@ -164,6 +162,19 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     if (leftPanel && leftPanel.tabs.length > 0 && 
         rightPanel && rightPanel.tabs.length > 0 && 
         bottomPanel && bottomPanel.tabs.length > 0) {
+      // OpenCode is always available; ensure it exists if panels were initialized
+      // before the GA default (e.g. HMR / singleton panel state without the AI tab).
+      if (!rightPanel.tabs.some(tab => tab.type === 'ai')) {
+        this.ideStateService.addTabToPanel('right', {
+          id: 'ai-tab',
+          title: 'OpenCode',
+          icon: 'bi-terminal',
+          type: 'ai',
+          isActive: false,
+          isClosable: true,
+          component: null
+        });
+      }
       return;
     }
 
@@ -275,12 +286,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.addTabToPanel('right', fhirTab);
     this.ideStateService.addTabToPanel('right', elmTab);
     this.ideStateService.addTabToPanel('right', clipboardTab);
-    
-    // Only add OpenCode when CQL Studio Server and Ollama are configured and AI is enabled.
-    const aiTabAdded = this.openCodeService.isAvailable();
-    if (aiTabAdded) {
-      this.ideStateService.addTabToPanel('right', aiTab);
-    }
+    this.ideStateService.addTabToPanel('right', aiTab);
     
     this.ideStateService.addTabToPanel('bottom', outputTab);
     this.ideStateService.addTabToPanel('bottom', problemsTab);
@@ -289,13 +295,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
     this.ideStateService.setActiveTab('left', 'navigation-tab');
     this.ideStateService.setActiveTab('bottom', 'output-tab');
-    
-    // Set the active tab for the right panel: AI tab if available, otherwise FHIR tab
-    if (aiTabAdded) {
-      this.ideStateService.setActiveTab('right', 'ai-tab');
-    } else {
-      this.ideStateService.setActiveTab('right', 'fhir-tab');
-    }
+    this.ideStateService.setActiveTab('right', 'ai-tab');
   }
 
   private cleanupTabs(): void {
@@ -311,34 +311,6 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     this.ideStateService.setExecuting(false);
     this.ideStateService.setExecutionProgress(0);
     this.ideStateService.setExecutionStatus('');
-  }
-
-  /**
-   * Update OpenCode tab availability based on settings
-   */
-  updateAiTabAvailability(): void {
-    const rightPanel = this.ideStateService.getPanel('right');
-    if (!rightPanel) return;
-
-    const hasAiTab = rightPanel.tabs.some(tab => tab.type === 'ai');
-    const shouldHaveAiTab = this.openCodeService.isAvailable();
-
-    if (shouldHaveAiTab && !hasAiTab) {
-      // Add AI tab
-      const aiTab = {
-        id: 'ai-tab',
-        title: 'OpenCode',
-        icon: 'bi-terminal',
-        type: 'ai',
-        isActive: false,
-        isClosable: true,
-        component: null
-      };
-      this.ideStateService.addTabToPanel('right', aiTab);
-    } else if (!shouldHaveAiTab && hasAiTab) {
-      // Remove AI tab
-      this.ideStateService.removeTabFromPanel('right', 'ai-tab');
-    }
   }
 
   // Panel management
@@ -548,6 +520,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     }
 
     this.ideStateService.removeLibraryResource(libraryId);
+    this.openCodeEditorBridge.clearDocument(libraryId);
   }
 
   // Translation
@@ -742,9 +715,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
         cqlContent: currentContent,
         isDirty: isDirty
       });
-      if (this.ideStateService.activeLibraryId() === libraryId) {
-        this.openCodeEditorBridge.recordDocument(libraryId, currentContent, event.userRevision);
-      }
+      this.openCodeEditorBridge.recordDocument(libraryId, currentContent, event.userRevision);
     }
   }
 

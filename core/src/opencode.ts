@@ -42,8 +42,15 @@ export interface CreateOpenCodeSessionRequest {
   ollamaBaseUrl: string;
   /** @deprecated retained for clients from before provider selection. */
   ollamaModel: string;
-  activeLibrary: OpenCodeLibraryInput;
+  /** Writable open CQL editor snapshots (0..n). Prefer this over activeLibrary. */
+  libraries?: OpenCodeLibraryInput[];
+  /**
+   * @deprecated Single-library clients. When `libraries` is absent, gateway/runner
+   * wrap this as a one-element `libraries` array.
+   */
+  activeLibrary?: OpenCodeLibraryInput;
   dependencies?: OpenCodeDependencyInput[];
+  focusedLibraryId?: string;
   /** Browser-provided endpoint context retained only in gateway memory. */
   environment?: unknown;
   /** Browser-provided tool credentials retained only in gateway memory. */
@@ -118,9 +125,26 @@ export interface OpenCodeEditorContext {
   mode: 'selection' | 'inline';
 }
 
+/** @deprecated Prefer OpenCodeWorkspaceSyncRequest for multi-library sessions. */
 export interface OpenCodeActiveFileSyncRequest {
   content: string;
   documentRevision: number;
+  libraryId?: string;
+}
+
+export interface OpenCodeWorkspaceSyncRequest {
+  libraries: OpenCodeLibraryInput[];
+  dependencies?: OpenCodeDependencyInput[];
+  focusedLibraryId?: string;
+  revisions?: Record<string, number>;
+}
+
+export interface OpenCodeIdeActionAckRequest {
+  ok: boolean;
+  libraryId?: string;
+  name?: string;
+  file?: string;
+  error?: string;
 }
 
 export interface OpenCodeWorkspaceManifestEntry {
@@ -138,6 +162,7 @@ export interface OpenCodeWorkspaceManifest {
   schemaVersion: 1;
   sessionId: string;
   createdAt: string;
+  /** Focused library id when one exists; empty string when the session has no writables. */
   activeLibraryId: string;
   files: Record<string, OpenCodeWorkspaceManifestEntry>;
 }
@@ -147,8 +172,12 @@ export interface OpenCodeSessionDto {
   openCodeSessionId: string;
   title: string;
   status: 'starting' | 'idle' | 'busy' | 'error';
-  activeLibraryId: string;
-  activeFile: string;
+  /** Focused writable library id, when any. */
+  activeLibraryId?: string;
+  /** Focused writable relative path, when any. */
+  activeFile?: string;
+  /** Writable library ids currently in the runner workspace. */
+  libraryIds: string[];
   createdAt: string;
   updatedAt: string;
   lastActivityAt: string;
@@ -242,3 +271,36 @@ export interface OpenCodeErrorBody {
 }
 
 export type OpenCodePermissionResponse = 'once' | 'always' | 'reject';
+
+/** Normalize create/resume payloads that still send a single activeLibrary. */
+export function normalizeOpenCodeLibraries(input: {
+  libraries?: OpenCodeLibraryInput[];
+  activeLibrary?: OpenCodeLibraryInput;
+}): OpenCodeLibraryInput[] {
+  if (Array.isArray(input.libraries)) {
+    return input.libraries;
+  }
+  if (input.activeLibrary?.id) {
+    return [input.activeLibrary];
+  }
+  return [];
+}
+
+export function openCodeSessionLibraryIdsFromState(
+  state: unknown,
+  fallbackActiveLibraryId?: string | null
+): string[] {
+  if (state && typeof state === 'object') {
+    const session = (state as { session?: { libraryIds?: unknown; activeLibraryId?: unknown } }).session;
+    if (session && Array.isArray(session.libraryIds)) {
+      return session.libraryIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
+    }
+    if (typeof session?.activeLibraryId === 'string' && session.activeLibraryId) {
+      return [session.activeLibraryId];
+    }
+  }
+  if (fallbackActiveLibraryId) {
+    return [fallbackActiveLibraryId];
+  }
+  return [];
+}

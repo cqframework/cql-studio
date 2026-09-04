@@ -100,3 +100,28 @@ export function parseHeaderLines(
   }
   return out;
 }
+
+/** Previous compose DNS name for the HAPI service (pre cql-studio- prefix). */
+const LEGACY_HAPI_COMPOSE_HOST = 'hapi-r4-data';
+const CURRENT_HAPI_COMPOSE_HOST = 'cql-studio-hapi-r4-data';
+
+/**
+ * Rewrites persisted Runner FHIR URLs that still use the pre-rename compose
+ * service hostname so CQL Tests Runner containers can resolve HAPI.
+ */
+export function normalizeRunnerFhirBaseUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.hostname === LEGACY_HAPI_COMPOSE_HOST) {
+      parsed.hostname = CURRENT_HAPI_COMPOSE_HOST;
+      return parsed.toString().replace(/\/+$/, '');
+    }
+  } catch {
+    // Leave non-URL strings unchanged.
+  }
+  return trimmed;
+}

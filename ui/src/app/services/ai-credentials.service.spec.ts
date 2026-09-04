@@ -28,9 +28,9 @@ const defaultSettings = (): UserSettingsDto => ({
   compatibleProviderBaseUrl: '',
   compatibleProviderModel: '',
   searxngBaseUrl: '',
-  enableAiAssistant: false,
-  autoApplyCodeEdits: false,
-  enableAiCodePrediction: false,
+  enableAiAssistant: true,
+  autoApplyCodeEdits: true,
+  enableAiCodePrediction: true,
 });
 
 describe('AI provider credentials', () => {

@@ -8,45 +8,29 @@
 #   or from monorepo root:
 #   npm run docker:up
 #
-# Networking: run cql-studio-server on the host (npm run start:server), not in this compose file.
+# Networking: run cql-studio-server / OpenCode runner on the host
+# (`npm run start:server`, `npm run start:opencode`), not in this compose file.
+# For pre-built UI + server + OpenCode images on top of this stack, use
+# docker/docker-compose.full.yml (`npm run docker:full:up`).
 # Authentik is published on host port 9000; host processes use http://localhost:9000.
 # Inside another container, localhost:9000 is that container — use host.docker.internal:9000
-# or join this compose network and use http://authentik-server:9000 for server-to-IdP calls.
+# or join this compose network and use http://cql-studio-authentik-server:9000 for server-to-IdP calls.
 #
 # CQL Tests Runner:  http://localhost:8091  (container port 3000, `server` mode)
 # CQL Tests Results: http://localhost:8092/index.json  (nginx on container port 80)
 #
-# The runner container cannot use localhost for HAPI (that is the runner itself).
+# The CQL Tests Runner container cannot use localhost for HAPI (that is the runner itself).
 # Point the runner's FHIR base URL at the compose service name, e.g.:
-#   Settings → Runner FHIR Base URL = http://hapi-r4-data:8080/fhir
-#   or export CQL_STUDIO_RUNNER_FHIR_BASE_URL=http://hapi-r4-data:8080/fhir
+#   Settings → Runner FHIR Base URL = http://cql-studio-hapi-r4-data:8080/fhir
+#   or export CQL_STUDIO_RUNNER_FHIR_BASE_URL=http://cql-studio-hapi-r4-data:8080/fhir
 # Browser/host access to HAPI remains http://localhost:8080/fhir.
 # Optional UI defaults for this stack:
 #   CQL_STUDIO_RUNNER_BASE_URL=http://localhost:8091
-#   CQL_STUDIO_RUNNER_FHIR_BASE_URL=http://hapi-r4-data:8080/fhir
+#   CQL_STUDIO_RUNNER_FHIR_BASE_URL=http://cql-studio-hapi-r4-data:8080/fhir
 #   CQL_STUDIO_DEFAULT_TEST_RESULTS_INDEX_URL=http://localhost:8092/index.json
 
 services:
-  opencode-runner:
-    build:
-      context: ..
-      dockerfile: server/Dockerfile.opencode
-    container_name: cql-studio-opencode-runner
-    environment:
-      CQL_STUDIO_SERVER_NODE_ENV: development
-      CQL_STUDIO_SERVER_OPENCODE_RUNNER_TOKEN: cql-studio-opencode-development-only
-      CQL_STUDIO_SERVER_OPENCODE_RUNNER_REWRITE_LOCALHOST: "true"
-      CQL_STUDIO_SERVER_OPENCODE_SESSION_IDLE_MS: "3600000"
-      CQL_STUDIO_SERVER_OPENCODE_CLEANUP_INTERVAL_MS: "60000"
-    ports:
-      - "127.0.0.1:4097:4097"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - opencode-workspaces:/workspaces
-    restart: unless-stopped
-
-  hapi-r4-data:
+  cql-studio-hapi-r4-data:
     image: hapiproject/hapi:v8.10.0-3
     container_name: cql-studio-hapi-r4-data
     ports:
@@ -96,10 +80,10 @@ services:
       timeout: 5s
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
     volumes:
-      - server-database:/var/lib/postgresql
+      - cql-studio-server-database:/var/lib/postgresql
     restart: unless-stopped
 
-  authentik-postgresql:
+  cql-studio-authentik-postgresql:
     image: docker.io/library/postgres:18-alpine
     container_name: cql-studio-authentik-postgresql
     environment:
@@ -113,18 +97,18 @@ services:
       timeout: 5s
       test: ["CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}"]
     volumes:
-      - authentik-database:/var/lib/postgresql
+      - cql-studio-authentik-database:/var/lib/postgresql
     restart: unless-stopped
 
-  authentik-server:
+  cql-studio-authentik-server:
     image: ghcr.io/goauthentik/server:2026.5.6
     container_name: cql-studio-authentik-server
     command: server
     depends_on:
-      authentik-postgresql:
+      cql-studio-authentik-postgresql:
         condition: service_healthy
     environment:
-      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__HOST: cql-studio-authentik-postgresql
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: cql-studio-authentik-pg
@@ -135,19 +119,19 @@ services:
       - "9000:9000"
       - "9443:9443"
     volumes:
-      - authentik-data:/data
+      - cql-studio-authentik-data:/data
     shm_size: 512mb
     restart: unless-stopped
 
-  authentik-worker:
+  cql-studio-authentik-worker:
     image: ghcr.io/goauthentik/server:2026.5.6
     container_name: cql-studio-authentik-worker
     command: worker
     depends_on:
-      authentik-postgresql:
+      cql-studio-authentik-postgresql:
         condition: service_healthy
     environment:
-      AUTHENTIK_POSTGRESQL__HOST: authentik-postgresql
+      AUTHENTIK_POSTGRESQL__HOST: cql-studio-authentik-postgresql
       AUTHENTIK_POSTGRESQL__NAME: authentik
       AUTHENTIK_POSTGRESQL__USER: authentik
       AUTHENTIK_POSTGRESQL__PASSWORD: cql-studio-authentik-pg
@@ -155,12 +139,12 @@ services:
       AUTHENTIK_BOOTSTRAP_EMAIL: administrator@localhost
       AUTHENTIK_BOOTSTRAP_PASSWORD: password
     volumes:
-      - authentik-data:/data
+      - cql-studio-authentik-data:/data
       - ./authentik/blueprints:/blueprints/custom:ro
     shm_size: 512mb
     restart: unless-stopped
 
-  cql-tests-runner:
+  cql-studio-cql-tests-runner:
     image: docker.io/hlseven/quality-cql-tests-runner:latest
     container_name: cql-studio-cql-tests-runner
     command: ["server", "--port", "3000"]
@@ -174,7 +158,7 @@ services:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
     restart: unless-stopped
 
-  cql-tests-results:
+  cql-studio-cql-tests-results:
     image: docker.io/hlseven/quality-cql-tests-results:latest
     container_name: cql-studio-cql-tests-results
     ports:
@@ -188,7 +172,6 @@ services:
     restart: unless-stopped
 
 volumes:
-  opencode-workspaces:
-  server-database:
-  authentik-database:
-  authentik-data:
+  cql-studio-server-database:
+  cql-studio-authentik-database:
+  cql-studio-authentik-data:

@@ -9,17 +9,29 @@ import type {
   CreateOpenCodeSessionRequest,
   OpenCodeEventEnvelope,
   OpenCodeErrorBody,
+  OpenCodeIdeActionAckRequest,
+  OpenCodeLibraryInput,
   OpenCodeSessionDto,
   OpenCodeSessionStateDto,
   OpenCodeWorkspaceOrigin,
 } from '@cql-studio/core';
-import { OpenCodeError } from './errors.js';
+import {
+  OpenCodeError,
+  normalizeOpenCodeLibraries,
+  openCodeResumeMessages,
+  openCodeSessionLibraryIdsFromState,
+} from '@cql-studio/core';
 import { openCodeLogger } from './logger.js';
 import { OpenCodeToolExecutor, type OpenCodeToolContext } from './tools.js';
 import { getPrisma } from '../db/prisma.js';
 import { resolveEffectiveWorkspaceRole } from '../workspace/access.js';
 import type { Prisma } from '@prisma/client';
-import { openCodeResumeMessages } from './session-history.js';
+
+interface PendingIdeAction {
+  resolve: (value: { libraryId: string; name: string; file?: string }) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
 
 interface GatewaySession extends OpenCodeToolContext {
   id: string;
@@ -29,6 +41,8 @@ interface GatewaySession extends OpenCodeToolContext {
   capability: string;
   workspaceOrigin?: OpenCodeWorkspaceOrigin;
   dto?: OpenCodeSessionDto;
+  eventWriters: Set<(chunk: string) => void>;
+  pendingIdeActions: Map<string, PendingIdeAction>;
 }
 
 function asyncHandler(
@@ -55,8 +69,8 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     id: string;
     openCodeSessionId: string;
     title: string;
-    activeLibraryId: string;
-    activeFile: string;
+    activeLibraryId: string | null;
+    activeFile: string | null;
     model: string;
     reasoningEnabled: boolean;
     runnerCreatedAt: Date;
@@ -64,13 +78,15 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     lastActivityAt: Date;
     expiresAt: Date;
     workspaceOrigin: Prisma.JsonValue | null;
+    state: Prisma.JsonValue;
   }): OpenCodeSessionDto => ({
     id: row.id,
     openCodeSessionId: row.openCodeSessionId,
     title: row.title,
     status: 'idle',
-    activeLibraryId: row.activeLibraryId,
-    activeFile: row.activeFile,
+    activeLibraryId: row.activeLibraryId ?? undefined,
+    activeFile: row.activeFile ?? undefined,
+    libraryIds: openCodeSessionLibraryIdsFromState(row.state, row.activeLibraryId),
     createdAt: row.runnerCreatedAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lastActivityAt: row.lastActivityAt.toISOString(),
@@ -90,6 +106,8 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
   ): Promise<void> => {
     if (!persistentSessions) return;
     const dto = state.session;
+    const libraryIds = Array.isArray(dto.libraryIds) ? dto.libraryIds : openCodeSessionLibraryIdsFromState(state, dto.activeLibraryId);
+    state.session = { ...dto, libraryIds };
     await getPrisma().openCodeSession.upsert({
       where: { id: dto.id },
       create: {
@@ -98,8 +116,8 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
         openCodeSessionId: dto.openCodeSessionId,
         title: dto.title,
         status: dto.status,
-        activeLibraryId: dto.activeLibraryId,
-        activeFile: dto.activeFile,
+        activeLibraryId: dto.activeLibraryId ?? null,
+        activeFile: dto.activeFile ?? null,
         model: dto.model,
         reasoningEnabled: dto.reasoningEnabled,
         runnerCreatedAt: new Date(dto.createdAt),
@@ -112,8 +130,8 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
         openCodeSessionId: dto.openCodeSessionId,
         title: dto.title,
         status: dto.status,
-        activeLibraryId: dto.activeLibraryId,
-        activeFile: dto.activeFile,
+        activeLibraryId: dto.activeLibraryId ?? null,
+        activeFile: dto.activeFile ?? null,
         model: dto.model,
         reasoningEnabled: dto.reasoningEnabled,
         lastActivityAt: new Date(dto.lastActivityAt),
@@ -203,8 +221,7 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
 
   const authorizeWorkspaceOrigin = async (
     req: Request,
-    origin: OpenCodeWorkspaceOrigin | undefined,
-    activeLibraryId: string
+    origin: OpenCodeWorkspaceOrigin | undefined
   ): Promise<OpenCodeWorkspaceOrigin | undefined> => {
     if (!origin) return undefined;
     if (!persistentSessions) return origin;
@@ -226,9 +243,6 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     ) {
       throw new OpenCodeError('WORKSPACE_LIBRARY_NOT_FOUND', 'Workspace Library reference was not found', 404, false);
     }
-    if (reference.resourceId !== activeLibraryId) {
-      throw new OpenCodeError('WORKSPACE_LIBRARY_MISMATCH', 'Workspace Library reference does not match the active Library', 409, false);
-    }
     return {
       workspaceId: reference.workspaceId,
       workspaceName: reference.workspace.name,
@@ -237,13 +251,77 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     };
   };
 
+  const stripLibraryOrigins = (libraries: OpenCodeLibraryInput[]): OpenCodeLibraryInput[] =>
+    libraries.map(({ workspaceOrigin: _origin, ...library }) => library);
+
+  const writeGatewayEvent = (session: GatewaySession, type: string, properties: Record<string, unknown>): void => {
+    // id 0 + no SSE `id:` field: browser Last-Event-ID / UI lastEventId stay on runner ids.
+    const envelope: OpenCodeEventEnvelope = {
+      id: 0,
+      sessionId: session.id,
+      emittedAt: new Date().toISOString(),
+      event: { type, properties },
+    };
+    const chunk = `data: ${JSON.stringify(envelope)}\n\n`;
+    for (const writer of session.eventWriters) writer(chunk);
+  };
+
+  const requestCreateDraft = (
+    session: GatewaySession,
+    name: string
+  ): Promise<{ libraryId: string; name: string; file?: string }> => {
+    if (session.id === 'pending') {
+      return Promise.reject(new OpenCodeError('SESSION_NOT_READY', 'OpenCode session is not ready for IDE actions', 409, true));
+    }
+    if (session.eventWriters.size === 0) {
+      return Promise.reject(new OpenCodeError(
+        'IDE_ACTION_UNAVAILABLE',
+        'The CQL Studio IDE is not connected to this OpenCode session',
+        409,
+        true
+      ));
+    }
+    const actionId = randomUUID();
+    const trimmed = name.trim().slice(0, 200);
+    if (!trimmed) {
+      return Promise.reject(new OpenCodeError('INVALID_TOOL_REQUEST', 'Draft library name is required', 400, false));
+    }
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        session.pendingIdeActions.delete(actionId);
+        reject(new OpenCodeError(
+          'IDE_ACTION_TIMEOUT',
+          'Timed out waiting for the IDE to create a draft library',
+          504,
+          true
+        ));
+      }, 25_000);
+      timer.unref();
+      session.pendingIdeActions.set(actionId, { resolve, reject, timer });
+      writeGatewayEvent(session, 'cql.ide.create_draft', { actionId, name: trimmed });
+    });
+  };
+
   const withWorkspaceOrigin = (
     dto: OpenCodeSessionDto,
     session: GatewaySession
   ): OpenCodeSessionDto => ({
     ...dto,
+    libraryIds: Array.isArray(dto.libraryIds) ? dto.libraryIds : [],
     ...(session.workspaceOrigin ? { workspaceOrigin: session.workspaceOrigin } : {}),
   });
+
+  const newGatewaySession = (
+    partial: Omit<GatewaySession, 'eventWriters' | 'pendingIdeActions' | 'requestCreateDraft'>
+  ): GatewaySession => {
+    const session: GatewaySession = {
+      ...partial,
+      eventWriters: new Set(),
+      pendingIdeActions: new Map(),
+      requestCreateDraft: (name: string) => requestCreateDraft(session, name),
+    };
+    return session;
+  };
 
   const requireOwnedSession = (req: Request): GatewaySession => {
     const session = sessions.get(req.params.id);
@@ -257,7 +335,15 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
   const forget = (id: string): void => {
     const session = sessions.get(id);
     sessions.delete(id);
-    if (session) capabilities.delete(session.capability);
+    if (session) {
+      capabilities.delete(session.capability);
+      for (const pending of session.pendingIdeActions.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(new OpenCodeError('SESSION_ENDED', 'OpenCode session ended before the IDE action completed', 409, false));
+      }
+      session.pendingIdeActions.clear();
+      session.eventWriters.clear();
+    }
     const timer = persistenceTimers.get(id);
     if (timer) clearTimeout(timer);
     persistenceTimers.delete(id);
@@ -327,8 +413,26 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
   };
 
   router.get('/health', asyncHandler(async (_req, res) => {
-    const response = await runnerFetch('/health');
-    res.json(await response.json());
+    try {
+      const response = await runnerFetch('/health');
+      res.json(await response.json());
+    } catch (error) {
+      // Keep probes machine-readable when the runner is down or timing out.
+      if (
+        error instanceof OpenCodeError &&
+        (error.code === 'RUNNER_UNAVAILABLE' || error.code === 'RUNNER_TIMEOUT' || error.code === 'RUNNER_ERROR')
+      ) {
+        res.status(error.status).json({
+          healthy: false,
+          sessions: sessions.size,
+          code: error.code,
+          message: error.message,
+          retryable: true,
+        });
+        return;
+      }
+      throw error;
+    }
   }));
 
   router.get('/sessions', asyncHandler(async (req, res) => {
@@ -373,18 +477,25 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     }
     const browserInput = (req.body ?? {}) as CreateOpenCodeSessionRequest;
     const { environment, toolContext, toolBridge: _untrustedToolBridge, resume: _untrustedResume, ...runnerInput } = browserInput;
-    const { workspaceOrigin, ...activeLibrary } = browserInput.activeLibrary ?? {};
-    const input = { ...runnerInput, activeLibrary } as CreateOpenCodeSessionRequest;
-    if (!input.activeLibrary?.id || !input.activeLibrary?.cqlContent?.trim()) {
-      throw new OpenCodeError('INVALID_SESSION', 'An active CQL library with non-empty CQL content is required', 400, false);
-    }
-    const authorizedWorkspaceOrigin = await authorizeWorkspaceOrigin(
-      req,
-      workspaceOrigin,
-      input.activeLibrary.id
-    );
+    const librariesRaw = normalizeOpenCodeLibraries(browserInput);
+    const libraries = stripLibraryOrigins(librariesRaw);
+    const focusedLibraryId = typeof browserInput.focusedLibraryId === 'string' && libraries.some(library => library.id === browserInput.focusedLibraryId)
+      ? browserInput.focusedLibraryId
+      : libraries[0]?.id;
+    const originSource = (focusedLibraryId
+      ? librariesRaw.find(library => library.id === focusedLibraryId)?.workspaceOrigin
+      : undefined)
+      ?? librariesRaw.find(library => library.workspaceOrigin)?.workspaceOrigin
+      ?? browserInput.activeLibrary?.workspaceOrigin;
+    const input = {
+      ...runnerInput,
+      libraries,
+      focusedLibraryId,
+      activeLibrary: undefined,
+    } as CreateOpenCodeSessionRequest;
+    const authorizedWorkspaceOrigin = await authorizeWorkspaceOrigin(req, originSource);
     const capability = randomUUID();
-    const gatewaySession: GatewaySession = {
+    const gatewaySession = newGatewaySession({
       id: 'pending',
       owner,
       createdAt: Date.now(),
@@ -393,7 +504,7 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
       toolContext,
       capability,
       workspaceOrigin: authorizedWorkspaceOrigin,
-    };
+    });
     capabilities.set(capability, gatewaySession);
     try {
       const response = await runnerFetch('/sessions', {
@@ -455,24 +566,27 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
 
     const browserInput = (req.body ?? {}) as CreateOpenCodeSessionRequest;
     const { environment, toolContext, toolBridge: _untrustedToolBridge, resume: _untrustedResume, ...runnerInput } = browserInput;
-    const { workspaceOrigin: _browserWorkspaceOrigin, ...activeLibrary } = browserInput.activeLibrary ?? {};
-    const input = { ...runnerInput, title: row.title, activeLibrary } as CreateOpenCodeSessionRequest;
-    if (!input.activeLibrary?.id || !input.activeLibrary?.cqlContent?.trim()) {
-      throw new OpenCodeError('INVALID_SESSION', 'An active CQL library with non-empty CQL content is required', 400, false);
-    }
-    if (input.activeLibrary.id !== row.activeLibraryId) {
-      throw new OpenCodeError('SESSION_LIBRARY_MISMATCH', 'The archived session belongs to a different CQL Library', 409, false);
-    }
+    const libraries = stripLibraryOrigins(normalizeOpenCodeLibraries(browserInput));
+    const focusedLibraryId = typeof browserInput.focusedLibraryId === 'string'
+      ? browserInput.focusedLibraryId
+      : libraries[0]?.id;
+    const input = {
+      ...runnerInput,
+      title: row.title,
+      libraries,
+      focusedLibraryId,
+      activeLibrary: undefined,
+    } as CreateOpenCodeSessionRequest;
     const storedOrigin = row.workspaceOrigin
       ? row.workspaceOrigin as unknown as OpenCodeWorkspaceOrigin
       : undefined;
-    const authorizedWorkspaceOrigin = await authorizeWorkspaceOrigin(req, storedOrigin, input.activeLibrary.id);
+    const authorizedWorkspaceOrigin = await authorizeWorkspaceOrigin(req, storedOrigin);
     const archivedState = row.state as unknown as OpenCodeSessionStateDto;
     const seedMessages = openCodeResumeMessages(
       Array.isArray(archivedState.messages) ? archivedState.messages : []
     );
     const capability = randomUUID();
-    const gatewaySession: GatewaySession = {
+    const gatewaySession = newGatewaySession({
       id: row.id,
       owner,
       createdAt: Date.now(),
@@ -481,7 +595,7 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
       toolContext,
       capability,
       workspaceOrigin: authorizedWorkspaceOrigin,
-    };
+    });
     capabilities.set(capability, gatewaySession);
     try {
       const response = await runnerFetch('/sessions', {
@@ -598,12 +712,62 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     const session = requireOwnedSession(req);
     const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/active-file`, {
       method: 'PUT',
-      body: JSON.stringify({ content: req.body?.content, documentRevision: req.body?.documentRevision }),
+      body: JSON.stringify({
+        content: req.body?.content,
+        documentRevision: req.body?.documentRevision,
+        libraryId: req.body?.libraryId,
+      }),
     });
     res.status(204);
     await response.arrayBuffer();
     res.send();
     schedulePersist(session);
+  }));
+
+  router.put('/sessions/:id/workspace', asyncHandler(async (req, res) => {
+    const session = requireOwnedSession(req);
+    const libraries = Array.isArray(req.body?.libraries)
+      ? stripLibraryOrigins(req.body.libraries as OpenCodeLibraryInput[])
+      : null;
+    if (!libraries) {
+      throw new OpenCodeError('INVALID_WORKSPACE', 'libraries array is required', 400, false);
+    }
+    const response = await runnerFetch(`/sessions/${encodeURIComponent(req.params.id)}/workspace`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        libraries,
+        dependencies: req.body?.dependencies,
+        focusedLibraryId: req.body?.focusedLibraryId,
+        revisions: req.body?.revisions,
+      }),
+    });
+    const dto = await response.json() as OpenCodeSessionDto;
+    session.dto = { ...withWorkspaceOrigin(dto, session), availability: 'live' };
+    res.json(session.dto);
+    schedulePersist(session);
+  }));
+
+  router.post('/sessions/:id/ide-actions/:actionId', asyncHandler(async (req, res) => {
+    const session = requireOwnedSession(req);
+    const pending = session.pendingIdeActions.get(req.params.actionId);
+    if (!pending) {
+      throw new OpenCodeError('IDE_ACTION_NOT_FOUND', 'IDE action was not found or already completed', 404, false);
+    }
+    const body = (req.body ?? {}) as OpenCodeIdeActionAckRequest;
+    clearTimeout(pending.timer);
+    session.pendingIdeActions.delete(req.params.actionId);
+    if (!body.ok || !body.libraryId || !body.name) {
+      pending.reject(new OpenCodeError(
+        'IDE_ACTION_FAILED',
+        body.error || 'The IDE could not create a draft library',
+        400,
+        false
+      ));
+      res.status(204).send();
+      return;
+    }
+    pending.resolve({ libraryId: body.libraryId, name: body.name, file: body.file });
+    res.status(204).send();
   }));
 
   router.post('/sessions/:id/prompt', asyncHandler(async (req, res) => {
@@ -697,6 +861,10 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
+    const writer = (chunk: string): void => {
+      if (!res.writableEnded) res.write(chunk);
+    };
+    session.eventWriters.add(writer);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let eventBuffer = '';
@@ -728,6 +896,7 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     } catch (error) {
       if (!abort.signal.aborted) throw error;
     } finally {
+      session.eventWriters.delete(writer);
       reader.releaseLock();
       // A browser closing its stream does not end the session. The runner
       // closing the upstream stream does: release the in-memory capability so
@@ -758,10 +927,12 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     try {
       state = await liveState(live);
     } catch (error) {
-      if (!persistentSessions) throw error;
+      const runnerDown = error instanceof OpenCodeError && [404, 503, 504].includes(error.status);
+      // Ending a session must succeed for the UI even when the runner is already gone.
+      if (!runnerDown && !persistentSessions) throw error;
       openCodeLogger.warn(
         { operation: 'session.archive.snapshot', sessionId: live.id, err: error },
-        'Archiving the last persisted OpenCode state because the runner snapshot was unavailable'
+        'Archiving without a fresh runner snapshot because the OpenCode runner was unavailable'
       );
     }
     try {
@@ -785,7 +956,31 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
     res.status(204).send();
   }));
 
-  // Permanent deletion remains available to an explicit future history-management UI.
+  // Permanent deletion for explicit history management (settings + future per-session UI).
+  router.delete('/sessions', asyncHandler(async (req, res) => {
+    const owner = ownerFor(req);
+    const liveOwned = [...sessions.values()].filter(session => session.owner === owner);
+    for (const session of liveOwned) {
+      try {
+        await runnerFetch(`/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE' });
+      } catch (error) {
+        openCodeLogger.warn(
+          { operation: 'session.delete_all.runner', sessionId: session.id, owner, err: error },
+          'Failed to remove a live OpenCode runner session during account purge'
+        );
+      }
+      forget(session.id);
+    }
+    const deleted = persistentSessions
+      ? await getPrisma().openCodeSession.deleteMany({ where: { userId: owner } })
+      : { count: liveOwned.length };
+    openCodeLogger.info(
+      { operation: 'session.delete_all', owner, deleted: deleted.count },
+      'Deleted all OpenCode sessions for user'
+    );
+    res.json({ deleted: deleted.count });
+  }));
+
   router.delete('/sessions/:id', asyncHandler(async (req, res) => {
     const owner = ownerFor(req);
     const live = sessions.get(req.params.id);
@@ -824,6 +1019,30 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
   // cannot safely be reattached. Reset them at startup to avoid orphaned workspaces.
   void runnerFetch('/sessions', { method: 'DELETE' }).catch(error => {
     openCodeLogger.warn({ operation: 'gateway.reconcile', err: error }, 'Could not reset orphaned runner sessions');
+  });
+
+  // Keep OpenCode errors in the documented JSON shape even when this router is
+  // mounted without the broader Express error middleware (tests, alternate hosts).
+  router.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
+    if (!(err instanceof OpenCodeError)) {
+      next(err);
+      return;
+    }
+    openCodeLogger.warn(
+      {
+        operation: 'gateway.error',
+        method: req.method,
+        path: req.path,
+        status: err.status,
+        code: err.code,
+      },
+      'OpenCode gateway request failed'
+    );
+    if (!res.headersSent) {
+      res.status(err.status).json(err.toBody());
+      return;
+    }
+    if (!res.writableEnded) res.end();
   });
 
   return router;

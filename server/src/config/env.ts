@@ -24,6 +24,11 @@ export interface ServerEnv {
   /** Public origin of the CQL Studio UI (no trailing slash). Used for post-login redirects. */
   uiBaseUrl: string;
   ssoIssuerUrl: string;
+  /**
+   * Optional internal URL used to reach the issuer from Docker/compose networks.
+   * Browser-facing issuer remains `ssoIssuerUrl` (typically localhost).
+   */
+  ssoDiscoveryUrl?: string;
   ssoClientId: string;
   ssoClientSecret: string;
   /** Previous OIDC client secrets accepted during rotation (token exchange fallback). */
@@ -169,6 +174,7 @@ export function loadEnv(): ServerEnv {
     corsOrigin,
     uiBaseUrl,
     ssoIssuerUrl,
+    ssoDiscoveryUrl: process.env.CQL_STUDIO_SERVER_SSO_DISCOVERY_URL?.trim().replace(/\/+$/, '') || undefined,
     ssoClientId: required(
       'CQL_STUDIO_SERVER_SSO_CLIENT_ID',
       process.env.CQL_STUDIO_SERVER_SSO_CLIENT_ID
@@ -190,7 +196,7 @@ export function loadEnv(): ServerEnv {
     opencodeRunnerToken,
     opencodeToolBridgeUrl:
       process.env.CQL_STUDIO_SERVER_OPENCODE_TOOL_BRIDGE_URL?.trim().replace(/\/+$/, '') ||
-      `http://host.docker.internal:${port}/api/opencode/tool-bridge`,
+      `http://127.0.0.1:${port}/api/opencode/tool-bridge`,
     opencodeSessionIdleMs: nonNegativeInteger(
       'CQL_STUDIO_SERVER_OPENCODE_SESSION_IDLE_MS',
       process.env.CQL_STUDIO_SERVER_OPENCODE_SESSION_IDLE_MS,

@@ -3,6 +3,7 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import type { SharedEnvironmentConfig, UserSettingsDto } from '@cql-studio/core';
+import { normalizeRunnerFhirBaseUrl } from '@cql-studio/core';
 import { getPrisma } from '../db/prisma.js';
 import type { ServerEnv } from '../config/env.js';
 import { requireAuth } from '../auth/session.js';
@@ -73,7 +74,11 @@ function toSettingsDto(row: {
   const aiProvider = row.aiProvider === 'openai' || row.aiProvider === 'openai-compatible'
     ? row.aiProvider
     : 'ollama';
-  return { ...row, aiProvider };
+  return {
+    ...row,
+    aiProvider,
+    runnerFhirBaseUrl: normalizeRunnerFhirBaseUrl(row.runnerFhirBaseUrl),
+  };
 }
 
 function parseBoolean(value: unknown): boolean | undefined {
@@ -107,7 +112,10 @@ function settingsPatchFromBody(body: unknown): Partial<UserSettingsDto> {
   str('themePreferred');
   bool('validateSchema');
   str('runnerApiBaseUrl');
-  str('runnerFhirBaseUrl');
+  const runnerFhirBaseUrl = parseString(b['runnerFhirBaseUrl']);
+  if (runnerFhirBaseUrl !== undefined) {
+    patch.runnerFhirBaseUrl = normalizeRunnerFhirBaseUrl(runnerFhirBaseUrl);
+  }
   str('defaultTestResultsIndexUrl');
   str('fhirPackageRegistryBaseUrl');
   str('vsacFhirBaseUrl');
@@ -191,9 +199,9 @@ export function createUserSettingsRouter(env: ServerEnv): Router {
         compatibleProviderBaseUrl: patch.compatibleProviderBaseUrl ?? '',
         compatibleProviderModel: patch.compatibleProviderModel ?? '',
         searxngBaseUrl: patch.searxngBaseUrl ?? '',
-        enableAiAssistant: patch.enableAiAssistant ?? false,
-        autoApplyCodeEdits: patch.autoApplyCodeEdits ?? false,
-        enableAiCodePrediction: patch.enableAiCodePrediction ?? false,
+        enableAiAssistant: patch.enableAiAssistant ?? true,
+        autoApplyCodeEdits: patch.autoApplyCodeEdits ?? true,
+        enableAiCodePrediction: patch.enableAiCodePrediction ?? true,
       };
       const row = await getPrisma().user.update({
         where: { id: user.id },

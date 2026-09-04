@@ -34,6 +34,7 @@ export class MCPToolNames {
   static readonly CQL_VALIDATE = 'cql_validate';
   static readonly CQL_LIBRARY_SEARCH = 'cql_library_search';
   static readonly CQL_LIBRARY_READ = 'cql_library_read';
+  static readonly CQL_LIBRARY_CREATE_DRAFT = 'cql_library_create_draft';
   static readonly FHIR_READ = 'fhir_read';
   static readonly FHIR_SEARCH = 'fhir_search';
   static readonly VALUESET_EXPAND = 'valueset_expand';

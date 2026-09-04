@@ -48,10 +48,11 @@ export interface OpenCodeLibrarySnapshot {
 
 export interface CreateOpenCodeSessionRequest extends Omit<
   CoreCreateOpenCodeSessionRequest,
-  'activeLibrary' | 'dependencies' | 'environment' | 'toolContext'
+  'activeLibrary' | 'libraries' | 'dependencies' | 'environment' | 'toolContext'
 > {
-  activeLibrary: OpenCodeLibrarySnapshot;
+  libraries: OpenCodeLibrarySnapshot[];
   dependencies: OpenCodeLibrarySnapshot[];
+  focusedLibraryId?: string;
   environment: CqlEnvironment;
   toolContext: {
     vsacFhirBaseUrl: string;
@@ -59,6 +60,13 @@ export interface CreateOpenCodeSessionRequest extends Omit<
     vsacApiPassword: string;
     searxngBaseUrl: string;
   };
+}
+
+export interface OpenCodeWorkspaceSyncRequest {
+  libraries: OpenCodeLibrarySnapshot[];
+  dependencies?: OpenCodeLibrarySnapshot[];
+  focusedLibraryId?: string;
+  revisions?: Record<string, number>;
 }
 
 export interface OpenCodeSession extends OpenCodeSessionDto {
@@ -122,6 +130,16 @@ export interface OpenCodeActivity {
 }
 
 export type OpenCodeApiErrorBody = OpenCodeErrorBody;
+
+export interface OpenCodeHealthStatus {
+  healthy: boolean;
+  sessions: number;
+  serverUrl?: string;
+  code?: string;
+  message?: string;
+  retryable?: boolean;
+}
+
 export type OpenCodePermissionRequest = OpenCodePermissionRequestDto;
 export type OpenCodeQuestionRequest = OpenCodeQuestionRequestDto;
 

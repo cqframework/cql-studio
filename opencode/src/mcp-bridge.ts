@@ -7,6 +7,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { MCPToolNames } from '@cql-studio/core';
 import type { OpenCodeWorkspaceManifest } from '@cql-studio/core';
+import { OpenCodeExitCode } from './fatal.js';
 
 interface ToolDefinition {
   name: string;
@@ -14,13 +15,19 @@ interface ToolDefinition {
   parameters: Record<string, unknown>;
 }
 
-const baseUrl = process.env.CQL_STUDIO_SERVER_MCP_BRIDGE_URL?.replace(/\/+$/, '');
-const capability = process.env.CQL_STUDIO_SERVER_MCP_CAPABILITY;
-const workspace = process.env.CQL_STUDIO_SERVER_MCP_WORKSPACE;
-const activeFile = process.env.CQL_STUDIO_SERVER_MCP_ACTIVE_FILE;
-if (!baseUrl || !capability) {
-  console.error('CQL Studio MCP bridge configuration is missing');
-  process.exit(1);
+const baseUrl = process.env.CQL_STUDIO_OPENCODE_MCP_BRIDGE_URL?.replace(/\/+$/, '');
+const capability = process.env.CQL_STUDIO_OPENCODE_MCP_CAPABILITY;
+const workspace = process.env.CQL_STUDIO_OPENCODE_MCP_WORKSPACE;
+const activeFile = process.env.CQL_STUDIO_OPENCODE_MCP_ACTIVE_FILE;
+const missing = [
+  !baseUrl ? 'CQL_STUDIO_OPENCODE_MCP_BRIDGE_URL' : null,
+  !capability ? 'CQL_STUDIO_OPENCODE_MCP_CAPABILITY' : null,
+].filter((name): name is string => Boolean(name));
+if (missing.length > 0) {
+  console.error(
+    `[opencode-mcp-bridge] Fatal startup error: missing required environment variable(s): ${missing.join(', ')}`
+  );
+  process.exit(OpenCodeExitCode.CONFIG);
 }
 
 async function bridgeRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -43,12 +50,19 @@ const server = new Server(
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   const tools = await bridgeRequest<ToolDefinition[]>('/tools');
   return {
-    tools: tools.map(tool => ({
-      name: tool.name,
-      description: tool.description,
-      inputSchema: tool.parameters,
-      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
-    })),
+    tools: tools.map(tool => {
+      const mutating = tool.name === MCPToolNames.CQL_LIBRARY_CREATE_DRAFT;
+      return {
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.parameters,
+        annotations: {
+          readOnlyHint: !mutating,
+          destructiveHint: false,
+          openWorldHint: true,
+        },
+      };
+    }),
   };
 });
 

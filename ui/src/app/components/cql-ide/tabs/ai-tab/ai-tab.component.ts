@@ -29,9 +29,13 @@ import { SettingsService } from '../../../../services/settings.service';
 import { OpenCodeEditorBridgeService } from '../../../../services/opencode-editor-bridge.service';
 import { LibraryResource } from '../../shared/ide-types';
 import type { AiProviderType } from '../../../../models/settings.model';
-import { Subscription, timer } from 'rxjs';
+import { Subscription, firstValueFrom, timer } from 'rxjs';
 import { extractVsacCanonicalUrls, OpenCodeVsacImportService } from '../../../../services/opencode-vsac-import.service';
 import { buildOpenCodeProblemsContext } from '../../../../services/opencode-problems-context.lib';
+import { LibraryService } from '../../../../services/library.service';
+import { CqlIdeLibraryOpenerService } from '../../../../services/cql-ide-library-opener.service';
+import { buildNewLibraryCql } from '../../../../services/new-cql-library.lib';
+import { openCodeSessionLibraryIdsFromState } from '@cql-studio/core';
 
 type OpenCodeTimelineItem =
   | { kind: 'message'; id: string; order: number; message: OpenCodeUiMessage }
@@ -58,6 +62,12 @@ const WEB_COMMANDS: OpenCodeCommand[] = [
 
 const MAX_EVENT_RECONNECT_ATTEMPTS = 6;
 
+function sameStringSet(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightSet = new Set(right);
+  return left.every(value => rightSet.has(value));
+}
+
 @Component({
   selector: 'app-ai-tab',
   imports: [FormsModule, MarkdownComponent],
@@ -72,11 +82,19 @@ export class AiTabComponent implements OnInit, OnDestroy {
   @ViewChild('helpCard') private helpCard?: ElementRef<HTMLElement>;
   @ViewChild('promptInput') private promptInput?: ElementRef<HTMLTextAreaElement>;
 
-  private readonly ideStateService = inject(IdeStateService);
+  protected readonly ideStateService = inject(IdeStateService);
   readonly settingsService = inject(SettingsService);
   private readonly openCodeService = inject(OpenCodeService);
   private readonly editorBridge = inject(OpenCodeEditorBridgeService);
   private readonly vsacImport = inject(OpenCodeVsacImportService);
+  private readonly libraryService = inject(LibraryService);
+  private readonly libraryOpener = inject(CqlIdeLibraryOpenerService);
+  /** Serializes membership rematerialize and content active-file sync (no parallel FS races). */
+  private workspaceIoChain: Promise<void> = Promise.resolve();
+  private membershipSyncWanted = false;
+  private contentSyncWanted = false;
+  private lastContentSyncFingerprint = '';
+  private readonly lastSyncedRevisions = new Map<string, number>();
   private readonly messageRoles = new Map<string, 'user' | 'assistant'>();
   private readonly messageOrders = new Map<string, number>();
   private readonly messageParts = new Map<string, Map<string, string>>();
@@ -95,6 +113,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   private commandHelpKey = '';
   private commandHelpRequest = 0;
   private staleSessionAbortId: string | null = null;
+  private lastSessionsEpoch = 0;
   private readonly autoSendInlineRequest = signal(false);
 
   readonly session = signal<OpenCodeSession | null>(null);
@@ -115,6 +134,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   readonly status = signal<'idle' | 'starting' | 'busy' | 'error'>('idle');
   readonly error = signal<string | null>(null);
   readonly errorRetryable = signal(false);
+  readonly runnerUnavailable = signal(false);
   readonly streamConnected = signal(false);
   readonly reconnectExhausted = signal(false);
   readonly detailsShown = signal(false);
@@ -137,12 +157,39 @@ export class AiTabComponent implements OnInit, OnDestroy {
 
   readonly isAvailable = computed(() => this.openCodeService.isAvailable());
   readonly activeLibrary = computed(() => this.ideStateService.getActiveLibraryResource());
-  readonly canStart = computed(() => {
-    const library = this.activeLibrary();
-    return this.isAvailable() && Boolean(library) && !library?.contentLoading && !library?.contentLoadError
-      && Boolean(this.contentForLibrary(library!).trim()) && this.status() !== 'starting';
-  });
+  readonly canStart = computed(() => this.isAvailable() && this.status() !== 'starting');
   readonly sessionArchived = computed(() => this.session()?.availability === 'archived');
+  /** Open editor membership + focus only (not document body) — drives workspace rematerialize. */
+  private readonly workspaceMembershipKey = computed(() => {
+    const ids = this.ideStateService.libraryResources()
+      .filter(library => !library.contentLoading && !library.contentLoadError)
+      .map(library => library.id)
+      .sort();
+    const focused = this.ideStateService.activeLibraryId() ?? '';
+    return `${ids.join(',')}|${focused}`;
+  });
+  /** Revision fingerprint for session membership libraries — drives lightweight content sync. */
+  private readonly workspaceContentKey = computed(() => {
+    const session = this.session();
+    if (!session || session.availability === 'archived') return '';
+    const docs = this.editorBridge.documents();
+    const ids = session.libraryIds?.length
+      ? session.libraryIds
+      : session.activeLibraryId
+        ? [session.activeLibraryId]
+        : [];
+    return ids
+      .slice()
+      .sort()
+      .map(id => `${id}:${docs[id]?.userRevision ?? -1}`)
+      .join('|');
+  });
+  /** Live session id only — avoids rematerialize loops when focus fields are patched. */
+  private readonly liveSessionId = computed(() => {
+    const session = this.session();
+    if (!session || session.availability === 'archived') return null;
+    return session.id;
+  });
   readonly environmentStale = computed(() => {
     const session = this.session();
     return Boolean(session) && !this.sessionArchived() && !this.openCodeService.isSessionEnvironmentCurrent(session);
@@ -170,10 +217,17 @@ export class AiTabComponent implements OnInit, OnDestroy {
     && !this.environmentStale());
   readonly selectedContext = computed<OpenCodeEditorContext | null>(() => {
     const selection = this.editorBridge.selection();
-    const active = this.activeLibrary();
     const session = this.session();
-    if (!selection || !active || !session || selection.libraryId !== active.id || session.activeLibraryId !== active.id) return null;
-    return { ...selection, file: session.activeFile };
+    if (!selection || !session) return null;
+    const file = session.activeFile
+      ?? Object.entries(this.editorBridge.documents()).find(([id]) => id === selection.libraryId)?.[0];
+    if (!file && !session.libraryIds?.includes(selection.libraryId) && selection.libraryId !== session.activeLibraryId) {
+      return null;
+    }
+    return {
+      ...selection,
+      file: session.activeFile || `libraries/${selection.libraryId}.cql`,
+    };
   });
 
   constructor() {
@@ -216,6 +270,35 @@ export class AiTabComponent implements OnInit, OnDestroy {
         }).catch(error => this.setError(error));
       }
     });
+
+    effect(() => {
+      const sessionId = this.liveSessionId();
+      const membershipKey = this.workspaceMembershipKey();
+      if (!sessionId || this.environmentStale()) return;
+      void membershipKey;
+      queueMicrotask(() => void this.queueMembershipSync());
+    });
+
+    effect(() => {
+      const sessionId = this.liveSessionId();
+      const contentKey = this.workspaceContentKey();
+      if (!sessionId || this.environmentStale()) return;
+      if (!contentKey || contentKey === this.lastContentSyncFingerprint) return;
+      queueMicrotask(() => void this.queueContentSync());
+    });
+
+    effect(() => {
+      const epoch = this.openCodeService.sessionsEpoch();
+      if (epoch === this.lastSessionsEpoch) return;
+      this.lastSessionsEpoch = epoch;
+      if (epoch === 0) return;
+      queueMicrotask(() => {
+        this.releaseLocalSession();
+        this.resumeSessions.set([]);
+        this.showResumeSessions.set(false);
+        this.error.set(null);
+      });
+    });
   }
 
   private async handleInlineRequest(request: {
@@ -226,7 +309,6 @@ export class AiTabComponent implements OnInit, OnDestroy {
     let session = this.session();
     if (request.autoSend && (
       !session ||
-      session.activeLibraryId !== request.context.libraryId ||
       this.status() === 'error' ||
       this.environmentStale()
     )) {
@@ -234,10 +316,13 @@ export class AiTabComponent implements OnInit, OnDestroy {
       session = this.session();
     }
 
-    this.inlineContext.set({ ...request.context, file: session?.activeFile ?? '' });
+    this.inlineContext.set({
+      ...request.context,
+      file: session?.activeFile || `libraries/${request.context.libraryId}.cql`,
+    });
     if (request.prompt) this.promptText.set(request.prompt);
 
-    if (request.autoSend && session?.activeLibraryId === request.context.libraryId) {
+    if (request.autoSend && session) {
       this.autoSendInlineRequest.set(true);
       return;
     }
@@ -250,7 +335,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.selectedModels.set('ollama', this.settingsService.getEffectiveOllamaModel());
     this.selectedModels.set('openai', this.settingsService.getEffectiveOpenAiModel());
     this.selectedModels.set('openai-compatible', this.settingsService.getEffectiveCompatibleProviderModel());
-    queueMicrotask(() => void this.restoreSession());
+    queueMicrotask(() => void this.bootstrapOpenCode());
   }
 
   ngOnDestroy(): void {
@@ -258,28 +343,49 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.reconnectSubscription?.unsubscribe();
   }
 
+  private async bootstrapOpenCode(): Promise<void> {
+    if (!this.isAvailable()) return;
+    if (await this.checkRunnerHealth()) await this.restoreSession();
+  }
+
+  private async checkRunnerHealth(): Promise<boolean> {
+    if (!this.isAvailable()) {
+      this.runnerUnavailable.set(false);
+      return false;
+    }
+    const health = await this.openCodeService.health();
+    if (health.healthy) {
+      this.runnerUnavailable.set(false);
+      if (this.error() && this.errorRetryable() && !this.session()) {
+        this.error.set(null);
+        this.errorRetryable.set(false);
+      }
+      return true;
+    }
+    // Auth / disabled OpenCode are configuration problems, not runner crashes.
+    if (health.code === 'OPENCODE_UNAUTHORIZED' || health.code === 'OPENCODE_DISABLED') {
+      this.runnerUnavailable.set(false);
+      this.status.set('error');
+      this.error.set(health.message || 'OpenCode is currently unavailable.');
+      this.errorRetryable.set(health.retryable !== false);
+      return false;
+    }
+    this.markRunnerUnavailable(health.message || 'The OpenCode runner is unavailable.');
+    return false;
+  }
+
   async startSession(): Promise<void> {
-    const active = this.activeLibrary();
-    if (!active) {
-      this.error.set('Open or create a CQL library before starting OpenCode.');
+    const openLibraries = this.ideStateService.libraryResources();
+    const loading = openLibraries.find(library => library.contentLoading);
+    if (loading) {
+      this.error.set(`Wait for "${loading.name}" to finish loading before starting OpenCode.`);
       return;
     }
-    if (active.contentLoading) {
-      this.error.set('Wait for the active library CQL to finish loading before starting OpenCode.');
+    const failed = openLibraries.find(library => library.contentLoadError);
+    if (failed) {
+      this.error.set(`Library "${failed.name}" could not be loaded: ${failed.contentLoadError}`);
       return;
     }
-    if (active.contentLoadError) {
-      this.error.set(`The active library CQL could not be loaded: ${active.contentLoadError}`);
-      return;
-    }
-    const cqlContent = this.contentForLibrary(active);
-    if (!cqlContent.trim()) {
-      this.error.set('The active library has no CQL content. Open or create a CQL library, then try again.');
-      return;
-    }
-    // Settings can be changed while the IDE/AI tab remains mounted. Refresh the
-    // provider signal here so a stale tab selection cannot submit (for example)
-    // an empty compatible-provider config after the user switched back to Ollama.
     const configuredProvider = this.settingsService.getEffectiveAiProvider();
     this.activeProvider.set(configuredProvider);
     const provider = this.providerConfig(configuredProvider);
@@ -292,15 +398,17 @@ export class AiTabComponent implements OnInit, OnDestroy {
       return;
     }
     this.resetConversation();
+    this.session.set(null);
     this.status.set('starting');
     try {
-      const session = await this.openCodeService.createSession(await this.sessionRequest(active, cqlContent, provider));
+      const session = await this.openCodeService.createSession(await this.sessionRequest(provider));
       this.session.set(session);
       this.activeProvider.set(this.settingsService.getEffectiveAiProvider());
       this.status.set(session.status === 'error' ? 'error' : 'idle');
-      await this.loadCommandsAndFiles();
       this.connectEvents(session.id);
+      await this.loadCommands();
     } catch (error) {
+      this.session.set(null);
       this.setError(error);
     }
   }
@@ -338,18 +446,34 @@ export class AiTabComponent implements OnInit, OnDestroy {
   }
 
   private async sessionRequest(
-    active: LibraryResource,
-    cqlContent: string,
     provider = this.providerConfig()
   ): Promise<CreateOpenCodeSessionRequest> {
+    const openLibraries = this.ideStateService.libraryResources()
+      .filter(library => !library.contentLoading && !library.contentLoadError);
+    const libraries = openLibraries.map(library => ({
+      ...this.snapshot(library),
+      cqlContent: this.contentForLibrary(library),
+    }));
+    const focused = this.activeLibrary();
+    const focusedLibraryId = focused && libraries.some(library => library.id === focused.id)
+      ? focused.id
+      : libraries[0]?.id;
+    const title = focused && libraries.some(library => library.id === focused.id)
+      ? `${focused.name} in CQL Studio`
+      : libraries.length > 1
+        ? `${libraries.length} libraries in CQL Studio`
+        : libraries[0]
+          ? `${libraries[0].name} in CQL Studio`
+          : 'CQL Studio';
     return {
-      title: `${active.name} in CQL Studio`,
+      title,
       provider,
       providers: this.allProviderConfigs(),
       ollamaBaseUrl: this.settingsService.getEffectiveOllamaBaseUrl(),
       ollamaModel: this.settingsService.getEffectiveOllamaModel(),
-      activeLibrary: { ...this.snapshot(active), cqlContent },
-      dependencies: await this.collectDependencies(active, cqlContent),
+      libraries,
+      focusedLibraryId,
+      dependencies: await this.collectDependencies(libraries),
       environment: this.settingsService.getActiveEnvironment(),
       toolContext: {
         vsacFhirBaseUrl: this.settingsService.getEffectiveVsacFhirBaseUrl(),
@@ -361,16 +485,9 @@ export class AiTabComponent implements OnInit, OnDestroy {
   }
 
   async openResumePicker(): Promise<void> {
-    const active = this.activeLibrary();
-    if (!active) {
-      this.error.set('Open the CQL Library whose session you want to resume.');
-      return;
-    }
     try {
       const sessions = await this.openCodeService.listSessions();
-      this.resumeSessions.set(sessions.filter(item =>
-        item.availability === 'archived' && item.activeLibraryId === active.id
-      ));
+      this.resumeSessions.set(sessions.filter(item => item.availability === 'archived'));
       this.showResumeSessions.set(true);
       this.error.set(null);
     } catch (error) {
@@ -379,23 +496,14 @@ export class AiTabComponent implements OnInit, OnDestroy {
   }
 
   async resumeSession(saved: OpenCodeSession): Promise<void> {
-    const active = this.activeLibrary();
-    if (!active || saved.activeLibraryId !== active.id) {
-      this.error.set('Open the CQL Library associated with this saved session before resuming it.');
-      return;
-    }
-    const cqlContent = this.contentForLibrary(active);
-    if (!cqlContent.trim()) {
-      this.error.set('The active Library has no CQL content to restore into a live workspace.');
-      return;
-    }
     const provider = this.providerConfig(this.settingsService.getEffectiveAiProvider());
     this.status.set('starting');
     this.error.set(null);
     try {
+      await this.openRelevantLibraries(saved);
       const resumed = await this.openCodeService.resumeSession(
         saved.id,
-        await this.sessionRequest(active, cqlContent, provider)
+        await this.sessionRequest(provider)
       );
       this.showResumeSessions.set(false);
       await this.attachSession(resumed);
@@ -404,20 +512,44 @@ export class AiTabComponent implements OnInit, OnDestroy {
     }
   }
 
+  private async openRelevantLibraries(saved: OpenCodeSession): Promise<void> {
+    const libraryIds = saved.libraryIds?.length
+      ? saved.libraryIds
+      : openCodeSessionLibraryIdsFromState(undefined, saved.activeLibraryId);
+    for (const libraryId of libraryIds) {
+      if (libraryId === 'FHIRHelpers') continue;
+      if (this.ideStateService.libraryResources().some(library => library.id === libraryId)) continue;
+      try {
+        await this.libraryOpener.openById(libraryId);
+      } catch (error) {
+        console.warn(`Could not reopen library ${libraryId} for OpenCode resume`, error);
+      }
+    }
+  }
+
   async attachSession(session: OpenCodeSession): Promise<void> {
     this.showResumeSessions.set(false);
-    this.resetConversation();
     this.status.set('starting');
-    this.activeProvider.set(session.model.startsWith('openai/') ? 'openai' : session.model.startsWith('ollama/') ? 'ollama' : 'openai-compatible');
+    this.error.set(null);
+    this.runnerUnavailable.set(false);
+    const model = session.model ?? '';
+    this.activeProvider.set(model.startsWith('openai/') ? 'openai' : model.startsWith('ollama/') ? 'ollama' : 'openai-compatible');
     try {
       const state = await this.openCodeService.getState(session.id);
+      this.resetConversation();
       this.hydrate(state);
       if (state.session.availability !== 'archived') {
         this.connectEvents(session.id);
+        void this.loadCommands();
       } else {
         this.streamConnected.set(false);
       }
     } catch (error) {
+      if (error instanceof OpenCodeApiError && error.isRunnerOutage) {
+        // Keep the empty-state/outage UI instead of a half-hydrated live session.
+        this.session.set(null);
+        this.resetConversation();
+      }
       this.setError(error);
     }
   }
@@ -650,17 +782,22 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.liveBaselines.delete(diff.file);
     this.savedDiffFiles.update(files => { const next = new Set(files); next.delete(diff.file); return next; });
     const session = this.session();
-    const revision = this.editorBridge.document()?.userRevision ?? 0;
-    if (session) void this.openCodeService.syncActiveFile(session.id, diff.after, revision).catch(error => this.setError(error));
+    const revision = this.editorBridge.documentFor(diff.libraryId)?.userRevision ?? 0;
+    if (session) {
+      void this.openCodeService.syncActiveFile(session.id, diff.after, revision, diff.libraryId)
+        .then(() => this.lastSyncedRevisions.set(diff.libraryId, revision))
+        .catch(error => this.setError(error));
+    }
   }
 
   async revertChange(diff: OpenCodeFileDiff): Promise<void> {
     const session = this.session();
     if (!session || this.environmentStale()) return;
-    const revision = this.editorBridge.document()?.userRevision ?? 0;
+    const revision = this.editorBridge.documentFor(diff.libraryId)?.userRevision ?? 0;
     this.applyLibraryChange.emit({ libraryId: diff.libraryId, cqlContent: diff.before, save: false, mode: 'revert' });
     try {
-      await this.openCodeService.syncActiveFile(session.id, diff.before, revision);
+      await this.openCodeService.syncActiveFile(session.id, diff.before, revision, diff.libraryId);
+      this.lastSyncedRevisions.set(diff.libraryId, revision);
       this.diffs.update(items => items.filter(item => item.file !== diff.file));
       this.validation.set(null);
       this.liveBaselines.delete(diff.file);
@@ -672,13 +809,14 @@ export class AiTabComponent implements OnInit, OnDestroy {
 
   async discardChange(diff: OpenCodeFileDiff): Promise<void> {
     const session = this.session();
-    const document = this.editorBridge.document();
-    const active = this.activeLibrary();
-    if (!session || !active || this.environmentStale()) return;
-    const content = document?.libraryId === active.id ? document.content : active.cqlContent;
-    const revision = document?.libraryId === active.id ? document.userRevision : 0;
+    const document = this.editorBridge.documentFor(diff.libraryId);
+    const library = this.ideStateService.libraryResources().find(item => item.id === diff.libraryId);
+    if (!session || !library || this.environmentStale()) return;
+    const content = document?.content ?? library.cqlContent;
+    const revision = document?.userRevision ?? 0;
     try {
-      await this.openCodeService.syncActiveFile(session.id, content, revision);
+      await this.openCodeService.syncActiveFile(session.id, content, revision, diff.libraryId);
+      this.lastSyncedRevisions.set(diff.libraryId, revision);
       this.diffs.update(items => items.filter(item => item.file !== diff.file));
       this.validation.set(null);
       this.liveBaselines.delete(diff.file);
@@ -773,17 +911,27 @@ export class AiTabComponent implements OnInit, OnDestroy {
     if (!session) return;
     try {
       await this.openCodeService.endSession(session.id);
-      this.eventSource?.close();
-      this.eventSource = null;
-      this.resetConversation();
-      this.session.set(null);
-      this.status.set('idle');
+      this.releaseLocalSession();
     } catch (error) {
+      if (error instanceof OpenCodeApiError && error.isRunnerOutage) {
+        // Release the local live session so a dead runner cannot trap the tab.
+        this.releaseLocalSession();
+        this.markRunnerUnavailable(error.message);
+        return;
+      }
       this.setError(error);
     }
   }
 
   async retryConnection(): Promise<void> {
+    if (this.runnerUnavailable() && !this.session()) {
+      this.status.set('starting');
+      this.error.set(null);
+      if (!(await this.checkRunnerHealth())) return;
+      this.status.set('idle');
+      await this.restoreSession();
+      return;
+    }
     const session = this.session();
     if (!session) return void this.restoreSession();
     await this.attachSession(session);
@@ -796,30 +944,31 @@ export class AiTabComponent implements OnInit, OnDestroy {
   }
 
   private async restoreSession(): Promise<void> {
-    if (!this.isAvailable()) return;
-    const active = this.activeLibrary();
+    if (!this.isAvailable() || this.runnerUnavailable()) return;
     try {
       const sessions = await this.openCodeService.listSessions();
-      this.resumeSessions.set(sessions.filter(item => item.availability === 'archived' && (!active || item.activeLibraryId === active.id)));
-      // The IDE's open-library state is not persisted across a full browser reload.
-      // Reattach the newest owned session in that case so the conversation and diff
-      // remain recoverable while the user reopens the matching Library.
-      const matching = active ? sessions.find(session => session.activeLibraryId === active.id) : sessions[0];
+      this.resumeSessions.set(sessions.filter(item => item.availability === 'archived'));
+      const matching = sessions[0];
       if (matching) await this.attachSession(matching);
     } catch (error) {
       this.setError(error);
     }
   }
 
-  private async loadCommandsAndFiles(): Promise<void> {
+  private async loadCommands(): Promise<void> {
     const session = this.session();
-    if (!session) return;
-    const [commands] = await Promise.all([
-      this.openCodeService.getCommands(session.id),
-      this.openCodeService.findFiles(session.id, ''),
-    ]);
-    const names = new Set(WEB_COMMANDS.map(command => command.name));
-    this.commands.set([...WEB_COMMANDS, ...commands.filter(command => !names.has(command.name))]);
+    if (!session || session.availability === 'archived') return;
+    try {
+      const commands = await this.openCodeService.getCommands(session.id);
+      const names = new Set(WEB_COMMANDS.map(command => command.name));
+      this.commands.set([...WEB_COMMANDS, ...commands.filter(command => !names.has(command.name))]);
+    } catch (error) {
+      if (error instanceof OpenCodeApiError && error.isRunnerOutage) {
+        this.markRunnerUnavailable(error.message);
+        return;
+      }
+      console.warn('OpenCode command discovery failed', error);
+    }
   }
 
   private refreshCommandArgumentHelp(value: string): void {
@@ -1075,6 +1224,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     if (this.session()?.id !== sessionId) return;
     try {
       this.hydrate(await this.openCodeService.getState(sessionId));
+      this.runnerUnavailable.set(false);
       this.connectEvents(sessionId);
     } catch (error) {
       if (error instanceof OpenCodeApiError && ['SESSION_NOT_FOUND', 'SESSION_EXPIRED'].includes(error.code)) {
@@ -1084,6 +1234,9 @@ export class AiTabComponent implements OnInit, OnDestroy {
         this.error.set('The OpenCode session ended. Start a new session to continue.');
         return;
       }
+      if (error instanceof OpenCodeApiError && error.isRunnerOutage) {
+        this.markRunnerUnavailable(error.message);
+      }
       this.errorRetryable.set(true);
       this.scheduleReconnect(sessionId);
     }
@@ -1091,7 +1244,10 @@ export class AiTabComponent implements OnInit, OnDestroy {
 
   private handleEnvelope(envelope: OpenCodeEventEnvelope): void {
     const followOutput = this.isNearTimelineBottom();
-    this.lastEventId = Math.max(this.lastEventId, envelope.id);
+    // Gateway-local events use id 0 so reconnect `after=` stays on runner sequence.
+    if (envelope.id > 0) {
+      this.lastEventId = Math.max(this.lastEventId, envelope.id);
+    }
     this.streamConnected.set(true);
     this.handleEvent(envelope.event);
     if (followOutput) this.queueTimelineScroll(true);
@@ -1103,6 +1259,10 @@ export class AiTabComponent implements OnInit, OnDestroy {
       if (!this.environmentStale()) {
         this.handleWorkspaceChange(event.properties);
       }
+      return;
+    }
+    if (event.type === 'cql.ide.create_draft') {
+      void this.handleCreateDraftRequest(event.properties);
       return;
     }
     if (event.type === 'attachments.compacted') {
@@ -1147,6 +1307,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     if (event.type === 'session.idle') {
       this.status.set('idle');
       this.repairInFlight = false;
+      void this.queueContentSync();
       void this.refreshDiff();
       return;
     }
@@ -1165,8 +1326,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     if (event.type === 'runner.error') {
       this.status.set('error');
       const message = event.properties['message'];
-      this.error.set(typeof message === 'string' ? message : 'The OpenCode session failed.');
-      this.errorRetryable.set(true);
+      this.markRunnerUnavailable(typeof message === 'string' ? message : 'The OpenCode runner failed.');
       return;
     }
     if (event.type === 'session.error') {
@@ -1188,8 +1348,8 @@ export class AiTabComponent implements OnInit, OnDestroy {
     const file = typeof properties['file'] === 'string' ? properties['file'] : '';
     const content = typeof properties['content'] === 'string' ? properties['content'] : null;
     const baseRevision = Number(properties['baseRevision']);
-    const document = this.editorBridge.document();
-    if (!content || !document || document.libraryId !== libraryId) return;
+    const document = this.editorBridge.documentFor(libraryId);
+    if (!content || !document) return;
     if (!Number.isFinite(baseRevision) || baseRevision !== document.userRevision) {
       this.liveEditsEnabled.set(false);
       this.liveConflict.set('Live edits paused because the CQL document changed after OpenCode started. Review the workspace diff before applying it.');
@@ -1199,27 +1359,191 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.applyLibraryChange.emit({ libraryId, cqlContent: content, save: false, mode: 'live', baseRevision });
   }
 
+  private async handleCreateDraftRequest(properties: Record<string, unknown>): Promise<void> {
+    const session = this.session();
+    const actionId = typeof properties['actionId'] === 'string' ? properties['actionId'] : '';
+    const requestedName = typeof properties['name'] === 'string' ? properties['name'].trim() : '';
+    if (!session || !actionId || !requestedName) return;
+    try {
+      let name = requestedName.replace(/[^A-Za-z0-9_]/g, '_') || 'DraftLibrary';
+      if (!/^[A-Za-z]/.test(name)) name = `Library${name}`;
+      let candidate = name;
+      let suffix = 2;
+      while (this.ideStateService.libraryResources().some(library => library.id === candidate)) {
+        candidate = `${name}${suffix++}`;
+      }
+      const cqlContent = buildNewLibraryCql(candidate);
+      this.ideStateService.addLibraryResource({
+        id: candidate,
+        name: candidate,
+        title: candidate,
+        version: '1.0.0',
+        description: 'New library',
+        url: this.libraryService.urlFor(candidate),
+        cqlContent,
+        originalContent: cqlContent,
+        isActive: false,
+        isDirty: false,
+        library: null,
+      });
+      this.ideStateService.selectLibraryResource(candidate);
+      await this.queueMembershipSync();
+      const updated = this.session();
+      const file = updated?.activeLibraryId === candidate && updated.activeFile
+        ? updated.activeFile
+        : `libraries/${candidate}.cql`;
+      await this.openCodeService.ackIdeAction(session.id, actionId, {
+        ok: true,
+        libraryId: candidate,
+        name: candidate,
+        file,
+      });
+    } catch (error) {
+      await this.openCodeService.ackIdeAction(session.id, actionId, {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      }).catch(() => undefined);
+      this.setError(error);
+    }
+  }
+
+  /**
+   * Coalesced rematerialize of open editors + deps. Safe to call concurrently;
+   * overlapping callers share one workspace I/O chain with content sync.
+   */
+  private queueMembershipSync(): Promise<void> {
+    this.membershipSyncWanted = true;
+    return this.enqueueWorkspaceIo(async () => {
+      while (this.membershipSyncWanted) {
+        this.membershipSyncWanted = false;
+        await this.runMembershipSync();
+      }
+    });
+  }
+
+  private async runMembershipSync(): Promise<void> {
+    const session = this.session();
+    if (!session || session.availability === 'archived' || this.environmentStale()) return;
+    try {
+      const request = await this.sessionRequest();
+      if (this.session()?.id !== session.id) return;
+      const revisions: Record<string, number> = {};
+      for (const library of request.libraries) {
+        revisions[library.id] = this.editorBridge.documentFor(library.id)?.userRevision ?? 0;
+      }
+      const updated = await this.openCodeService.syncWorkspace(session.id, {
+        libraries: request.libraries,
+        dependencies: request.dependencies,
+        focusedLibraryId: request.focusedLibraryId,
+        revisions,
+      });
+      if (this.session()?.id !== session.id) return;
+      this.mergeSessionFocus(updated);
+      this.lastContentSyncFingerprint = this.workspaceContentKey();
+      for (const library of request.libraries) {
+        this.lastSyncedRevisions.set(
+          library.id,
+          this.editorBridge.documentFor(library.id)?.userRevision ?? 0
+        );
+      }
+    } catch (error) {
+      if (error instanceof OpenCodeApiError && error.code === 'SESSION_BUSY') return;
+      this.setError(error);
+    }
+  }
+
+  /** Coalesced active-file content sync for membership libraries (idle only). */
+  private queueContentSync(): Promise<void> {
+    this.contentSyncWanted = true;
+    return this.enqueueWorkspaceIo(async () => {
+      while (this.contentSyncWanted) {
+        this.contentSyncWanted = false;
+        await this.runContentSync();
+      }
+    });
+  }
+
+  private enqueueWorkspaceIo(task: () => Promise<void>): Promise<void> {
+    const run = this.workspaceIoChain.then(task, task);
+    this.workspaceIoChain = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async runContentSync(): Promise<void> {
+    const session = this.session();
+    if (!session || session.availability === 'archived' || this.environmentStale()) return;
+    // Do not spin while busy; session.idle flushes stale content fingerprints.
+    if (this.status() === 'busy') return;
+    const fingerprint = this.workspaceContentKey();
+    if (!fingerprint || fingerprint === this.lastContentSyncFingerprint) return;
+    const ids = session.libraryIds?.length
+      ? session.libraryIds
+      : session.activeLibraryId
+        ? [session.activeLibraryId]
+        : [];
+    try {
+      for (const libraryId of ids) {
+        const library = this.ideStateService.libraryResources().find(item => item.id === libraryId);
+        if (!library) continue;
+        const document = this.editorBridge.documentFor(libraryId);
+        const content = document?.content ?? library.cqlContent;
+        const revision = document?.userRevision ?? 0;
+        if (this.lastSyncedRevisions.get(libraryId) === revision) continue;
+        await this.openCodeService.syncActiveFile(session.id, content, revision, libraryId);
+        this.lastSyncedRevisions.set(libraryId, revision);
+      }
+      this.lastContentSyncFingerprint = this.workspaceContentKey();
+    } catch (error) {
+      if (error instanceof OpenCodeApiError && error.code === 'SESSION_BUSY') return;
+      this.setError(error);
+    }
+  }
+
+  private mergeSessionFocus(updated: OpenCodeSession): void {
+    const current = this.session();
+    if (!current || current.id !== updated.id) return;
+    const libraryIds = Array.isArray(updated.libraryIds) ? updated.libraryIds : current.libraryIds ?? [];
+    if (
+      current.activeLibraryId === updated.activeLibraryId
+      && current.activeFile === updated.activeFile
+      && sameStringSet(current.libraryIds ?? [], libraryIds)
+      && current.status === updated.status
+    ) {
+      return;
+    }
+    this.session.set({
+      ...current,
+      ...updated,
+      libraryIds,
+    });
+  }
+
   private contextForPrompt(session: OpenCodeSession): OpenCodeEditorContext | null {
     const context = this.inlineContext() ?? this.selectedContext();
-    if (!context || context.libraryId !== session.activeLibraryId) return null;
-    return { ...context, file: session.activeFile };
+    if (!context) return null;
+    const membership = session.libraryIds?.length
+      ? session.libraryIds.includes(context.libraryId)
+      : !session.activeLibraryId || session.activeLibraryId === context.libraryId;
+    if (!membership) return null;
+    return {
+      ...context,
+      file: session.activeFile || context.file || `libraries/${context.libraryId}.cql`,
+    };
   }
 
   private async syncActiveEditor(session: OpenCodeSession): Promise<void> {
     const active = this.activeLibrary();
-    if (!active || active.id !== session.activeLibraryId) {
-      throw new OpenCodeApiError({
-        code: 'ACTIVE_LIBRARY_CHANGED',
-        message: 'This OpenCode session belongs to a different library. Start a new session for the active library.',
-        retryable: false,
-      }, 409);
+    if (active && !this.editorBridge.documentFor(active.id)) {
+      this.editorBridge.recordDocument(active.id, active.cqlContent, 0);
     }
-    const document = this.editorBridge.document();
-    const content = document?.libraryId === active.id ? document.content : active.cqlContent;
-    const revision = document?.libraryId === active.id ? document.userRevision : 0;
-    if (document?.libraryId !== active.id) this.editorBridge.recordDocument(active.id, content, revision);
-    this.savedDiffFiles.update(files => { const next = new Set(files); next.delete(session.activeFile); return next; });
-    await this.openCodeService.syncActiveFile(session.id, content, revision);
+    this.savedDiffFiles.update(files => {
+      const next = new Set(files);
+      if (session.activeFile) next.delete(session.activeFile);
+      return next;
+    });
+    this.lastContentSyncFingerprint = '';
+    this.lastSyncedRevisions.clear();
+    await this.queueContentSync();
   }
 
   private ingestMessageInfo(info?: Record<string, unknown>): void {
@@ -1310,7 +1634,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
         session.id,
         `The proposed CQL failed validation. Repair only these errors while preserving the user's intent. This is automatic repair attempt ${attempt} of 2.\n\n${diagnostics}`,
         'build',
-        [session.activeFile],
+        session.activeFile ? [session.activeFile] : [],
         this.reasoningEnabled()
       );
     } catch (error) {
@@ -1321,18 +1645,25 @@ export class AiTabComponent implements OnInit, OnDestroy {
 
   private hydrate(state: OpenCodeSessionState): void {
     this.session.set(state.session);
-    this.status.set(state.session.status);
-    this.reasoningEnabled.set(state.session.reasoningEnabled);
-    this.diffs.set(state.diffs);
-    this.attachments.set(state.attachments ?? []);
-    this.validation.set(state.validation);
-    this.permissions.set(state.permissions ?? []);
-    this.questions.set(state.questions ?? []);
-    this.lastEventId = state.lastEventId ?? 0;
-    this.commands.set([...WEB_COMMANDS, ...state.commands.filter(command => !WEB_COMMANDS.some(local => local.name === command.name))]);
-    for (const raw of state.messages as Array<Record<string, any>>) {
-      this.ingestMessageInfo(raw['info']);
-      for (const part of raw['parts'] ?? []) this.ingestPart(part);
+    this.status.set(state.session.status === 'busy' || state.session.status === 'idle' || state.session.status === 'error'
+      ? state.session.status
+      : 'idle');
+    this.reasoningEnabled.set(Boolean(state.session.reasoningEnabled));
+    this.diffs.set(Array.isArray(state.diffs) ? state.diffs : []);
+    this.attachments.set(Array.isArray(state.attachments) ? state.attachments : []);
+    this.validation.set(state.validation ?? null);
+    this.permissions.set(Array.isArray(state.permissions) ? state.permissions : []);
+    this.questions.set(Array.isArray(state.questions) ? state.questions : []);
+    this.lastEventId = typeof state.lastEventId === 'number' ? state.lastEventId : 0;
+    const remoteCommands = Array.isArray(state.commands) ? state.commands : [];
+    this.commands.set([...WEB_COMMANDS, ...remoteCommands.filter(command => !WEB_COMMANDS.some(local => local.name === command.name))]);
+    const messages = Array.isArray(state.messages) ? state.messages : [];
+    for (const raw of messages as Array<Record<string, unknown>>) {
+      this.ingestMessageInfo(raw['info'] as Record<string, unknown> | undefined);
+      const parts = raw['parts'];
+      if (Array.isArray(parts)) {
+        for (const part of parts) this.ingestPart(part as Record<string, unknown>);
+      }
     }
     this.queueTimelineScroll(true);
   }
@@ -1357,6 +1688,10 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.reconnectSubscription = null;
     this.reconnectAttempts = 0;
     this.lastEventId = 0;
+    this.lastContentSyncFingerprint = '';
+    this.lastSyncedRevisions.clear();
+    this.membershipSyncWanted = false;
+    this.contentSyncWanted = false;
     this.messages.set([]);
     this.activities.set([]);
     this.diffs.set([]);
@@ -1373,6 +1708,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
     this.activityParts.clear();
     this.error.set(null);
     this.errorRetryable.set(false);
+    this.runnerUnavailable.set(false);
     this.streamConnected.set(false);
     this.reconnectExhausted.set(false);
     this.repairAttempts.set(0);
@@ -1467,37 +1803,67 @@ export class AiTabComponent implements OnInit, OnDestroy {
   }
 
   private contentForLibrary(library: LibraryResource): string {
-    const document = this.editorBridge.document();
-    return document?.libraryId === library.id ? document.content : library.cqlContent;
+    const document = this.editorBridge.documentFor(library.id);
+    return document?.content ?? library.cqlContent;
   }
 
   private problemsContext(session: OpenCodeSession): OpenCodeIdeDiagnostics | undefined {
     const active = this.activeLibrary();
-    const document = this.editorBridge.document();
-    if (!active || !document || active.id !== session.activeLibraryId || document.libraryId !== active.id) return undefined;
+    if (!active) return undefined;
+    const document = this.editorBridge.documentFor(active.id);
+    if (!document) return undefined;
+    const membership = session.libraryIds?.length
+      ? session.libraryIds.includes(active.id)
+      : !session.activeLibraryId || session.activeLibraryId === active.id;
+    if (!membership) return undefined;
     return buildOpenCodeProblemsContext({
       libraryId: active.id,
-      file: session.activeFile,
+      file: session.activeFile || `libraries/${active.name}.cql`,
       documentRevision: document.userRevision,
       problems: this.ideStateService.editorState().syntaxErrors,
     });
   }
 
-  private async collectDependencies(active: LibraryResource, activeContent = this.contentForLibrary(active)): Promise<OpenCodeLibrarySnapshot[]> {
-    const openLibraries = this.ideStateService.libraryResources();
-    const byName = new Map(openLibraries.map(library => [library.name.toLowerCase(), library]));
+  private async collectDependencies(libraries: OpenCodeLibrarySnapshot[]): Promise<OpenCodeLibrarySnapshot[]> {
+    const writableIds = new Set(libraries.map(library => library.id));
+    const openByName = new Map(
+      this.ideStateService.libraryResources().map(library => [library.name.toLowerCase(), library])
+    );
     const selected = new Map<string, OpenCodeLibrarySnapshot>();
-    const pending = [activeContent];
+    const pending = libraries.map(library => library.cqlContent);
     while (pending.length > 0) {
       for (const includeName of this.includeNames(pending.shift() ?? '')) {
-        const dependency = byName.get(includeName.toLowerCase());
-        if (!dependency || dependency.id === active.id || selected.has(dependency.id)) continue;
-        selected.set(dependency.id, this.snapshot(dependency));
-        pending.push(dependency.cqlContent);
+        const open = openByName.get(includeName.toLowerCase());
+        if (open) {
+          if (writableIds.has(open.id) || selected.has(open.id)) continue;
+          selected.set(open.id, this.snapshot(open));
+          pending.push(open.cqlContent);
+          continue;
+        }
+        if ([...selected.values()].some(item => item.name.toLowerCase() === includeName.toLowerCase())) continue;
+        try {
+          const found = await firstValueFrom(this.libraryService.findByNameAndVersion(includeName, undefined, true));
+          if (!found?.id || writableIds.has(found.id) || selected.has(found.id)) continue;
+          const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(found));
+          if (!cqlContent.trim()) continue;
+          selected.set(found.id, {
+            id: found.id,
+            name: found.name || found.id,
+            version: found.version,
+            canonicalUrl: found.url,
+            cqlContent,
+            originalContent: cqlContent,
+            fhirVersionId: found.meta?.versionId,
+          });
+          pending.push(cqlContent);
+        } catch {
+          // Omit unresolved includes; the agent can use read-only library MCP tools.
+        }
       }
     }
-    const hasFhirHelpers = [...selected.values()].some(dependency => dependency.name.toLowerCase() === 'fhirhelpers');
-    if (active.name.toLowerCase() !== 'fhirhelpers' && !hasFhirHelpers) {
+    const hasFhirHelpers = libraries.some(library => library.name.toLowerCase() === 'fhirhelpers')
+      || [...selected.values()].some(dependency => dependency.name.toLowerCase() === 'fhirhelpers');
+    if (!hasFhirHelpers) {
       const response = await fetch('/cql/FHIRHelpers-4.0.1.cql');
       if (!response.ok) throw new Error(`Unable to load the bundled FHIRHelpers 4.0.1 dependency (${response.status})`);
       selected.set('FHIRHelpers', {
@@ -1519,8 +1885,32 @@ export class AiTabComponent implements OnInit, OnDestroy {
     try { return JSON.stringify(value, null, 2).slice(0, 4_000); } catch { return String(value); }
   }
 
+  private releaseLocalSession(): void {
+    this.eventSource?.close();
+    this.eventSource = null;
+    this.resetConversation();
+    this.session.set(null);
+    this.status.set('idle');
+  }
+
+  private markRunnerUnavailable(message: string): void {
+    this.runnerUnavailable.set(true);
+    this.status.set('error');
+    this.errorRetryable.set(true);
+    this.error.set(message || 'The OpenCode runner is unavailable. Start the OpenCode process and retry.');
+  }
+
   private setError(error: unknown): void {
     this.status.set('error');
+    if (error instanceof OpenCodeApiError && error.isRunnerOutage) {
+      this.markRunnerUnavailable(
+        error.code === 'RUNNER_TIMEOUT'
+          ? 'The OpenCode runner timed out. It may still be starting or overloaded.'
+          : (error.message || 'The OpenCode runner is unavailable. Start the OpenCode process and retry.')
+      );
+      return;
+    }
+    this.runnerUnavailable.set(false);
     this.error.set(error instanceof Error ? error.message : String(error));
     this.errorRetryable.set(error instanceof OpenCodeApiError && error.retryable);
   }

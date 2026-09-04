@@ -1,6 +1,7 @@
 // Author: Preston Lee
 
 import assert from 'node:assert/strict';
+import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,11 +11,51 @@ import {
   openCodeToolsForPrompt,
   isOpenCodeSessionProgress,
   openCodeAttachmentMimeType,
-} from '../src/opencode/runtime.js';
-import { openCodeResumeMessages, openCodeResumeTranscript } from '../src/opencode/session-history.js';
-import { mcpBridgeExecutable, OpenCodeWorkspaceManager } from '../src/opencode/workspace.js';
+  assertOpenCodeCliAvailable,
+} from '../src/runtime.js';
+import { openCodeResumeMessages, openCodeResumeTranscript } from '@cql-studio/core';
+import {
+  assertMarkitdownAvailable,
+  mcpBridgeExecutable,
+  OpenCodeWorkspaceManager,
+  resolveExecutableOnPath,
+} from '../src/workspace.js';
+import { OpenCodeExitCode, OpenCodeFatalError } from '../src/fatal.js';
 
 const activeCql = `library Example version '1.0.0'\nusing FHIR version '4.0.1'\ninclude Shared version '1.0.0'\ndefine Answer: 42\n`;
+
+test('assertOpenCodeCliAvailable fails clearly when the CLI stub was never replaced', () => {
+  // Local installs after --ignore-scripts leave a tiny postinstall stub.
+  // Either the real binary is present (no throw) or we get UNAVAILABLE.
+  try {
+    assertOpenCodeCliAvailable();
+  } catch (error) {
+    assert.ok(error instanceof OpenCodeFatalError);
+    assert.equal(error.exitCode, OpenCodeExitCode.UNAVAILABLE);
+    assert.match(error.message, /opencode/i);
+  }
+});
+
+test('assertMarkitdownAvailable resolves markitdown on PATH and fails with UNAVAILABLE otherwise', () => {
+  const binDir = path.join(os.tmpdir(), `cql-studio-markitdown-${process.pid}-${Date.now()}`);
+  mkdirSync(binDir, { recursive: true });
+  const fakeBin = path.join(binDir, 'markitdown');
+  writeFileSync(fakeBin, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  chmodSync(fakeBin, 0o755);
+
+  assert.equal(resolveExecutableOnPath('markitdown', binDir), fakeBin);
+  assert.equal(assertMarkitdownAvailable(binDir), fakeBin);
+
+  assert.throws(
+    () => assertMarkitdownAvailable('/nonexistent-cql-studio-path'),
+    (error: unknown) => {
+      assert.ok(error instanceof OpenCodeFatalError);
+      assert.equal(error.exitCode, OpenCodeExitCode.UNAVAILABLE);
+      assert.match(error.message, /not found on PATH/);
+      return true;
+    }
+  );
+});
 
 test('does not treat global runner heartbeats as provider progress', () => {
   assert.equal(isOpenCodeSessionProgress(undefined, 'ses-active'), false);
@@ -68,11 +109,71 @@ test('builds resume context from chat text without internal or tool payloads', (
   assert.doesNotMatch(sanitized, /hidden selection|hidden diagnostics|secret|state/);
 });
 
-test('resolves the MCP bridge beside the compiled monorepo server module', () => {
+test('resolves the MCP bridge beside the compiled monorepo runner module', () => {
   assert.equal(
-    mcpBridgeExecutable('file:///app/server/dist/opencode/workspace.js', ''),
-    '/app/server/dist/opencode/mcp-bridge.js'
+    mcpBridgeExecutable('file:///app/opencode/dist/workspace.js', ''),
+    '/app/opencode/dist/mcp-bridge.js'
   );
+});
+
+test('materializes multiple writable libraries and an empty session', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'cql-studio-opencode-multi-'));
+  const manager = new OpenCodeWorkspaceManager(root);
+  await manager.initialize();
+  const empty = await manager.create({
+    ollamaBaseUrl: 'http://localhost:11434',
+    ollamaModel: 'qwen3-coder:latest',
+    libraries: [],
+    dependencies: [{
+      id: 'FHIRHelpers',
+      name: 'FHIRHelpers',
+      version: '4.0.1',
+      cqlContent: `library FHIRHelpers version '4.0.1'\ndefine function ToString(value String): value\n`,
+    }],
+  });
+  assert.equal(empty.activeFile, '');
+  assert.equal(Object.values(empty.manifest.files).filter(entry => entry.writable).length, 0);
+
+  const multi = await manager.create({
+    ollamaBaseUrl: 'http://localhost:11434',
+    ollamaModel: 'qwen3-coder:latest',
+    libraries: [
+      { id: 'One', name: 'One', cqlContent: `library One version '1.0.0'\ndefine A: 1\n` },
+      { id: 'Two', name: 'Two', cqlContent: `library Two version '1.0.0'\ndefine B: 2\n` },
+    ],
+    focusedLibraryId: 'Two',
+    dependencies: [{
+      id: 'Shared',
+      name: 'Shared',
+      version: '1.0.0',
+      cqlContent: `library Shared version '1.0.0'\ndefine SharedValue: true\n`,
+    }],
+  });
+  assert.equal(multi.manifest.activeLibraryId, 'Two');
+  assert.equal(multi.activeFile, 'libraries/Two.cql');
+  assert.equal(Object.values(multi.manifest.files).filter(entry => entry.writable).length, 2);
+  await manager.syncWorkspace(multi, {
+    libraries: [{ id: 'One', name: 'One', cqlContent: `library One version '1.0.0'\ndefine A: 11\n` }],
+    dependencies: [{
+      id: 'Shared',
+      name: 'Shared',
+      version: '1.0.0',
+      cqlContent: `library Shared version '1.0.0'\ndefine SharedValue: true\n`,
+    }],
+    focusedLibraryId: 'One',
+  });
+  assert.equal(multi.manifest.activeLibraryId, 'One');
+  assert.equal(multi.activeFile, 'libraries/One.cql');
+  assert.equal(Object.values(multi.manifest.files).filter(entry => entry.writable).length, 1);
+  assert.ok(multi.manifest.files['dependencies/Shared.cql']);
+
+  const blank = await manager.create({
+    ollamaBaseUrl: 'http://localhost:11434',
+    ollamaModel: 'qwen3-coder:latest',
+    libraries: [{ id: 'Blank', name: 'Blank', cqlContent: '' }],
+  });
+  assert.equal(blank.activeFile, 'libraries/Blank.cql');
+  assert.equal(await readFile(path.join(blank.directory, blank.activeFile), 'utf8'), '');
 });
 
 test('materializes a writable draft, read-only dependencies, MCP config, and a review diff', async () => {
@@ -130,9 +231,9 @@ test('materializes a writable draft, read-only dependencies, MCP config, and a r
       doom_loop: 'ask',
       skill: { '*': 'allow' },
     });
-    assert.equal(config.mcp['cql-studio'].environment.CQL_STUDIO_SERVER_MCP_CAPABILITY, 'opaque-test-capability');
-    assert.equal(config.mcp['cql-studio'].environment.CQL_STUDIO_SERVER_MCP_ACTIVE_FILE, workspace.activeFile);
-    assert.match(config.mcp['cql-studio'].command[1], /\/opencode\/mcp-bridge\.js$/);
+    assert.equal(config.mcp['cql-studio'].environment.CQL_STUDIO_OPENCODE_MCP_CAPABILITY, 'opaque-test-capability');
+    assert.equal(config.mcp['cql-studio'].environment.CQL_STUDIO_OPENCODE_MCP_ACTIVE_FILE, workspace.activeFile);
+    assert.match(config.mcp['cql-studio'].command[1], /\/mcp-bridge\.js$/);
     assert.equal(config.provider.ollama.models['qwen3-coder:latest'].variants.fast.reasoningEffort, 'none');
     assert.equal(config.provider.ollama.models['qwen3-coder:latest'].variants.thinking.reasoningEffort, 'medium');
     const commandExpectations: Record<string, RegExp> = {

@@ -1,22 +1,61 @@
 // Author: Preston Lee
 
 import * as client from 'openid-client';
-import type { Configuration } from 'openid-client';
+import type { Configuration, DiscoveryRequestOptions } from 'openid-client';
 import type { ServerEnv } from '../config/env.js';
 import { logger } from '../logger.js';
 
 const configBySecret = new Map<string, Configuration>();
 
-function discoveryOptionsForIssuer(
-  issuerUrl: string
-): client.DiscoveryRequestOptions | undefined {
-  if (!issuerUrl.startsWith('http://')) {
-    return undefined;
+function stripTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, '');
+}
+
+/**
+ * When the server runs inside Docker, the browser-facing issuer (localhost) is
+ * unreachable from the container. Rewrite those requests to an internal
+ * discovery origin and rewrite JSON metadata URLs back to the public issuer.
+ */
+function discoveryFetchForDocker(
+  publicIssuerUrl: string,
+  discoveryUrl: string
+): client.CustomFetch {
+  const publicOrigin = new URL(publicIssuerUrl).origin;
+  const discoveryOrigin = new URL(discoveryUrl).origin;
+  return async (url, options) => {
+    const incoming = new URL(url);
+    const target =
+      incoming.origin === publicOrigin
+        ? new URL(`${incoming.pathname}${incoming.search}${incoming.hash}`, discoveryOrigin)
+        : incoming;
+    const response = await fetch(target, options);
+    const contentType = response.headers.get('content-type') || '';
+    if (!contentType.includes('json') && !contentType.includes('javascript')) {
+      return response;
+    }
+    const body = await response.text();
+    const rewritten = body.split(discoveryOrigin).join(publicOrigin);
+    return new Response(rewritten, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    });
+  };
+}
+
+function discoveryOptionsForIssuer(env: ServerEnv): DiscoveryRequestOptions | undefined {
+  const options: DiscoveryRequestOptions = {};
+  if (env.ssoIssuerUrl.startsWith('http://')) {
+    // Must pass the library's allowInsecureRequests reference — performDiscovery checks
+    // execute.includes(allowInsecureRequests) by identity, not merely calling it on the config.
+    // HTTP issuers are rejected at startup outside development (see loadEnv).
+    options.execute = [client.allowInsecureRequests];
   }
-  // Must pass the library's allowInsecureRequests reference — performDiscovery checks
-  // execute.includes(allowInsecureRequests) by identity, not merely calling it on the config.
-  // HTTP issuers are rejected at startup outside development (see loadEnv).
-  return { execute: [client.allowInsecureRequests] };
+  const discoveryUrl = env.ssoDiscoveryUrl?.trim();
+  if (discoveryUrl && stripTrailingSlash(discoveryUrl) !== stripTrailingSlash(env.ssoIssuerUrl)) {
+    options[client.customFetch] = discoveryFetchForDocker(env.ssoIssuerUrl, discoveryUrl);
+  }
+  return options.execute || options[client.customFetch] ? options : undefined;
 }
 
 function wrapOidcDiscoveryError(err: unknown, issuerUrl: string): Error {
@@ -29,10 +68,10 @@ function wrapOidcDiscoveryError(err: unknown, issuerUrl: string): Error {
   if (unreachable) {
     const dockerHint =
       issuerUrl.includes('localhost') || issuerUrl.includes('127.0.0.1')
-        ? ' If cql-studio-server runs inside Docker, localhost is the container — use host.docker.internal (Docker Desktop) or the compose service name authentik-server on a shared network instead.'
+        ? ' If cql-studio-server runs inside Docker, localhost is the container — set CQL_STUDIO_SERVER_SSO_DISCOVERY_URL to the compose service URL (e.g. http://cql-studio-authentik-server:9000/application/o/cql-studio/) while keeping CQL_STUDIO_SERVER_SSO_ISSUER_URL as the browser-facing localhost issuer.'
         : '';
     return new Error(
-      `Cannot reach SSO issuer at ${issuerUrl}. Start the development IdP stack (docker compose -f docker-compose.development.yml up -d) or fix the issuer URL for this runtime.${dockerHint} (${detail})`
+      `Cannot reach SSO issuer at ${issuerUrl}. Start the development IdP stack (docker compose -f docker/docker-compose.development.yml up -d) or fix the issuer URL for this runtime.${dockerHint} (${detail})`
     );
   }
   return err instanceof Error ? err : new Error(message);
@@ -53,7 +92,7 @@ export async function getOidcConfig(
       env.ssoClientId,
       clientSecret,
       undefined,
-      discoveryOptionsForIssuer(env.ssoIssuerUrl)
+      discoveryOptionsForIssuer(env)
     );
   } catch (err) {
     throw wrapOidcDiscoveryError(err, env.ssoIssuerUrl);

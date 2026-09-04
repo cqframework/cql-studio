@@ -28,7 +28,7 @@ type DeployConfigKey = (typeof DeployConfigKeys)[keyof typeof DeployConfigKeys];
 const DeployConfigDefaults: Partial<Record<DeployConfigKey, string>> = {
   [DeployConfigKeys.SERVER_BASE_URL]: 'http://localhost:3003',
   [DeployConfigKeys.RUNNER_BASE_URL]: 'http://localhost:8091',
-  [DeployConfigKeys.RUNNER_FHIR_BASE_URL]: 'http://hapi-r4-data:8080/fhir',
+  [DeployConfigKeys.RUNNER_FHIR_BASE_URL]: 'http://cql-studio-hapi-r4-data:8080/fhir',
   [DeployConfigKeys.DEFAULT_TEST_RESULTS_INDEX_URL]: 'http://localhost:8092/index.json',
   [DeployConfigKeys.FHIR_BASE_URL]: 'http://localhost:8080/fhir',
   [DeployConfigKeys.OLLAMA_BASE_URL]: 'http://localhost:11434',

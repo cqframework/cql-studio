@@ -65,13 +65,13 @@ model User {
   compatibleProviderBaseUrl  String  @default("")
   compatibleProviderModel    String  @default("")
   searxngBaseUrl             String  @default("")
-  enableAiAssistant          Boolean @default(false)
+  enableAiAssistant          Boolean @default(true)
   useMCPTools                Boolean @default(false)
   allowAiWriteOperations     Boolean @default(false)
-  autoApplyCodeEdits         Boolean @default(false)
+  autoApplyCodeEdits         Boolean @default(true)
   requireDiffPreview         Boolean @default(false)
   planActSeparateModels      Boolean @default(false)
-  enableAiCodePrediction     Boolean @default(false)
+  enableAiCodePrediction     Boolean @default(true)
 
   sessions              Session[]
   teamMemberships       TeamMembership[]
@@ -97,8 +97,8 @@ model OpenCodeSession {
   openCodeSessionId String
   title             String
   status            String
-  activeLibraryId   String
-  activeFile        String
+  activeLibraryId   String?
+  activeFile        String?
   model             String
   reasoningEnabled  Boolean  @default(false)
   runnerCreatedAt   DateTime
@@ -110,7 +110,6 @@ model OpenCodeSession {
   updatedAt         DateTime @updatedAt
 
   @@index([userId, updatedAt])
-  @@index([userId, activeLibraryId])
   @@index([expiresAt])
 }
 

@@ -1,16 +1,16 @@
 <div class="opencode-tab d-flex flex-column h-100">
-  <header class="opencode-toolbar border-bottom p-2 d-flex align-items-center justify-content-between gap-2">
+  <header class="opencode-toolbar border-bottom p-2 d-flex flex-column gap-1">
     <div class="d-flex align-items-center gap-2 min-w-0">
       <i class="bi bi-terminal"></i>
       <strong>OpenCode</strong>
+      @if (runnerUnavailable()) {
+        <span id="opencode-runner-status" class="badge text-bg-warning">Runner offline</span>
+      }
       @if (session()) {
         <span class="badge text-bg-secondary text-truncate" [title]="session()!.model">{{ session()!.model }}</span>
         @if (sessionArchived()) {
           <span id="opencode-session-archived" class="badge text-bg-warning">Archived</span>
         }
-        <span class="badge text-bg-light text-truncate" [title]="'Bound environment: ' + sessionEnvironmentLabel()">
-          <i class="bi bi-hdd-network me-1"></i>{{ sessionEnvironmentLabel() }}
-        </span>
         @if (activeLibrary()?.workspaceOrigin; as origin) {
           <span id="opencode-workspace-origin" class="badge text-bg-light text-truncate"
             [title]="'Opened from workspace: ' + origin.workspaceName">
@@ -22,17 +22,19 @@
       }
     </div>
     @if (session()) {
-      <div class="d-flex align-items-center gap-2">
-        <label class="reasoning-toggle small" title="Mirror OpenCode workspace changes into the active editor without saving">
-          <input type="checkbox" [ngModel]="liveEditsEnabled()" (ngModelChange)="toggleLiveEdits($event)" [disabled]="environmentStale() || sessionArchived()">
-          Live edits
-        </label>
-        <label class="reasoning-toggle small" title="Enable the model's thinking variant for subsequent prompts">
-          <input type="checkbox" [ngModel]="reasoningEnabled()" (ngModelChange)="reasoningEnabled.set($event)" [disabled]="sessionArchived()">
-          Reasoning
-        </label>
-        <button type="button" class="btn btn-sm btn-outline-secondary" (click)="endSession()" title="Archive this conversation and end its live runner workspace">
-          <i class="bi bi-x-lg me-1"></i>End
+      <div class="d-flex align-items-center justify-content-between gap-2">
+        <div class="d-flex align-items-center gap-2 min-w-0">
+          <label class="reasoning-toggle small" title="Mirror OpenCode workspace changes into the active editor without saving">
+            <input type="checkbox" [ngModel]="liveEditsEnabled()" (ngModelChange)="toggleLiveEdits($event)" [disabled]="environmentStale() || sessionArchived()">
+            Live edits
+          </label>
+          <label class="reasoning-toggle small" title="Enable the model's thinking variant for subsequent prompts">
+            <input type="checkbox" [ngModel]="reasoningEnabled()" (ngModelChange)="reasoningEnabled.set($event)" [disabled]="sessionArchived()">
+            Reasoning
+          </label>
+        </div>
+        <button type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" (click)="endSession()" title="Archive this conversation and end its live runner workspace">
+          <i class="bi bi-x-lg"></i> End
         </button>
       </div>
     }
@@ -44,19 +46,41 @@
       <h5>OpenCode is not configured</h5>
       <p class="text-body-secondary mb-0">Enable the AI assistant and configure CQL Studio Server, Ollama, and a model in Settings.</p>
     </div>
+  } @else if (runnerUnavailable() && !session()) {
+    <div id="opencode-runner-unavailable" class="empty-state">
+      <i class="bi bi-hdd-network fs-1 text-secondary"></i>
+      <h5>OpenCode runner unavailable</h5>
+      <p class="text-body-secondary">
+        CQL Studio Server could not reach the OpenCode runner. The IDE remains usable; AI workspace features will return when the runner is back.
+      </p>
+      @if (error(); as outageMessage) {
+        <p class="text-danger small mb-3">{{ outageMessage }}</p>
+      }
+      <div class="d-flex flex-wrap justify-content-center gap-2">
+        <button type="button" id="opencode-runner-retry" class="btn btn-primary" [disabled]="status() === 'starting'" (click)="retryConnection()">
+          @if (status() === 'starting') { <span class="spinner-border spinner-border-sm me-2"></span> }
+          @else { <i class="bi bi-arrow-clockwise me-1"></i> }
+          Retry connection
+        </button>
+        <button type="button" class="btn btn-outline-primary" [disabled]="!canStart()" (click)="startSession()">
+          <i class="bi bi-play-fill me-1"></i>Start OpenCode
+        </button>
+      </div>
+    </div>
   } @else if (!session()) {
     <div class="empty-state">
       <i class="bi bi-folder2-open fs-1 text-secondary"></i>
       <h5>Start an isolated workspace</h5>
-      @if (activeLibrary(); as library) {
-        <p class="text-body-secondary">OpenCode will receive a draft snapshot of <strong>{{ library.name }}</strong> and its open CQL dependencies.</p>
-        @if (library.workspaceOrigin; as origin) {
-          <small id="opencode-workspace-origin" class="text-body-secondary">
-            Opened from workspace <strong>{{ origin.workspaceName }}</strong>.
-          </small>
-        }
+      @if (ideStateService.libraryResources().length > 0) {
+        <p class="text-body-secondary">
+          OpenCode will track all open CQL editors
+          (@for (library of ideStateService.libraryResources(); track library.id; let last = $last) {
+            <strong>{{ library.name }}</strong>@if (!last) {, }
+          })
+          and resolved includes as read-only dependencies.
+        </p>
       } @else {
-        <p class="text-body-secondary">Open or create a CQL library first.</p>
+        <p class="text-body-secondary">Start with no libraries open, then ask OpenCode to create a draft library when needed.</p>
       }
       <div class="d-flex flex-wrap justify-content-center gap-2">
         <button type="button" class="btn btn-primary" [disabled]="!canStart()" (click)="startSession()">
@@ -64,21 +88,21 @@
           @else { <i class="bi bi-play-fill me-1"></i> }
           Start OpenCode
         </button>
-        <button type="button" class="btn btn-outline-primary" [disabled]="!activeLibrary()" (click)="openResumePicker()">
+        <button type="button" class="btn btn-outline-primary" [disabled]="!canStart()" (click)="openResumePicker()">
           <i class="bi bi-clock-history me-1"></i>Resume saved session
         </button>
       </div>
       @if (showResumeSessions()) {
         <section class="info-card border rounded p-3 text-start w-100">
-          <div class="d-flex justify-content-between gap-2"><strong>Saved sessions for this Library</strong><button class="btn-close" (click)="showResumeSessions.set(false)"></button></div>
+          <div class="d-flex justify-content-between gap-2"><strong>Saved sessions</strong><button class="btn-close" (click)="showResumeSessions.set(false)"></button></div>
           @for (item of resumeSessions(); track item.id) {
             <button type="button" class="session-row" (click)="resumeSession(item)">
               <span>{{ item.title }}</span><small>Archived · {{ item.updatedAt }}</small>
             </button>
-          } @empty { <p class="small text-body-secondary mb-0 mt-2">No archived sessions exist for the active Library.</p> }
+          } @empty { <p class="small text-body-secondary mb-0 mt-2">No archived sessions exist yet.</p> }
         </section>
       }
-      <small class="text-body-secondary">Only the active CQL file is writable. Dependencies and every MCP integration are read-only.</small>
+      <small class="text-body-secondary">Open CQL editors are writable. Resolved includes and MCP integrations are read-only.</small>
     </div>
   } @else {
     @if (sessionArchived()) {
@@ -116,7 +140,7 @@
         @if (item.kind === 'message') {
           <article class="message" [class.user]="item.message.role === 'user'" [class.assistant]="item.message.role === 'assistant'">
             <div class="message-role">{{ item.message.role === 'user' ? 'You' : 'OpenCode' }}</div>
-            <markdown [data]="item.message.text"></markdown>
+            <markdown [data]="item.message.text || ''"></markdown>
           </article>
         } @else if (item.activity.kind !== 'reasoning' || reasoningShown()) {
           <section class="activity-card border rounded mb-2" [class.activity-error]="item.activity.status === 'error'">
@@ -356,5 +380,15 @@
     </footer>
   }
 
-  @if (error() && !session()) { <div class="alert alert-danger rounded-0 mb-0 py-2 px-3"><small>{{ error() }}</small></div> }
+  @if (error() && !session() && !runnerUnavailable()) {
+    <div class="alert alert-danger rounded-0 mb-0 py-2 px-3 d-flex justify-content-between align-items-center gap-2">
+      <small>{{ error() }}</small>
+      <div class="d-flex gap-2">
+        @if (errorRetryable()) {
+          <button type="button" class="btn btn-sm btn-outline-danger" (click)="retryConnection()">Retry</button>
+        }
+        <button type="button" class="btn-close btn-sm" (click)="error.set(null)"></button>
+      </div>
+    </div>
+  }
 </div>
