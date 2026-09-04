@@ -141,13 +141,19 @@ const cqlTools: MCPTool[] = [
   },
   {
     name: MCPToolNames.CQL_LIBRARY_CREATE_DRAFT,
-    description: 'Ask CQL Studio to open a new local draft CQL Library editor tab in the IDE and add it to the OpenCode workspace. Does not create or save a FHIR Library. Use when no suitable writable library is open.',
+    description: [
+      'Required when the OpenCode workspace has no writable libraries (or the user wants a new library).',
+      'Asks CQL Studio to open a local draft CQL Library editor tab and sync it into `libraries/`.',
+      'Does not create or save a FHIR Library.',
+      'Do not create `.cql` files with the write/edit tools instead of this tool.',
+      'Build agent only (not available in Plan mode).',
+    ].join(' '),
     allowedInPlanMode: false,
     statusMessage: 'Creating a draft CQL library in the IDE…',
     parameters: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Draft library name / title (CQL identifier).' },
+        name: { type: 'string', description: 'Draft library name / title (CQL identifier, e.g. MyLibrary).' },
       },
       required: ['name'],
     },

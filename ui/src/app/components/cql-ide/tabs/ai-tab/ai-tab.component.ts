@@ -1363,7 +1363,14 @@ export class AiTabComponent implements OnInit, OnDestroy {
     const session = this.session();
     const actionId = typeof properties['actionId'] === 'string' ? properties['actionId'] : '';
     const requestedName = typeof properties['name'] === 'string' ? properties['name'].trim() : '';
-    if (!session || !actionId || !requestedName) return;
+    if (!session || !actionId) return;
+    if (!requestedName) {
+      await this.openCodeService.ackIdeAction(session.id, actionId, {
+        ok: false,
+        error: 'Draft library name is required',
+      }).catch(() => undefined);
+      return;
+    }
     try {
       let name = requestedName.replace(/[^A-Za-z0-9_]/g, '_') || 'DraftLibrary';
       if (!/^[A-Za-z]/.test(name)) name = `Library${name}`;

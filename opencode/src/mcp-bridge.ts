@@ -8,6 +8,7 @@ import path from 'node:path';
 import { MCPToolNames } from '@cql-studio/core';
 import type { OpenCodeWorkspaceManifest } from '@cql-studio/core';
 import { OpenCodeExitCode } from './fatal.js';
+import { resolveMcpValidateTarget } from './mcp-validate-target.js';
 
 interface ToolDefinition {
   name: string;
@@ -70,10 +71,13 @@ server.setRequestHandler(CallToolRequestSchema, async request => {
   try {
     const argumentsForTool = { ...(request.params.arguments ?? {}) } as Record<string, unknown>;
     if (request.params.name === MCPToolNames.CQL_VALIDATE) {
-      if (!workspace || !activeFile) throw new Error('CQL validation workspace configuration is missing');
+      if (!workspace) throw new Error('CQL validation workspace configuration is missing');
       const manifestPath = path.join(workspace, '.cql-studio', 'manifest.json');
       const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as OpenCodeWorkspaceManifest;
-      const requested = typeof argumentsForTool['file'] === 'string' ? argumentsForTool['file'] : activeFile;
+      const requested = resolveMcpValidateTarget(manifest, {
+        fileArg: argumentsForTool['file'],
+        envActiveFile: activeFile,
+      });
       if (!manifest.files[requested]) throw new Error(`CQL file is not in this workspace: ${requested}`);
       argumentsForTool['__workspace'] = {
         activeFile: requested,

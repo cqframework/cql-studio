@@ -80,7 +80,10 @@
           and resolved includes as read-only dependencies.
         </p>
       } @else {
-        <p class="text-body-secondary">Start with no libraries open, then ask OpenCode to create a draft library when needed.</p>
+        <p class="text-body-secondary">
+          Start with no libraries open. After you start a session, use <strong>Build</strong> mode and ask
+          OpenCode to create a draft (or run <code>/draft MyLibrary</code>).
+        </p>
       }
       <div class="d-flex flex-wrap justify-content-center gap-2">
         <button type="button" class="btn btn-primary" [disabled]="!canStart()" (click)="startSession()">
@@ -133,7 +136,13 @@
       }
 
       @if (messages().length === 0 && activities().length === 0 && status() !== 'busy') {
-        <div class="text-center text-body-secondary py-4">Ask OpenCode to explain, plan, validate, review, or edit the active CQL library.</div>
+        <div class="text-center text-body-secondary py-4">
+          @if (ideStateService.libraryResources().length === 0) {
+            No CQL editors are open. In <strong>Build</strong> mode, ask OpenCode to create a draft library or run <code>/draft MyLibrary</code>.
+          } @else {
+            Ask OpenCode to explain, plan, validate, review, or edit the open CQL libraries.
+          }
+        </div>
       }
 
       @for (item of timeline(); track item.kind + '-' + item.id) {
@@ -165,7 +174,7 @@
       @if (showHelp()) {
         <section #helpCard class="info-card help-card border rounded p-3 mb-3">
           <div class="d-flex justify-content-between gap-2"><strong>Commands and references</strong><button type="button" class="btn-close" aria-label="Close command help" (click)="showHelp.set(false)"></button></div>
-          <p class="small text-body-secondary mt-2 mb-2">Type <code>/</code> for commands or <code>&#64;</code> to attach a CQL library or dependency to the prompt.</p>
+          <p class="small text-body-secondary mt-2 mb-2">Type <code>/</code> for commands (including <code>/draft</code> when no library is open) or <code>&#64;</code> to attach a CQL library or dependency to the prompt.</p>
           <div class="command-grid">
             @for (command of commands(); track command.name) {
               <button type="button" class="command-help" (click)="chooseCommand(command)"><code>/{{ command.name }}</code><span>{{ command.description }}</span></button>

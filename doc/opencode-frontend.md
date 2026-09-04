@@ -1,103 +1,76 @@
 # OpenCode Integration
 
-## Current boundary
+## Architecture
 
-The Angular UI contains the OpenCode IDE experience. The monorepo `server/` package owns the authenticated gateway. Isolated execution lives in `@cql-studio/opencode` (`opencode/`), built as `opencode/Dockerfile`. Locally, run it with `npm run start:opencode`, or pull the pre-built image via `docker/docker-compose.full.yml` (`npm run docker:full:up`). Multi-arch images publish to `hlseven/quality-cql-studio-opencode`.
+The Angular UI hosts the OpenCode IDE. The browser talks only to CQL Studio Server (`/api/opencode`); the server gateways to the isolated runner (`@cql-studio/opencode`, image `hlseven/quality-cql-studio-opencode`). Provider URLs and API keys are request data for the server — the browser never calls providers directly.
 
-The frontend always uses same-origin CQL Studio Server routes under `/api/opencode`. Provider URLs and credentials are request data for CQL Studio Server; the browser never connects OpenCode directly to a provider.
+Local runner: `npm run start:opencode`. Docker stack: `npm run docker:full:up`.
 
-## Storage and filesystem model
-
-The product currently has four distinct forms of storage:
+## Storage
 
 | Area | Lifetime | Contents |
 | --- | --- | --- |
-| CQL IDE | Browser tab, backed by FHIR when saved | Open `Library` resources and unsaved CQL editor state |
-| CQL Studio Workspace | Persistent server database | Access grants, shared environments, activity, and FHIR resource references |
-| OpenCode session record | Persistent server database, owned by the SSO user | Conversation/state snapshot, session metadata, writable `libraryIds`, diffs, validation, and optional frozen Workspace origin |
-| OpenCode runner workspace | One live AI session | Writable open CQL editors under `libraries/`, read-only resolved includes + FHIRHelpers under `dependencies/`, and converted attachments |
+| CQL IDE | Tab / FHIR when saved | Open libraries and unsaved editor state |
+| CQL Studio Workspace | Server DB | Access, environments, activity, FHIR refs |
+| OpenCode session | Server DB (per user) | Conversation, `libraryIds`, diffs, validation, frozen `workspaceOrigin` |
+| Runner workspace | Live session only | Writable `libraries/`, read-only `dependencies/` (includes + FHIRHelpers), attachments |
 
-An OpenCode session tracks **all open CQL editor tabs** as writable members and resolves their `include`s (even when those includes are not open) as read-only dependencies. Sessions may start with zero open libraries; the agent can call `cql_library_create_draft` so the IDE opens a local draft tab that is then synced into the runner workspace. Changes return as diffs and must pass the UI translation/save workflow before they are persisted to FHIR.
+A session tracks all open CQL tabs as writable members and resolves their `include`s as read-only dependencies. Sessions may start with zero libraries; the agent or `/draft` can create drafts that sync into the runner. Edits return as diffs and must pass the IDE save workflow before FHIR persistence.
 
-Opening or closing IDE editors during a live session updates membership via `PUT /api/opencode/sessions/:id/workspace`. Before applying an OpenCode edit, the IDE activates the corresponding editor tab.
+`PUT .../workspace` updates membership when editors open/close. Before applying an edit, the IDE activates the target tab. Writable revisions include bounded **Problems** panel diagnostics; the runner uses them for repair and runs `cql_validate`. Greetings skip Problems and CQL tools.
 
-The active IDE **Problems** panel is sent as bounded, structured prompt context for any synchronized writable library revision. OpenCode uses those exact diagnostics as its initial repair targets and then runs `cql_validate` against the workspace. Lightweight conversation such as a greeting does not receive Problems context or CQL tools. Stale diagnostics are rejected if the browser revision no longer matches the runner workspace.
+Attachments live until session end (text inline; PDF/DOCX → Markdown via MarkItDown). `/compact` may summarize and purge originals.
 
-Every session includes the bundled FHIR R4 `FHIRHelpers` 4.0.1 source at `dependencies/FHIRHelpers.cql`. The dependency is read-only.
+**End** archives (snapshot + remove runner files); history stays in PostgreSQL. Permanent delete: **Settings → AI** or `DELETE /api/opencode/sessions/:id`. **Resume** (`/resume`) restores conversation context and rebuilds the runner from current open editors.
 
-Attachments remain in the OpenCode session workspace until the session ends. Text files are stored as context directly. Formats such as PDF and DOCX are converted to Markdown by the runner-side MarkItDown integration. `/compact` may retain summarized context while allowing the runner to purge original attachment files.
+## Workspace and environment
 
-The gateway snapshots live session state to PostgreSQL and lists only records owned by the authenticated user. The Workspace **Sessions** tab shows that user's OpenCode conversations whose frozen `workspaceOrigin` matches the selected Workspace. A live runner session can continue accepting prompts. After a server/runner restart or idle cleanup, its saved state remains available as a read-only archived session.
+`workspaceOrigin` (Workspace ID, resource ref, role) is frozen at session **create** from the focused library — listing metadata only, not updated on focus change. Libraries may span workspaces or be personal drafts.
 
-From the IDE, `/resume` lists the user's archived sessions (not filtered by a single Library). Resuming best-effort reopens previously tracked libraries without closing existing tabs, then rebuilds the runner workspace from the **current** open editor set and resolved includes. A bounded text-only version of the saved conversation is restored as model context.
+The active personal/shared environment is bound at creation (identity + non-secret endpoint fingerprint). If the environment changes, the UI blocks prompts, uploads, tools, edits, and saves until the session is ended and recreated.
 
-The IDE's **End** action archives rather than deletes: it takes a final state snapshot, removes the ephemeral runner workspace and attachment files, and retains the user-owned conversation in PostgreSQL. Permanent deletion is available from **Settings → AI** (`DELETE /api/opencode/sessions`) and as a per-session server operation; it is not exposed by the read-only Workspace Sessions view.
+## Credentials
 
-## Workspace and environment context
+Provider API keys stay in Angular memory only — never `localStorage`, settings exports, or direct provider calls. Keys are sent to the server only for model listing, session create, and resume. Environment bindings in `sessionStorage` exclude secrets (passwords, auth headers, URL credentials).
 
-Opening a Library from a CQL Studio Workspace preserves this frontend origin context on the IDE library tab:
+## API routes
 
-- Workspace ID and name
-- Workspace resource-reference ID
-- Effective Workspace role
-
-A single `workspaceOrigin` is frozen on the OpenCode session at **create** time from the focused open library (else the first open library that has an origin). It is listing/access metadata only and is not updated when focus changes. Membership libraries may come from other workspaces or be personal drafts.
-
-Every OpenCode session is also bound to the active personal or shared Workspace environment at creation time. The binding contains environment identity and a fingerprint derived only from non-secret endpoint identity. If the active environment changes, the UI blocks prompts, uploads, tool answers, live edits, and saves for the old session. Ending and recreating the session is required.
-
-## Credential handling
-
-Provider API keys are held only in Angular memory:
-
-- They are not written to `localStorage` or `sessionStorage`.
-- They are not included in settings exports.
-- Legacy persisted keys are absorbed into memory once and removed from stored settings.
-- Reloading the page clears them.
-
-The browser sends a key to CQL Studio Server only when listing provider models, creating a session, or resuming an archived session. The gateway retains session tool context in memory and sends the runner only an opaque, random MCP capability.
-
-Environment bindings stored in `sessionStorage` do not include endpoint usernames, passwords, authorization values, URL credentials, query strings, or fragments.
-
-## Frontend gateway contract
-
-`OpenCodeService` currently consumes these CQL Studio Server routes:
+`OpenCodeService` calls `/api/opencode/*`:
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/opencode/health` | Gateway and runner availability |
-| `POST` | `/api/opencode/providers/models` | Provider model discovery |
-| `GET/POST` | `/api/opencode/sessions` | List or create owned sessions |
-| `DELETE` | `/api/opencode/sessions` | Permanently delete all sessions owned by the authenticated user |
-| `GET` | `/api/opencode/sessions?workspaceId=:id` | List the authenticated user's sessions for an accessible Workspace |
-| `GET` | `/api/opencode/sessions/:id/state` | Read the current or persisted session state |
-| `POST` | `/api/opencode/sessions/:id/resume` | Recreate an owned archived session using the current open-library snapshot and credentials |
-| `POST` | `/api/opencode/sessions/:id/archive` | End the live runner workspace while retaining resumable conversation history |
-| `DELETE` | `/api/opencode/sessions/:id` | Permanently delete an owned session |
-| `GET` | `/api/opencode/sessions/:id/events` | Ordered server-sent event stream (includes `cql.ide.create_draft`) |
-| `POST` | `/api/opencode/sessions/:id/prompt` | Submit a prompt and editor context |
-| `POST/DELETE` | `/api/opencode/sessions/:id/attachments` | Manage session documents |
-| `PUT` | `/api/opencode/sessions/:id/active-file` | Synchronize one editor revision |
-| `PUT` | `/api/opencode/sessions/:id/workspace` | Synchronize writable membership + dependencies |
-| `POST` | `/api/opencode/sessions/:id/ide-actions/:actionId` | ACK IDE-side draft creation for MCP tools |
-| `GET` | `/api/opencode/sessions/:id/diff` | Read pending filesystem changes |
-| `GET/POST` | `/api/opencode/sessions/:id/commands` | Discover and execute slash commands |
-| `GET` | `/api/opencode/sessions/:id/files` | Complete `@` file references |
-| `POST` | `/api/opencode/sessions/:id/validate` | Validate the session CQL snapshot |
-| `POST` | `/api/opencode/sessions/:id/model` | Switch provider/model |
-| `POST` | `/api/opencode/sessions/:id/abort` | Stop active generation |
-| `POST/DELETE` | `/api/opencode/sessions/:id/permissions` and `/questions` | Resolve interactive OpenCode requests |
+| `GET` | `/health` | Gateway/runner status |
+| `POST` | `/providers/models` | Model discovery |
+| `GET/POST` | `/sessions` | List or create |
+| `DELETE` | `/sessions` | Delete all owned sessions |
+| `GET` | `/sessions?workspaceId=:id` | Sessions for a Workspace |
+| `GET` | `/sessions/:id/state` | Session state |
+| `POST` | `/sessions/:id/resume` | Resume archived session |
+| `POST` | `/sessions/:id/archive` | End live session |
+| `DELETE` | `/sessions/:id` | Delete session |
+| `GET` | `/sessions/:id/events` | SSE stream |
+| `POST` | `/sessions/:id/prompt` | Submit prompt |
+| `POST/DELETE` | `/sessions/:id/attachments` | Attachments |
+| `PUT` | `/sessions/:id/active-file` | Sync one editor |
+| `PUT` | `/sessions/:id/workspace` | Sync membership + deps |
+| `POST` | `/sessions/:id/ide-actions/:actionId` | ACK IDE draft creation |
+| `GET` | `/sessions/:id/diff` | Pending changes |
+| `GET/POST` | `/sessions/:id/commands` | Slash commands |
+| `GET` | `/sessions/:id/files` | `@` file completion |
+| `POST` | `/sessions/:id/validate` | CQL validation |
+| `POST` | `/sessions/:id/model` | Switch model |
+| `POST` | `/sessions/:id/abort` | Stop generation |
+| `POST/DELETE` | `/sessions/:id/permissions`, `/questions` | Interactive prompts |
 
-Wire-level request and response types live in `@cql-studio/core`. UI-only timeline, editor callback, and environment-binding state remains in `ui/src/app/models/opencode.model.ts`.
+Wire types: `@cql-studio/core`. UI timeline/editor state: `ui/src/app/models/opencode.model.ts`.
 
-## VSAC validation and terminology import
+## VSAC
 
-The project-local `validate-vsac` OpenCode skill and `/validate-vsac` command audit an exact canonical URL/OID, or all VSAC ValueSet declarations in the active CQL file. The skill uses only read-only MCP tools: authoritative VSAC validation/discovery plus bounded reads and expansion checks against the configured terminology endpoint. It never writes a FHIR resource.
+`/validate-vsac` audits VSAC ValueSet declarations via read-only MCP tools — no FHIR writes. On Library save, CQL Studio imports missing ValueSets through the VSAC proxy before persisting. **Apply & save** shows **Apply, import terminology & save** when the diff contains VSAC refs. Chat mentions alone never import.
 
-FHIR writes remain a deliberate CQL Studio action. When the user saves CQL containing VSAC ValueSet declarations, CQL Studio searches the active terminology endpoint by exact canonical URL and verifies that each existing resource can expand. Missing or unusable resources are fetched and expanded through the existing authenticated VSAC proxy, then imported to the configured writable terminology endpoint before the Library is saved. **Apply & save** identifies this explicitly as **Apply, import terminology & save** when the AI diff contains VSAC references. Failed validation, expansion, or import blocks the Library save; merely mentioning a VSAC URL in chat never imports it.
+## Production checklist
 
-## Remaining production checklist
-
-1. Add an explicit production allowlist for OpenAI-compatible and private-network provider origins.
-2. ~~Publish multi-architecture runner images alongside the server image.~~ Done via Drone (`opencode-amd64` / `opencode-arm64` / `opencode-manifest`) to `hlseven/quality-cql-studio-opencode`.
-3. Run authenticated live FHIR and VSAC probes in deployment CI.
-4. Resolve the current production audit advisories in the Prisma/config dependency chain with compatible server upgrades, then rerun the root production audit.
+1. Add production allowlist for OpenAI-compatible and private-network provider origins.
+2. ~~Multi-arch runner images~~ — done (`hlseven/quality-cql-studio-opencode`).
+3. Authenticated live FHIR and VSAC probes in deployment CI.
+4. Resolve Prisma/config audit advisories, then rerun root production audit.

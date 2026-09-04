@@ -133,6 +133,10 @@ test('materializes multiple writable libraries and an empty session', async () =
   });
   assert.equal(empty.activeFile, '');
   assert.equal(Object.values(empty.manifest.files).filter(entry => entry.writable).length, 0);
+  const emptyAgents = await readFile(path.join(empty.directory, 'AGENTS.md'), 'utf8');
+  assert.match(emptyAgents, /cql_library_create_draft/);
+  assert.match(emptyAgents, /Do not create/);
+  assert.match(await readFile(path.join(empty.directory, '.opencode/commands/draft.md'), 'utf8'), /cql_library_create_draft/);
 
   const multi = await manager.create({
     ollamaBaseUrl: 'http://localhost:11434',
@@ -240,6 +244,8 @@ test('materializes a writable draft, read-only dependencies, MCP config, and a r
       validate: /cql_validate/,
       review: /First validate[\s\S]*cql_validate/,
       dependencies: /cql_library_search and cql_library_read/,
+      library: /cql_library_search and cql_library_read/,
+      draft: /cql_library_create_draft/,
       context: /cql_studio_context/,
       fhir: /fhir_read or fhir_search/,
       research: /searxng_search and the hardened fetch tools/,

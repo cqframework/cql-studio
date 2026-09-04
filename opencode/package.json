@@ -15,7 +15,7 @@
     "watch": "tsx watch src/runner.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
-    "test": "node --test --import tsx tests/opencode-env.test.ts tests/opencode-workspace.test.ts"
+    "test": "node --test --import tsx tests/opencode-env.test.ts tests/opencode-workspace.test.ts tests/opencode-mcp-validate-target.test.ts"
   },
   "author": "Preston Lee",
   "license": "Apache-2.0",

@@ -322,7 +322,12 @@ export class OpenCodeWorkspaceManager {
       .map(([file]) => file);
     const focusLine = activeFile
       ? `The focused writable CQL library is \`${activeFile}\`.`
-      : 'There is currently no writable CQL library. Call the create-draft MCP tool to open a new draft in the IDE, then edit under `libraries/`.';
+      : [
+          'There is currently no writable CQL library in the IDE.',
+          `Do not create \`.cql\` files under \`libraries/\` yourself.`,
+          `Immediately call the MCP tool \`${MCPToolNames.CQL_LIBRARY_CREATE_DRAFT}\` with a \`name\` argument (CQL identifier, e.g. \`MyLibrary\`).`,
+          'That opens a draft editor tab in CQL Studio and syncs it into this workspace; then edit only the returned \`libraries/....cql\` path.',
+        ].join(' ');
     const writableList = writableFiles.length
       ? `Writable libraries:\n${writableFiles.map(file => `- \`${file}\``).join('\n')}`
       : 'Writable libraries: (none)';
@@ -332,8 +337,8 @@ export class OpenCodeWorkspaceManager {
       focusLine,
       writableList,
       'Files in `dependencies/` are reference-only and must not be edited.',
-      'Only edit files under `libraries/`.',
-      `When no suitable open library exists, call \`${MCPToolNames.CQL_LIBRARY_CREATE_DRAFT}\` so CQL Studio can open a draft editor tab.`,
+      'Only edit existing files under `libraries/` after they appear in the writable list above.',
+      `When no suitable open library exists (or the user asks for a new library), call \`${MCPToolNames.CQL_LIBRARY_CREATE_DRAFT}\` first. Never invent library files on disk outside that tool.`,
       'Preserve the CQL library name and version unless the user explicitly asks to change them.',
       `When repairing CQL, treat the current CQL Studio Problems context as the initial diagnostic set and then run ${MCPToolNames.CQL_VALIDATE} after editing.`,
       'Before adding or changing a FHIR conversion helper call, read `dependencies/FHIRHelpers.cql` and use only a function declared there. Preserve each library\'s existing FHIRHelpers alias, or add the 4.0.1 include when needed.',
@@ -374,6 +379,14 @@ export class OpenCodeWorkspaceManager {
       library: {
         description: 'Research read-only FHIR Library resources',
         template: `Use ${MCPToolNames.CQL_LIBRARY_SEARCH} and ${MCPToolNames.CQL_LIBRARY_READ} to research this Library request without modifying FHIR: $ARGUMENTS`,
+      },
+      draft: {
+        description: 'Open a new draft CQL library in the IDE',
+        template: [
+          `Call the MCP tool \`${MCPToolNames.CQL_LIBRARY_CREATE_DRAFT}\` with \`name\` set to the CQL identifier from $ARGUMENTS (or choose a sensible PascalCase name if none was given).`,
+          'Do not write any `.cql` file yourself before that tool returns.',
+          'After it succeeds, confirm the new IDE tab and the writable `libraries/....cql` path, then wait for further edit instructions unless the user already asked for content.',
+        ].join(' '),
       },
       valueset: {
         description: 'Research an authoritative VSAC ValueSet',
