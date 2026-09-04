@@ -16,6 +16,7 @@ import {
   OpenCodeProviderConfig,
   OpenCodeAttachment,
   OpenCodeEnvironmentBinding,
+  OpenCodeIdeDiagnostics,
 } from '../models/opencode.model';
 import { SettingsService } from './settings.service';
 import type { AiProviderType } from '../models/settings.model';
@@ -99,12 +100,13 @@ export class OpenCodeService {
     references: string[] = [],
     reasoning = false,
     editorContext?: OpenCodeEditorContext,
-    attachments: string[] = []
+    attachments: string[] = [],
+    ideDiagnostics?: OpenCodeIdeDiagnostics
   ): Promise<void> {
     this.assertSessionEnvironment(sessionId);
     return this.request(`/sessions/${encodeURIComponent(sessionId)}/prompt`, {
       method: 'POST',
-      body: JSON.stringify({ message, agent, references, reasoning, editorContext, attachments }),
+      body: JSON.stringify({ message, agent, references, reasoning, editorContext, attachments, ideDiagnostics }),
     }).then(() => undefined);
   }
 

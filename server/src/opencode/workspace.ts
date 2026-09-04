@@ -151,12 +151,14 @@ export class OpenCodeWorkspaceManager {
     const dependenciesDirectory = path.join(directory, 'dependencies');
     const metadataDirectory = path.join(directory, '.cql-studio');
     const commandsDirectory = path.join(directory, '.opencode', 'commands');
+    const validateVsacSkillDirectory = path.join(directory, '.opencode', 'skills', 'validate-vsac');
     const attachmentsDirectory = path.join(directory, 'attachments');
     await mkdir(librariesDirectory, { recursive: true, mode: 0o700 });
     // Populate first, then remove directory write permission once all dependencies exist.
     await mkdir(dependenciesDirectory, { recursive: true, mode: 0o700 });
     await mkdir(metadataDirectory, { recursive: true, mode: 0o700 });
     await mkdir(commandsDirectory, { recursive: true, mode: 0o700 });
+    await mkdir(validateVsacSkillDirectory, { recursive: true, mode: 0o700 });
     await mkdir(attachmentsDirectory, { recursive: true, mode: 0o700 });
 
     const usedNames = new Set<string>();
@@ -223,6 +225,8 @@ export class OpenCodeWorkspaceManager {
       'Files in `dependencies/` are reference-only and must not be edited.',
       'Only edit files under `libraries/`.',
       'Preserve the CQL library name and version unless the user explicitly asks to change them.',
+      'When repairing CQL, treat the current CQL Studio Problems context as the initial diagnostic set and then run cql_validate after editing.',
+      'Before adding or changing a FHIR conversion helper call, read `dependencies/FHIRHelpers.cql` and use only a function declared there. Preserve the active library\'s existing FHIRHelpers alias, or add the 4.0.1 include when needed.',
       'Never invent ValueSet, CodeSystem, or VSAC canonical URLs.',
       'Do not access paths outside this workspace and do not run destructive commands.',
       'CQL Studio will validate and review every file diff before saving it to FHIR.',
@@ -271,6 +275,10 @@ export class OpenCodeWorkspaceManager {
         description: 'Research ValueSets, CodeSystems, and expansions',
         template: `Research this terminology request using the configured read-only tools. Use ${MCPToolNames.VSAC_SEARCH} for VSAC discovery, ${MCPToolNames.VALIDATE_VSAC} only for an exact user-supplied or existing reference, ${MCPToolNames.VALUESET_EXPAND} for concepts, and ${MCPToolNames.FHIR_READ} or ${MCPToolNames.FHIR_SEARCH} for other configured terminology resources. Never guess a canonical URL or identifier: $ARGUMENTS`,
       },
+      'validate-vsac': {
+        description: 'Validate VSAC references in active CQL or an exact URL/OID',
+        template: `Load the validate-vsac skill. Validate $ARGUMENTS when it contains an exact VSAC canonical URL or OID. When no argument is supplied, inspect @${activeFile} and validate every declared VSAC ValueSet reference. Report whether each reference is authoritative in VSAC and whether it is present on the configured terminology endpoint. Do not write any FHIR resource.`,
+      },
     };
     await Promise.all(Object.entries(commands).map(([name, command]) =>
       writeFile(
@@ -279,6 +287,31 @@ export class OpenCodeWorkspaceManager {
         { encoding: 'utf8', mode: 0o400 }
       )
     ));
+
+    const validateVsacSkill = [
+      '---',
+      'name: validate-vsac',
+      'description: Validate exact VSAC ValueSet URLs or OIDs, and audit VSAC ValueSet declarations in the active CQL Library without guessing identifiers or modifying FHIR.',
+      'compatibility: opencode',
+      '---',
+      '',
+      '# Validate VSAC terminology',
+      '',
+      `1. Read \`${activeFile}\` when no exact reference was supplied.`,
+      `2. For an exact canonical URL or OID supplied by the user or declared in CQL, call \`${MCPToolNames.VALIDATE_VSAC}\`.`,
+      `3. If only a clinical name or topic is known, use \`${MCPToolNames.VSAC_SEARCH}\` for discovery instead of guessing an identifier.`,
+      `4. Use \`${MCPToolNames.FHIR_SEARCH}\` with the terminology role and an exact canonical URL to determine whether a verified ValueSet is already present on the configured terminology server.`,
+      `5. Use \`${MCPToolNames.VALUESET_EXPAND}\` only when the user asks to inspect concepts or confirm that the configured terminology server can expand an already-present ValueSet.`,
+      '6. Report verified URL, id/OID, version, VSAC status, terminology-server presence, and any validation error.',
+      '',
+      'This skill is read-only. Never call a write endpoint, never invent or normalize a canonical URL, and never treat a general web search result as authoritative VSAC evidence.',
+      '',
+    ].join('\n');
+    await writeFile(
+      path.join(validateVsacSkillDirectory, 'SKILL.md'),
+      validateVsacSkill,
+      { encoding: 'utf8', mode: 0o400 }
+    );
 
     const provider = providerFor(input);
     const providerId = providerIdFor(provider);
@@ -328,6 +361,7 @@ export class OpenCodeWorkspaceManager {
         webfetch: 'deny',
         external_directory: 'deny',
         doom_loop: 'ask',
+        skill: { '*': 'allow' },
       },
       provider: providerConfigs,
       ...(input.toolBridge ? {

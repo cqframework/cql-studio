@@ -152,6 +152,28 @@ app.post('/sessions/:id/prompt', asyncHandler(async (req, res) => {
       documentRevision: Math.max(0, Number(req.body.editorContext.documentRevision) || 0),
       mode: req.body.editorContext.mode === 'inline' ? 'inline' : 'selection',
     } : undefined,
+    ideDiagnostics: req.body?.ideDiagnostics && typeof req.body.ideDiagnostics === 'object' ? {
+      libraryId: String(req.body.ideDiagnostics.libraryId ?? ''),
+      documentRevision: Math.max(0, Number(req.body.ideDiagnostics.documentRevision) || 0),
+      diagnostics: Array.isArray(req.body.ideDiagnostics.diagnostics)
+        ? req.body.ideDiagnostics.diagnostics.slice(0, 100).flatMap((item: unknown) => {
+            if (!item || typeof item !== 'object') return [];
+            const value = item as Record<string, unknown>;
+            const severity = value['severity'];
+            const message = typeof value['message'] === 'string' ? value['message'].trim().slice(0, 2_000) : '';
+            if (!message || !['error', 'warning', 'info'].includes(String(severity))) return [];
+            const line = Number(value['line']);
+            const column = Number(value['column']);
+            return [{
+              severity: severity as 'error' | 'warning' | 'info',
+              message,
+              ...(typeof value['file'] === 'string' ? { file: value['file'].slice(0, 500) } : {}),
+              ...(Number.isFinite(line) && line >= 1 ? { line: Math.trunc(line) } : {}),
+              ...(Number.isFinite(column) && column >= 0 ? { column: Math.trunc(column) } : {}),
+            }];
+          })
+        : [],
+    } : undefined,
   } satisfies OpenCodePromptRequest);
   res.status(202).json({ accepted: true });
 }));

@@ -57,14 +57,15 @@ test('builds resume context from chat text without internal or tool payloads', (
   const messages = [
     { info: { role: 'user' }, parts: [{ type: 'text', text: 'Review the measure.' }] },
     { info: { role: 'user' }, parts: [{ type: 'text', text: '<cql-studio-editor-context>hidden selection</cql-studio-editor-context>' }] },
+    { info: { role: 'user' }, parts: [{ type: 'text', text: '<cql-studio-problems-context>hidden diagnostics</cql-studio-problems-context>' }] },
     { info: { role: 'assistant' }, parts: [{ type: 'tool', state: { output: 'secret' } }, { type: 'text', text: 'The denominator needs a guard.' }] },
   ];
   const sanitized = JSON.stringify(openCodeResumeMessages(messages));
   const transcript = openCodeResumeTranscript(messages);
   assert.match(transcript, /User: Review the measure\./);
   assert.match(transcript, /Assistant: The denominator needs a guard\./);
-  assert.doesNotMatch(transcript, /hidden selection|secret/);
-  assert.doesNotMatch(sanitized, /hidden selection|secret|state/);
+  assert.doesNotMatch(transcript, /hidden selection|hidden diagnostics|secret/);
+  assert.doesNotMatch(sanitized, /hidden selection|hidden diagnostics|secret|state/);
 });
 
 test('resolves the MCP bridge beside the compiled monorepo server module', () => {
@@ -127,6 +128,7 @@ test('materializes a writable draft, read-only dependencies, MCP config, and a r
       webfetch: 'deny',
       external_directory: 'deny',
       doom_loop: 'ask',
+      skill: { '*': 'allow' },
     });
     assert.equal(config.mcp['cql-studio'].environment.CQL_STUDIO_SERVER_MCP_CAPABILITY, 'opaque-test-capability');
     assert.equal(config.mcp['cql-studio'].environment.CQL_STUDIO_SERVER_MCP_ACTIVE_FILE, workspace.activeFile);
@@ -141,6 +143,7 @@ test('materializes a writable draft, read-only dependencies, MCP config, and a r
       fhir: /fhir_read or fhir_search/,
       research: /searxng_search and the hardened fetch tools/,
       terminology: /vsac_search[\s\S]*valueset_expand/,
+      'validate-vsac': /validate-vsac skill[\s\S]*validate every declared VSAC ValueSet/,
     };
     for (const [command, expected] of Object.entries(commandExpectations)) {
       assert.match(await readFile(path.join(workspace.directory, `.opencode/commands/${command}.md`), 'utf8'), expected);
@@ -150,9 +153,14 @@ test('materializes a writable draft, read-only dependencies, MCP config, and a r
       'opencode.json',
       '.cql-studio/manifest.json',
       '.opencode/commands/validate.md',
+      '.opencode/skills/validate-vsac/SKILL.md',
     ]) {
       assert.equal((await stat(path.join(workspace.directory, protectedFile))).mode & 0o777, 0o400);
     }
+    const vsacSkill = await readFile(path.join(workspace.directory, '.opencode/skills/validate-vsac/SKILL.md'), 'utf8');
+    assert.match(vsacSkill, /name: validate-vsac/);
+    assert.match(vsacSkill, /validate_vsac/);
+    assert.match(vsacSkill, /This skill is read-only/);
     assert.deepEqual(manager.references(workspace, 'Shared'), [{
       path: 'dependencies/Shared.cql',
       name: 'Shared.cql',

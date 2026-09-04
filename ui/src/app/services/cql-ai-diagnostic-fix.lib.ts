@@ -49,6 +49,7 @@ export function buildCqlAiDiagnosticFixRequest(input: {
       '```cql',
       nearbyCql,
       '```',
+      'Read @dependencies/FHIRHelpers.cql before adding or changing any FHIR conversion helper call. Use only functions declared in that file and preserve the active library’s include alias.',
       'Make the smallest edit that resolves this diagnostic while preserving the author’s intent.',
       'Do not change unrelated code. Run cql_validate after editing and correct any syntax errors caused by the change.',
     ].join('\n'),

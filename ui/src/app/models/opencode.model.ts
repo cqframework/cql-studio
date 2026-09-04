@@ -10,6 +10,7 @@ import type {
   OpenCodeEventEnvelope,
   OpenCodeFileDiffDto,
   OpenCodeFileReferenceDto,
+  OpenCodeIdeDiagnosticsContext,
   OpenCodePermissionRequestDto,
   OpenCodeProviderConfig,
   OpenCodeQuestionRequestDto,
@@ -76,6 +77,8 @@ export interface OpenCodeLibraryChange {
   libraryId: string;
   cqlContent: string;
   save?: boolean;
+  /** The AI review flow already completed the VSAC import gate for this exact content. */
+  vsacTerminologyReady?: boolean;
   mode?: 'review' | 'live' | 'revert';
   baseRevision?: number;
   onSaveComplete?: (saved: boolean) => void;
@@ -89,6 +92,7 @@ export interface OpenCodeEvent {
 export type OpenCodeCommand = OpenCodeCommandDto;
 export type OpenCodeFileReference = OpenCodeFileReferenceDto;
 export type OpenCodeDiagnostic = OpenCodeDiagnosticDto;
+export type OpenCodeIdeDiagnostics = OpenCodeIdeDiagnosticsContext;
 export type OpenCodeValidation = OpenCodeValidationDto;
 
 export interface OpenCodeSessionState {

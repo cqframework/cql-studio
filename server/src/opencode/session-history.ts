@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-const INTERNAL_CONTEXT = /<cql-studio-(?:editor|resume)-context/;
+const INTERNAL_CONTEXT = /<cql-studio-(?:editor|problems|resume)-context/;
 
 /**
  * Reduce persisted SDK messages to a bounded user/assistant text history before

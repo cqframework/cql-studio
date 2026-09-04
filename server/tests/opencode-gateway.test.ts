@@ -21,6 +21,7 @@ function baseUrl(server: Server): string {
 
 test('gateway strips browser-only context and retains trusted local Workspace origin', async t => {
   let runnerInput: Record<string, unknown> | undefined;
+  let promptInput: Record<string, unknown> | undefined;
   const runnerSession = {
     id: 'runner-session',
     openCodeSessionId: 'opencode-session',
@@ -55,6 +56,10 @@ test('gateway strips browser-only context and retains trusted local Workspace or
       questions: [],
       lastEventId: 0,
     });
+  });
+  runner.post('/sessions/runner-session/prompt', (req, res) => {
+    promptInput = req.body as Record<string, unknown>;
+    res.status(202).json({ accepted: true });
   });
   runner.delete('/sessions/runner-session', (_req, res) => res.status(204).send());
   const runnerServer = await listen(runner);
@@ -140,6 +145,28 @@ test('gateway strips browser-only context and retains trusted local Workspace or
   assert.equal(stateResponse.status, 200);
   const state = await stateResponse.json() as { session: { workspaceOrigin?: typeof origin } };
   assert.deepEqual(state.session.workspaceOrigin, origin);
+
+  const promptResponse = await fetch(
+    `${baseUrl(gatewayServer)}/api/opencode/sessions/runner-session/prompt`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        message: 'Fix the Problems errors',
+        ideDiagnostics: {
+          libraryId: 'library-1',
+          documentRevision: 3,
+          diagnostics: [{ severity: 'error', message: 'Syntax error at define', line: 14 }],
+        },
+      }),
+    }
+  );
+  assert.equal(promptResponse.status, 202);
+  assert.deepEqual(promptInput?.['ideDiagnostics'], {
+    libraryId: 'library-1',
+    documentRevision: 3,
+    diagnostics: [{ severity: 'error', message: 'Syntax error at define', line: 14 }],
+  });
 
   const archiveResponse = await fetch(
     `${baseUrl(gatewayServer)}/api/opencode/sessions/runner-session/archive`,

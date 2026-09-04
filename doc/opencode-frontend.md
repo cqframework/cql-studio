@@ -8,7 +8,7 @@ The frontend always uses same-origin CQL Studio Server routes under `/api/openco
 
 ## Storage and filesystem model
 
-The product currently has three distinct forms of storage:
+The product currently has four distinct forms of storage:
 
 | Area | Lifetime | Contents |
 | --- | --- | --- |
@@ -18,6 +18,10 @@ The product currently has three distinct forms of storage:
 | OpenCode runner workspace | One live AI session | Writable active CQL file, read-only dependencies, and converted attachments |
 
 An OpenCode session receives a snapshot. It does not receive browser storage or arbitrary host filesystem access. The active CQL file is writable; dependency snapshots and MCP integrations are read-only. Changes return as diffs and must pass the UI translation/save workflow before they are persisted to FHIR.
+
+The active IDE **Problems** panel is sent as bounded, structured prompt context for the synchronized editor revision. OpenCode uses those exact diagnostics as its initial repair targets and then runs `cql_validate` against the changed workspace file. Lightweight conversation such as a greeting does not receive Problems context or CQL tools. Stale diagnostics are rejected if the browser revision no longer matches the runner workspace.
+
+Every session includes the bundled FHIR R4 `FHIRHelpers` 4.0.1 source at `dependencies/FHIRHelpers.cql`, even when the active Library has not included it yet. The dependency is read-only. Repair instructions require OpenCode to inspect that file before choosing helper functions and to preserve the Library's existing alias (or add the matching include when necessary).
 
 Attachments remain in the OpenCode session workspace until the session ends. Text files are stored as context directly. Formats such as PDF and DOCX are converted to Markdown by the runner-side MarkItDown integration. `/compact` may retain summarized context while allowing the runner to purge original attachment files.
 
@@ -79,6 +83,12 @@ Environment bindings stored in `sessionStorage` do not include endpoint username
 | `POST/DELETE` | `/api/opencode/sessions/:id/permissions` and `/questions` | Resolve interactive OpenCode requests |
 
 Wire-level request and response types live in `@cql-studio/core`. UI-only timeline, editor callback, and environment-binding state remains in `ui/src/app/models/opencode.model.ts`.
+
+## VSAC validation and terminology import
+
+The project-local `validate-vsac` OpenCode skill and `/validate-vsac` command audit an exact canonical URL/OID, or all VSAC ValueSet declarations in the active CQL file. The skill uses only read-only MCP tools: authoritative VSAC validation/discovery plus bounded reads and expansion checks against the configured terminology endpoint. It never writes a FHIR resource.
+
+FHIR writes remain a deliberate CQL Studio action. When the user saves CQL containing VSAC ValueSet declarations, CQL Studio searches the active terminology endpoint by exact canonical URL and verifies that each existing resource can expand. Missing or unusable resources are fetched and expanded through the existing authenticated VSAC proxy, then imported to the configured writable terminology endpoint before the Library is saved. **Apply & save** identifies this explicitly as **Apply, import terminology & save** when the AI diff contains VSAC references. Failed validation, expansion, or import blocks the Library save; merely mentioning a VSAC URL in chat never imports it.
 
 ## Remaining production checklist
 

@@ -58,7 +58,7 @@ interface RuntimeSession {
 
 const CQL_COMMANDS = new Set([
   'validate', 'review', 'explain', 'dependencies', 'library', 'valueset',
-  'context', 'fhir', 'research', 'terminology',
+  'context', 'fhir', 'research', 'terminology', 'validate-vsac',
 ]);
 
 /**
@@ -243,11 +243,24 @@ export class OpenCodeRuntime {
     if (input.editorContext && input.editorContext.file !== session.workspace.activeFile) {
       throw new OpenCodeError('INVALID_EDITOR_CONTEXT', 'Editor context does not match the active CQL file', 400, false);
     }
+    const lightweightConversation = isLightweightOpenCodeConversation(input);
+    const ideDiagnostics = lightweightConversation ? undefined : input.ideDiagnostics;
+    if (ideDiagnostics && (
+      ideDiagnostics.libraryId !== session.dto.activeLibraryId
+      || ideDiagnostics.documentRevision !== session.browserRevision
+    )) {
+      throw new OpenCodeError(
+        'STALE_IDE_DIAGNOSTICS',
+        'The IDE Problems context does not match the synchronized active CQL document',
+        409,
+        true
+      );
+    }
     this.touch(session);
     session.dto.status = 'busy';
     session.dto.reasoningEnabled = Boolean(input.reasoning);
     this.armStallTimer(session);
-      const parts: Array<{ type: 'text'; text: string } | FilePartInput> = [{ type: 'text', text: input.message }];
+    const parts: Array<{ type: 'text'; text: string } | FilePartInput> = [{ type: 'text', text: input.message }];
     if (input.editorContext) {
       const context = input.editorContext;
       const selectedText = context.selectedText.slice(0, 50_000);
@@ -264,7 +277,30 @@ export class OpenCodeRuntime {
         ].join('\n'),
       });
     }
-    for (const reference of [...new Set(input.references ?? [])].slice(0, 20)) {
+    if (ideDiagnostics?.diagnostics.length) {
+      const diagnostics = ideDiagnostics.diagnostics.slice(0, 100).map(item => ({
+        severity: item.severity,
+        message: item.message.slice(0, 2_000),
+        file: session.workspace.activeFile,
+        line: item.line,
+        column: item.column,
+      }));
+      const serialized = JSON.stringify(diagnostics).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+      parts.push({
+        type: 'text',
+        text: [
+          `<cql-studio-problems-context library="${session.dto.activeLibraryId}" revision="${session.browserRevision}">`,
+          serialized,
+          '</cql-studio-problems-context>',
+          'These are the current diagnostics shown in the CQL Studio Problems tab. Use them as the initial repair target, then run cql_validate after editing.',
+        ].join('\n'),
+      });
+    }
+    const references = new Set(input.references ?? []);
+    if (ideDiagnostics?.diagnostics.length && session.workspace.manifest.files['dependencies/FHIRHelpers.cql']) {
+      references.add('dependencies/FHIRHelpers.cql');
+    }
+    for (const reference of [...references].slice(0, 20)) {
       const absolute = this.workspaces.resolveReference(session.workspace, reference);
       const marker = `@${reference}`;
       const start = Math.max(0, input.message.indexOf(marker));
@@ -297,7 +333,6 @@ export class OpenCodeRuntime {
     }
     try {
       const selectedModel = this.modelFor(session);
-      const lightweightConversation = isLightweightOpenCodeConversation(input);
       await session.client.session.promptAsync({
         sessionID: session.dto.openCodeSessionId,
         agent: input.agent === 'plan' ? 'plan' : 'build',

@@ -240,9 +240,14 @@
                   <i class="bi bi-check-circle-fill me-1"></i>Saved
                 </button>
               } @else {
-                <button type="button" class="btn btn-sm btn-success" [disabled]="!canApplyAndSave() || isDiffSaving(diff.file)" (click)="applyAndSave(diff)">
+                <button type="button" class="btn btn-sm btn-success" [disabled]="!canApplyAndSave() || isDiffSaving(diff.file)" (click)="applyAndSave(diff)"
+                  [title]="vsacReferenceCount(diff) > 0 ? 'Apply the CQL change, import its VSAC ValueSets to the configured terminology server, and save the Library' : 'Apply the CQL change and save the Library'">
                   @if (isDiffSaving(diff.file)) { <span class="spinner-border spinner-border-sm me-1"></span>Saving… }
-                  @else { <i class="bi bi-check2 me-1"></i>Apply &amp; save }
+                  @else {
+                    <i class="bi bi-check2 me-1"></i>
+                    @if (vsacReferenceCount(diff) > 0) { Apply, import terminology &amp; save }
+                    @else { Apply &amp; save }
+                  }
                 </button>
               }
             </div>

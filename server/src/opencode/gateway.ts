@@ -617,6 +617,7 @@ export function createOpenCodeGateway(env: ServerEnv): Router {
         attachments: req.body?.attachments,
         reasoning: req.body?.reasoning,
         editorContext: req.body?.editorContext,
+        ideDiagnostics: req.body?.ideDiagnostics,
       }),
     });
     res.status(202).json(await response.json());

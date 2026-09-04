@@ -80,6 +80,14 @@ export interface OpenCodePromptRequest {
   attachments?: string[];
   reasoning?: boolean;
   editorContext?: OpenCodeEditorContext;
+  /** Current diagnostics shown in the IDE Problems tab for the synchronized document. */
+  ideDiagnostics?: OpenCodeIdeDiagnosticsContext;
+}
+
+export interface OpenCodeIdeDiagnosticsContext {
+  libraryId: string;
+  documentRevision: number;
+  diagnostics: OpenCodeDiagnosticDto[];
 }
 
 export interface OpenCodeAttachmentUploadRequest {

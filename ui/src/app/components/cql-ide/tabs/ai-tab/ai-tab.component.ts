@@ -20,6 +20,7 @@ import {
   OpenCodeSessionState,
   OpenCodeUiMessage,
   OpenCodeValidation,
+  OpenCodeIdeDiagnostics,
   CreateOpenCodeSessionRequest,
 } from '../../../../models/opencode.model';
 import { IdeStateService } from '../../../../services/ide-state.service';
@@ -29,6 +30,8 @@ import { OpenCodeEditorBridgeService } from '../../../../services/opencode-edito
 import { LibraryResource } from '../../shared/ide-types';
 import type { AiProviderType } from '../../../../models/settings.model';
 import { Subscription, timer } from 'rxjs';
+import { extractVsacCanonicalUrls, OpenCodeVsacImportService } from '../../../../services/opencode-vsac-import.service';
+import { buildOpenCodeProblemsContext } from '../../../../services/opencode-problems-context.lib';
 
 type OpenCodeTimelineItem =
   | { kind: 'message'; id: string; order: number; message: OpenCodeUiMessage }
@@ -73,6 +76,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
   readonly settingsService = inject(SettingsService);
   private readonly openCodeService = inject(OpenCodeService);
   private readonly editorBridge = inject(OpenCodeEditorBridgeService);
+  private readonly vsacImport = inject(OpenCodeVsacImportService);
   private readonly messageRoles = new Map<string, 'user' | 'assistant'>();
   private readonly messageOrders = new Map<string, number>();
   private readonly messageParts = new Map<string, Map<string, string>>();
@@ -445,7 +449,8 @@ export class AiTabComponent implements OnInit, OnDestroy {
         this.referencesFrom(message),
         this.reasoningEnabled(),
         editorContext ?? undefined,
-        this.attachments().map(attachment => attachment.id)
+        this.attachments().map(attachment => attachment.id),
+        this.problemsContext(session)
       );
       if (editorContext?.mode === 'inline') this.inlineContext.set(null);
     } catch (error) {
@@ -580,10 +585,45 @@ export class AiTabComponent implements OnInit, OnDestroy {
         this.error.set('Apply & save is blocked until all CQL validation errors are fixed.');
         return;
       }
+      const vsacReferences = extractVsacCanonicalUrls(diff.after);
+      if (vsacReferences.length > 0) {
+        const activityId = `vsac-import-${Date.now()}`;
+        this.upsertActivity({
+          id: activityId,
+          kind: 'tool',
+          title: `Preparing ${vsacReferences.length} VSAC ValueSet${vsacReferences.length === 1 ? '' : 's'}`,
+          status: 'running',
+          detail: `Checking the configured terminology endpoint before saving ${diff.file}`,
+          startedAt: Date.now(),
+        }, true);
+        try {
+          const summary = await this.vsacImport.importForCql(diff.after);
+          this.upsertActivity({
+            id: activityId,
+            kind: 'tool',
+            title: 'VSAC terminology ready',
+            status: 'completed',
+            detail: `${summary.imported} imported · ${summary.alreadyPresent} already present · ${summary.target}`,
+            startedAt: Date.now(),
+            endedAt: Date.now(),
+          });
+        } catch (error) {
+          this.upsertActivity({
+            id: activityId,
+            kind: 'tool',
+            title: 'VSAC terminology import failed',
+            status: 'error',
+            detail: error instanceof Error ? error.message : String(error),
+            endedAt: Date.now(),
+          });
+          throw error;
+        }
+      }
       this.applyLibraryChange.emit({
         libraryId: diff.libraryId,
         cqlContent: diff.after,
         save: true,
+        vsacTerminologyReady: vsacReferences.length > 0,
         onSaveComplete: saved => {
           if (saved) this.savedDiffFiles.update(files => new Set(files).add(diff.file));
         },
@@ -597,6 +637,10 @@ export class AiTabComponent implements OnInit, OnDestroy {
         return next;
       });
     }
+  }
+
+  vsacReferenceCount(diff: OpenCodeFileDiff): number {
+    return extractVsacCanonicalUrls(diff.after).length;
   }
 
   applyLocally(diff: OpenCodeFileDiff): void {
@@ -1199,7 +1243,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
       const text = typeof part['text'] === 'string' ? part['text'] : '';
       // Editor context is a model-only prompt part. The visible selection chip
       // communicates it without duplicating internal range markup in the chat.
-      if (text.includes('<cql-studio-editor-context') || text.includes('<cql-studio-resume-context')) return;
+      if (text.includes('<cql-studio-editor-context') || text.includes('<cql-studio-problems-context') || text.includes('<cql-studio-resume-context')) return;
       const parts = this.messageParts.get(messageId) ?? new Map<string, string>();
       parts.set(partId, text);
       this.messageParts.set(messageId, parts);
@@ -1427,6 +1471,18 @@ export class AiTabComponent implements OnInit, OnDestroy {
     return document?.libraryId === library.id ? document.content : library.cqlContent;
   }
 
+  private problemsContext(session: OpenCodeSession): OpenCodeIdeDiagnostics | undefined {
+    const active = this.activeLibrary();
+    const document = this.editorBridge.document();
+    if (!active || !document || active.id !== session.activeLibraryId || document.libraryId !== active.id) return undefined;
+    return buildOpenCodeProblemsContext({
+      libraryId: active.id,
+      file: session.activeFile,
+      documentRevision: document.userRevision,
+      problems: this.ideStateService.editorState().syntaxErrors,
+    });
+  }
+
   private async collectDependencies(active: LibraryResource, activeContent = this.contentForLibrary(active)): Promise<OpenCodeLibrarySnapshot[]> {
     const openLibraries = this.ideStateService.libraryResources();
     const byName = new Map(openLibraries.map(library => [library.name.toLowerCase(), library]));
@@ -1440,15 +1496,16 @@ export class AiTabComponent implements OnInit, OnDestroy {
         pending.push(dependency.cqlContent);
       }
     }
-    const needsFhirHelpers = this.includeNames(activeContent).some(name => name.toLowerCase() === 'fhirhelpers');
     const hasFhirHelpers = [...selected.values()].some(dependency => dependency.name.toLowerCase() === 'fhirhelpers');
-    if (needsFhirHelpers && !hasFhirHelpers) {
-      try {
-        const response = await fetch('/cql/FHIRHelpers-4.0.1.cql');
-        if (response.ok) selected.set('FHIRHelpers', { id: 'FHIRHelpers', name: 'FHIRHelpers', version: '4.0.1', cqlContent: await response.text() });
-      } catch {
-        // Validation will report a missing dependency if the bundled helper is unavailable.
-      }
+    if (active.name.toLowerCase() !== 'fhirhelpers' && !hasFhirHelpers) {
+      const response = await fetch('/cql/FHIRHelpers-4.0.1.cql');
+      if (!response.ok) throw new Error(`Unable to load the bundled FHIRHelpers 4.0.1 dependency (${response.status})`);
+      selected.set('FHIRHelpers', {
+        id: 'FHIRHelpers',
+        name: 'FHIRHelpers',
+        version: '4.0.1',
+        cqlContent: await response.text(),
+      });
     }
     return [...selected.values()];
   }

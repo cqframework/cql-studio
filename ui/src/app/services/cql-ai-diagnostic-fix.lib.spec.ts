@@ -37,6 +37,7 @@ describe('buildCqlAiDiagnosticFixRequest', () => {
     expect(request.prompt).toContain('define Broken: 1 +');
     expect(request.prompt).toContain('define Healthy: 42');
     expect(request.prompt).not.toContain('define Unrelated: true');
+    expect(request.prompt).toContain('@dependencies/FHIRHelpers.cql');
     expect(request.prompt).toContain('Run cql_validate after editing');
   });
 });

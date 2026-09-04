@@ -39,6 +39,7 @@ import {
   isMacPlatform as detectMacPlatform
 } from './cql-ide-shortcuts.lib';
 import { CqlAiDiagnosticFixRequest } from '../../services/cql-ai-diagnostic-fix.lib';
+import { extractVsacCanonicalUrls, OpenCodeVsacImportService } from '../../services/opencode-vsac-import.service';
 
 // Import all the new components
 import { IdeStatusBarComponent } from './ide-status-bar/ide-status-bar.component';
@@ -82,6 +83,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   private cqlValidationService = inject(CqlValidationService);
   private toastService = inject(ToastService);
   private libraryOpenerService = inject(CqlIdeLibraryOpenerService);
+  private openCodeVsacImport = inject(OpenCodeVsacImportService);
 
   constructor() {
     effect(() => {
@@ -397,7 +399,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     // Handle library description change
   }
 
-  async onSaveLibrary(): Promise<void> {
+  async onSaveLibrary(options: { skipVsacImport?: boolean } = {}): Promise<void> {
     const activeLibrary = this.ideStateService.getActiveLibraryResource();
     if (!activeLibrary) {
       console.warn('No active library to save');
@@ -472,6 +474,17 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
         );
       } else {
         this.ideStateService.setExecutionStatus('Saving library...');
+      }
+
+      const vsacReferences = extractVsacCanonicalUrls(currentContent);
+      if (vsacReferences.length > 0 && !options.skipVsacImport) {
+        this.ideStateService.setExecutionStatus('Checking and importing VSAC terminology...');
+        const terminology = await this.openCodeVsacImport.importForCql(currentContent);
+        this.ideStateService.addTextOutput(
+          `VSAC Terminology Ready: ${activeLibrary.name || activeLibrary.id}`,
+          `${terminology.imported} ValueSet(s) imported and ${terminology.alreadyPresent} already present on ${terminology.target}.`,
+          'success'
+        );
       }
 
       // Update the library resource with current content
@@ -700,7 +713,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
       this.toastService.showWarning(`Applied OpenCode changes to ${library.name} locally. The library remains unsaved.`, 'OpenCode');
       return;
     }
-    await this.onSaveLibrary();
+    await this.onSaveLibrary({ skipVsacImport: change.vsacTerminologyReady });
 
     const saved = this.ideStateService.libraryResources().find(item => item.id === library.id);
     if (saved?.isDirty) {
