@@ -32,7 +32,7 @@ export const EXAMPLE_CATALOG: readonly ExampleCatalogEntry[] = [
 			'CQL-based lipid management and cardiovascular risk workflows (including PREVENT-aligned scoring), with VSAC and custom value sets for therapy and observation criteria.',
 		packageId: '',
 		packageVersion: '',
-		packageUrl: `${EXAMPLE_PACKAGES_BASE}/com.prestonlee.fhir.lipid-management-0.4.0.tgz`,
+		packageUrl: `${EXAMPLE_PACKAGES_BASE}/com.prestonlee.fhir.lipid-management-0.4.1.tgz`,
 	},
 	{
 		id: 'hospital-at-home',
