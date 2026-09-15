@@ -19,7 +19,7 @@
     otherwise require a hospital bed.
   </p>
   <p>
-    This library is provided as ateaching and demonstration artifact. It
+    This library is provided as a teaching and demonstration artifact. It
     has not been clinically validated, and the criteria it encodes are a published research protocol,
     not any particular organization's admission policy.
   </p>
@@ -46,60 +46,62 @@
   <p>
     <strong>Layer 0 — Base populations.</strong> One retrieve per resource type, with
     encounter-independent status filters applied exactly once (<code>Qualifying Conditions</code>,
-    <code>Final Observations</code>, <code>Qualifying Procedures</code>, and so on).
+    <code>Final Observations</code>, <code>Qualifying Procedures</code>,
+    <code>Qualifying Medication Administrations</code>, and so on).
   </p>
   <p>
     <strong>Layer 1 — Fluent filter functions.</strong> Reusable filters that operate on
     already-retrieved in-memory lists: <code>codedAs</code>, <code>withCode</code>,
-    <code>linkedTo</code>, <code>during</code>, <code>performedDuring</code>,
-    <code>knownAsOf</code>. No retrieves happen here.
+    <code>procedureCodedAs</code>, <code>linkedTo</code>, <code>during</code>,
+    <code>performedDuring</code>, <code>administeredDuring</code>, <code>knownAsOf</code>,
+    <code>onsetOrRecordedInKnownBy</code>. No retrieves happen here.
   </p>
   <p>
     <strong>Layer 2 — Coded subsets.</strong> Terminology matching runs once per patient per value
-    set and is cached by the engine — <code>Qualifying CHF Conditions</code>,
+    set (or LOINC code) and is cached by the engine — <code>Qualifying CHF Conditions</code>,
     <code>Systolic BP Results</code>, <code>Dialysis Performed</code>, etc.
   </p>
   <p>
-    <strong>Layer 3 — Enumerated criteria.</strong> One definition per criterion, named by its
-    identifier in the source protocol (<code>1.A.2. CHF Diagnosis</code>,
-    <code>5.G. General Exclusion Hypotension</code>). Each is tagged in a comment with how it is
-    evaluated:
+    <strong>Layer 3 — Leaf criteria.</strong> One function per leaf criterion. Inclusion criteria
+    use <code>PresenceOf</code>; exclusions use <code>AbsenceOf</code> with <code>No …</code>
+    polarity (value <code>true</code> means the exclusion does not fire / the patient passes).
+    Narrative criteria that cannot be decided from coded FHIR data return
+    <code>ManualReview()</code> (<code>value</code> null, status
+    <code>Requires manual review</code>).
+  </p>
+  <p>
+    Every leaf criterion returns a <code>CriterionResult</code> with three fields:
   </p>
   <div class="table-responsive mb-3">
-    <table class="table table-sm table-bordered" id="hospital-at-home-criterion-tags">
+    <table class="table table-sm table-bordered" id="hospital-at-home-criterion-result">
       <thead class="table-light">
         <tr>
-          <th>Tag</th>
+          <th>Field</th>
           <th>Meaning</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><code>[per-encounter]</code></td>
-          <td>Filters a cached list against the index encounter</td>
+          <td><code>value</code></td>
+          <td>Boolean result; <code>null</code> when not computable from coded data</td>
         </tr>
         <tr>
-          <td><code>[lookback]</code></td>
-          <td>Date window anchored to the encounter start</td>
+          <td><code>status</code></td>
+          <td>Reason string when <code>value</code> is null; otherwise null</td>
         </tr>
         <tr>
-          <td><code>[patient-level]</code></td>
-          <td>Cohort-wide, bounded by a retrospective cutoff</td>
-        </tr>
-        <tr>
-          <td><code>[manual-review stub]</code></td>
-          <td>Constant; requires human adjudication</td>
-        </tr>
-        <tr>
-          <td><code>[inline]</code></td>
-          <td>Computed directly in the Layer 4 output query</td>
+          <td><code>evidence</code></td>
+          <td>FHIR resources the value was derived from</td>
         </tr>
       </tbody>
     </table>
   </div>
   <p>
     <strong>Layer 4 — Output.</strong> A single expression, <code>Encounter Eligibility Results</code>,
-    returning one tuple per qualifying encounter.
+    returning one flat tuple per qualifying encounter. Each leaf unpacks into three elements
+    (<code>"…"</code>, <code>"… [status]"</code>, <code>"… [evidence]"</code>); composites contribute
+    a Boolean only. The row holds no nested tuples so the result is serializable to FHIR
+    Parameters.
   </p>
 
   <h6 class="fw-normal">Criterion sections</h6>
@@ -109,35 +111,48 @@
         <tr>
           <th>Section</th>
           <th>Scope</th>
+          <th>Roll-up</th>
         </tr>
       </thead>
       <tbody>
         <tr>
           <td>1</td>
-          <td>Inclusion — admission required, target diagnosis, age ≥ 65, catchment area</td>
+          <td>Inclusion — admission required, target diagnosis (CHF / COAD / CAP), age ≥ 65, catchment area</td>
+          <td><code>1. Inclusion Criteria Met</code></td>
         </tr>
         <tr>
           <td>2</td>
-          <td>CHF-specific exclusions</td>
+          <td>CHF-specific exclusions (evaluated only when CHF diagnosis is present)</td>
+          <td><code>2. No CHF Specific Exclusions Met</code></td>
         </tr>
         <tr>
           <td>3</td>
-          <td>COAD-specific exclusions</td>
+          <td>COAD-specific exclusions (evaluated only when COAD diagnosis is present)</td>
+          <td><code>3. No COAD Specific Exclusions Met</code></td>
         </tr>
         <tr>
           <td>4</td>
-          <td>CAP-specific exclusions</td>
+          <td>CAP-specific exclusions (evaluated only when CAP + infiltrate is present)</td>
+          <td><code>4. No CAP Specific Exclusions Met</code></td>
         </tr>
         <tr>
           <td>5</td>
           <td>General exclusions — applied to every patient</td>
+          <td><code>5. No General Exclusions Met</code></td>
         </tr>
       </tbody>
     </table>
   </div>
   <p>
-    Each section rolls up into a <code>Z.n</code> summary, and those combine into the final
-    determination <code>Z.6. HaH Eligible</code>.
+    Condition-specific roll-ups are <code>null</code> when that diagnosis is not present; the final
+    determination <code>0. HaH Eligible</code> coalesces those to <code>true</code> so only the
+    relevant branches constrain eligibility.
+  </p>
+  <p>
+    Some criteria split a coded leaf from a narrative stub (for example
+    <code>5.1.1</code> / <code>5.1.2</code> for ICU acuity, or <code>4.2.1</code> / <code>4.2.2</code>
+    for CXR abnormality). Composites <code>Coalesce</code> a null manual-review value to
+    <code>true</code> so narrative gaps do not silently fail the patient.
   </p>
 
   <h6 class="mt-4">Parameters</h6>
@@ -193,15 +208,21 @@
     </li>
     <li>
       <strong>Pick one criterion and trace it upward.</strong>
-      <code>5.G. General Exclusion Hypotension</code> is a good first choice — it goes from a LOINC
+      <code>5.7. No General Exclusion Hypotension</code> is a good first choice — it goes from a LOINC
       code through a Layer 2 subset, a Layer 1 <code>during</code> filter, and a quantity comparison,
-      in four short hops.
+      then wraps the evidence in <code>AbsenceOf</code>.
     </li>
     <li>
-      <strong>Run the test bundles.</strong> Use a CQL engine to execute the library against patient
-      test cases and check the results against the table below.
+      <strong>Run the test bundles.</strong> Import the package, load a patient from the table below,
+      and execute the library in <code>Patient</code> context.
     </li>
   </ol>
+  <p id="hospital-at-home-execute-hint">
+    When running <strong>Execute</strong> in CQL Studio, select only
+    <code>Encounter Eligibility Results</code> as the result parameter. That expression is the
+    library's intended output; leaving other definitions selected produces a large, unfocused
+    result set of intermediate populations and helpers.
+  </p>
 
   <h6 class="fw-normal">Test data</h6>
   <p>Four patient bundles are included in the package:</p>
@@ -209,31 +230,36 @@
     <table class="table table-sm table-bordered" id="hospital-at-home-test-bundles">
       <thead class="table-light">
         <tr>
+          <th>Patient</th>
           <th>Bundle</th>
-          <th>Expected <code>Z.6. HaH Eligible</code></th>
+          <th>Expected <code>0. HaH Eligible</code></th>
           <th>Demonstrates</th>
         </tr>
       </thead>
       <tbody>
         <tr>
-          <td><code>Bundle-Eligible</code></td>
+          <td>HaH_Aaron Eligible</td>
+          <td><code>Bundle-HaH_Eligible</code></td>
           <td><code>true</code></td>
-          <td>Inclusion met, no exclusions</td>
+          <td>CHF admission ≥ 65; inclusion met, no exclusions</td>
         </tr>
         <tr>
-          <td><code>Bundle-NotEligibleNoInclusion</code></td>
+          <td>HaH_Bob CHFExclusion</td>
+          <td><code>Bundle-HaH_NotEligibleCHFExclusion</code></td>
           <td><code>false</code></td>
-          <td>Fails Section 1</td>
+          <td>CHF + ventricular arrhythmia — fails Section 2 (<code>2.1</code>)</td>
         </tr>
         <tr>
-          <td><code>Bundle-NotEligibleCHFExclusion</code></td>
+          <td>HaH_Charlie GeneralExclusion</td>
+          <td><code>Bundle-HaH_NotEligibleGeneralExclusion</code></td>
           <td><code>false</code></td>
-          <td>Fails Section 2 (conditional branch)</td>
+          <td>CHF + arterial pH 7.25 — fails Section 5 (<code>5.5</code>)</td>
         </tr>
         <tr>
-          <td><code>Bundle-NotEligibleGeneralExclusion</code></td>
+          <td>HaH_Donna NoInclusion</td>
+          <td><code>Bundle-HaH_NotEligibleNoInclusion</code></td>
           <td><code>false</code></td>
-          <td>Fails Section 5</td>
+          <td>Type 2 diabetes only (no target diagnosis) — fails Section 1</td>
         </tr>
       </tbody>
     </table>
