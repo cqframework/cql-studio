@@ -14,7 +14,7 @@ import {
   stringAsSource,
   type CqlCompilerException,
 } from '@cqframework/cql/cql-to-elm';
-import type { OpenCodeDiagnosticDto, OpenCodeValidationDto } from '@cql-studio/core';
+import { extractLocatorInfo, type OpenCodeDiagnosticDto, type OpenCodeValidationDto } from '@cql-studio/core';
 
 export interface CqlWorkspaceValidationInput {
   activeFile: string;
@@ -65,11 +65,14 @@ export class CqlWorkspaceValidator {
       const result = ucum.UcumLhcUtils.getInstance().validateUnitString(unit);
       return result.status === 'valid' ? null : result.msg?.[0] ?? 'Invalid UCUM unit';
     };
+    const unsupportedUcumOp = (): never => {
+      throw new Error('Unsupported UCUM conversion');
+    };
     const manager = new LibraryManager(
       modelManager,
       undefined,
       undefined,
-      createUcumService(() => { throw new Error('Unsupported UCUM conversion'); }, validateUnit)
+      createUcumService(unsupportedUcumOp, validateUnit, unsupportedUcumOp, unsupportedUcumOp)
     );
     manager.librarySourceLoader.registerProvider(createLibrarySourceProvider(
       (id: string, _system: string | null | undefined, version: string | null | undefined) => {
@@ -113,10 +116,14 @@ export class CqlWorkspaceValidator {
     file: string
   ): OpenCodeDiagnosticDto[] {
     return values.filter((value): value is CqlCompilerException => value != null).map(exception => {
-      const locator = exception.locator as Record<string, unknown> | null;
-      const line = typeof locator?.['x8z_1'] === 'number' ? Math.max(1, Number(locator['x8z_1'])) : undefined;
-      const column = typeof locator?.['y8z_1'] === 'number' ? Math.max(0, Number(locator['y8z_1'])) : undefined;
-      return { severity, file, message: exception.message || 'Unknown CQL compiler message', line, column };
+      const locatorInfo = extractLocatorInfo(exception);
+      return {
+        severity,
+        file,
+        message: exception.message || 'Unknown CQL compiler message',
+        ...(locatorInfo.line != null ? { line: locatorInfo.line } : {}),
+        ...(locatorInfo.column != null ? { column: locatorInfo.column } : {}),
+      };
     });
   }
 

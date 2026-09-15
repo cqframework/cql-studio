@@ -23,14 +23,14 @@
   "dependencies": {
     "@cql-studio/core": "file:../core",
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "@opencode-ai/sdk": "^1.18.18",
+    "@opencode-ai/sdk": "^1.18.31",
     "express": "^5.2.1",
-    "opencode-ai": "^1.18.18",
+    "opencode-ai": "^1.18.31",
     "pino": "^10.3.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/node": "^26.4.1",
+    "@types/node": "^26.5.1",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   }

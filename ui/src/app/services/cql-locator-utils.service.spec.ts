@@ -53,43 +53,6 @@ function createLibraryManager(): LibraryManager {
 }
 
 describe('CqlLocatorUtilsService', () => {
-  it('uses startLine/startChar when present on the locator', () => {
-    const service = new CqlLocatorUtilsService();
-
-    const locatorInfo = service.extractLocatorInfo({
-      message: 'Could not load source',
-      locator: {
-        startLine: 3,
-        startChar: 1,
-        endLine: 3,
-        endChar: 35
-      }
-    } as any);
-
-    expect(locatorInfo).toEqual({ line: 3, column: 1, endLine: 3, endColumn: 35 });
-  });
-
-  it('parses TrackBack.toString() when property names are mangled', () => {
-    const service = new CqlLocatorUtilsService();
-    const locator = {
-      r89_1: {},
-      s89_1: 5,
-      t89_1: 13,
-      u89_1: 5,
-      v89_1: 15,
-      toString() {
-        return "TrackBack{library='[object Object]', startLine=5, startChar=13, endLine=5, endChar=15}";
-      }
-    };
-
-    const locatorInfo = service.extractLocatorInfo({
-      message: 'Could not resolve identifier',
-      locator
-    } as any);
-
-    expect(locatorInfo).toEqual({ line: 5, column: 13, endLine: 5, endColumn: 15 });
-  });
-
   it('extracts 1-based TrackBack columns from live semantic exceptions', () => {
     const service = new CqlLocatorUtilsService();
     const cql = `library Test version '1.0.0'

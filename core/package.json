@@ -25,11 +25,12 @@
     "compile": "tsc",
     "build": "npm run clean && npm run compile",
     "prepare": "npm run build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run compile && node --test --experimental-strip-types tests/cql-locator.test.ts"
   },
   "dependencies": {},
   "devDependencies": {
-    "@types/node": "^26.5.0",
+    "@types/node": "^26.5.1",
     "typescript": "^7.0.2"
   }
 }
