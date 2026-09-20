@@ -28,6 +28,7 @@
     "docker:up:full": "docker compose -f docker/docker-compose.full.yml up -d --wait --build --pull missing --remove-orphans",
     "docker:down:full": "docker compose -f docker/docker-compose.full.yml down",
     "diagram": "command -v plantuml >/dev/null 2>&1 && plantuml -tpng doc/*.puml || echo 'plantuml not found on PATH; install PlantUML to render doc/*.puml'",
+    "reinstall": "rm -rf node_modules ui/node_modules core/node_modules server/node_modules opencode/node_modules package-lock.json && npm install",
     "test": "npm run test --workspaces --if-present"
   },
   "overrides": {
@@ -40,8 +41,8 @@
     "@esbuild/linux-x64": "0.28.2",
     "@oxc-parser/binding-linux-arm64-musl": "0.150.0",
     "@oxc-parser/binding-linux-x64-musl": "0.150.0",
-    "@rolldown/binding-linux-arm64-musl": "1.2.8",
-    "@rolldown/binding-linux-x64-musl": "1.2.8",
+    "@rolldown/binding-linux-arm64-musl": "1.2.9",
+    "@rolldown/binding-linux-x64-musl": "1.2.9",
     "lightningcss-linux-arm64-musl": "1.33.0",
     "lightningcss-linux-x64-musl": "1.33.0",
     "@napi-rs/nice-linux-arm64-musl": "1.1.1",
