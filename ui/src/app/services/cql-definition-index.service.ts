@@ -153,7 +153,7 @@ export class CqlDefinitionIndexService {
       if (!cachedCql?.trim()) {
         return null;
       }
-      const raw = this.translationService.translateCqlToElmRaw(cachedCql);
+      const raw = await this.translationService.translateCqlToElmRawAsync(cachedCql);
       elmXml = raw.elmXml;
     }
 

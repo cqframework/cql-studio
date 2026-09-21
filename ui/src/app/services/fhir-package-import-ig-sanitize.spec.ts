@@ -1,6 +1,7 @@
 // Author: Preston Lee
 
 import { Injector, runInInjectionContext } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { ImplementationGuide } from 'fhir/r4';
 import { minimalImplementationGuide } from '../../testing/spec-helpers';
 import { IndexedResourceRowVm } from '../models/fhir-package-view.model';
@@ -19,6 +20,7 @@ describe('FhirPackageImportService IG sanitize', () => {
     const injector = Injector.create({
       providers: [
         FhirPackageImportService,
+        { provide: HttpClient, useValue: { post: () => ({}) } },
         { provide: TerminologyService, useValue: {} },
         { provide: FhirClientService, useValue: {} },
         { provide: SettingsService, useValue: {} }
@@ -53,6 +55,7 @@ describe('FhirPackageImportService IG sanitize', () => {
       suggestedTarget: 'data',
       targetTerminology: false,
       targetData: true,
+      targetContent: false,
       category: '',
       importNote: ''
     };

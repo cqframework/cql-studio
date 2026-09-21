@@ -73,30 +73,66 @@ export class InspectorTabComponent {
     this.ideStateService.activateOutputTab();
   }
 
+  /**
+   * True when the displayed FHIR value is a single resource (JSON object or
+   * compact `ResourceType/id`), not a list or list summary.
+   */
+  protected canOpenFhirValueInNewTab(value: string): boolean {
+    return this.resolveSingleFhirResourceRef(value) != null;
+  }
+
   protected openFhirValue(value: string): void {
-    let opened = false;
-    try {
-      const parsed: unknown = JSON.parse(value);
-      const resource =
-        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-          ? (parsed as { resourceType?: unknown; id?: unknown })
-          : null;
-      const resourceType =
-        typeof resource?.resourceType === 'string' ? resource.resourceType : null;
-      const id = typeof resource?.id === 'string' ? resource.id : null;
-      const base = this.settingsService.getEffectiveDataEndpointAddress().replace(/\/+$/, '');
-      if (resourceType && id && base) {
-        window.open(`${base}/${resourceType}/${encodeURIComponent(id)}`, '_blank', 'noopener,noreferrer');
-        opened = true;
-      }
-    } catch {
-      /* fall through to blob */
+    const ref = this.resolveSingleFhirResourceRef(value);
+    const base = this.settingsService.getEffectiveDataEndpointAddress().replace(/\/+$/, '');
+    if (ref?.id && base) {
+      window.open(`${base}/${ref.resourceType}/${encodeURIComponent(ref.id)}`, '_blank', 'noopener,noreferrer');
+      return;
     }
-    if (opened) {
+    if (!this.isSingleFhirResourceJson(value)) {
       return;
     }
     const blob = new Blob([value], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
+  private resolveSingleFhirResourceRef(
+    value: string,
+  ): { resourceType: string; id: string | null } | null {
+    const trimmed = value.trim();
+    try {
+      const parsed: unknown = JSON.parse(trimmed);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return null;
+      }
+      const resource = parsed as { resourceType?: unknown; id?: unknown };
+      if (typeof resource.resourceType !== 'string' || !resource.resourceType) {
+        return null;
+      }
+      return {
+        resourceType: resource.resourceType,
+        id: typeof resource.id === 'string' ? resource.id : null,
+      };
+    } catch {
+      const match = /^([A-Z][A-Za-z0-9]+)\/([^/\s]+)$/.exec(trimmed);
+      if (!match) {
+        return null;
+      }
+      return { resourceType: match[1], id: match[2] };
+    }
+  }
+
+  private isSingleFhirResourceJson(value: string): boolean {
+    try {
+      const parsed: unknown = JSON.parse(value);
+      return (
+        !!parsed &&
+        typeof parsed === 'object' &&
+        !Array.isArray(parsed) &&
+        typeof (parsed as { resourceType?: unknown }).resourceType === 'string'
+      );
+    } catch {
+      return false;
+    }
   }
 }

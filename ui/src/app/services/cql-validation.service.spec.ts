@@ -64,7 +64,7 @@ describe('CqlValidationService', () => {
         {
           provide: TranslationService,
           useValue: {
-            translateCqlToElmRaw: () => ({
+            translateCqlToElmRaw: async () => ({
               elmXml: null,
               errors,
               warnings: [],
@@ -79,7 +79,7 @@ describe('CqlValidationService', () => {
     return injector.get(CqlValidationService);
   }
 
-  it('deduplicates equivalent CodeMirror diagnostics', () => {
+  it('deduplicates equivalent CodeMirror diagnostics', async () => {
     const duplicateError = {
       message: 'Syntax error at ,',
       locator: {
@@ -94,7 +94,7 @@ describe('CqlValidationService', () => {
       line: () => ({ from: 24, length: 20, to: 44 })
     };
 
-    const result = service.validate('library Test', doc);
+    const result = await service.validate('library Test', doc);
 
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0]).toMatchObject({
@@ -106,7 +106,7 @@ describe('CqlValidationService', () => {
     });
   });
 
-  it('deduplicates equivalent structured errors for the Problems panel', () => {
+  it('deduplicates equivalent structured errors for the Problems panel', async () => {
     const duplicateError = {
       message: 'Syntax error at ,',
       locator: {
@@ -118,7 +118,7 @@ describe('CqlValidationService', () => {
     };
     const service = configureServiceWithErrors([duplicateError, duplicateError]);
 
-    const result = service.getStructuredErrors('library Test');
+    const result = await service.getStructuredErrors('library Test');
 
     expect(result).toEqual([
       {
@@ -131,7 +131,7 @@ describe('CqlValidationService', () => {
     ]);
   });
 
-  it('maps live translator TrackBack columns to CodeMirror 0-based offsets', () => {
+  it('maps live translator TrackBack columns to CodeMirror 0-based offsets', async () => {
     const cql = `library Test version '1.0.0'
 using FHIR version '4.0.1'
 define X: Foo`;
@@ -155,7 +155,7 @@ define X: Foo`;
       }
     };
 
-    const result = service.validate(cql, doc);
+    const result = await service.validate(cql, doc);
     const error = result.errors[0];
     expect(error.line).toBe(3);
     expect(error.column).toBe(11);
@@ -163,7 +163,7 @@ define X: Foo`;
     expect(cql.slice(error.from, error.to)).toBe('Foo');
   });
 
-  it('maps live syntax exception columns onto the offending token', () => {
+  it('maps live syntax exception columns onto the offending token', async () => {
     const cql = `library Test version '1.0.0'
 define X: ,`;
     const translator = CqlTranslator.fromText(cql, createLibraryManager());
@@ -188,12 +188,12 @@ define X: ,`;
       }
     };
 
-    const result = service.validate(cql, doc);
+    const result = await service.validate(cql, doc);
     const error = result.errors[0];
     expect(cql.slice(error.from, error.to)).toBe(',');
   });
 
-  it('highlights the last character for EOF syntax errors past line end', () => {
+  it('highlights the last character for EOF syntax errors past line end', async () => {
     const cql = `library Test version '1.0.0'
 define X: (`;
     const translator = CqlTranslator.fromText(cql, createLibraryManager());
@@ -218,7 +218,7 @@ define X: (`;
       }
     };
 
-    const result = service.validate(cql, doc);
+    const result = await service.validate(cql, doc);
     const error = result.errors[0];
     expect(error.from).toBeLessThan(error.to);
     expect(cql.slice(error.from, error.to)).toBe('(');

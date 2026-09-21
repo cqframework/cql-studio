@@ -161,6 +161,7 @@ describe('implementation-guide.lib', () => {
         suggestedTarget: 'data',
         targetTerminology: false,
         targetData: true,
+        targetContent: false,
         category: '',
         importNote: ''
       },
@@ -178,6 +179,7 @@ describe('implementation-guide.lib', () => {
         suggestedTarget: 'terminology',
         targetTerminology: true,
         targetData: false,
+        targetContent: false,
         category: '',
         importNote: ''
       }

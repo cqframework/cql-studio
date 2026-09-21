@@ -22,7 +22,9 @@ import { resourcesFromBundle } from './cql-debug-fhir-bridge';
 import { createPrefetchedTerminologyProvider } from './cql-debug-terminology-provider';
 import { createDebugUcumService } from './cql-debug-ucum.lib';
 import { applyCqlEngineRuntimePatches } from './cql-debug-engine-patches';
+import { lookupModelInfoXmlFromPayload } from './cql-debug-model-info.lib';
 import { expressionResultToDto, serializeDebugVariables } from './cql-debug-value-dto';
+import { extractCqlUsingDeclarations, rewriteFhirHelpersCql, rewriteModelInfoXmlIdentity, parseModelInfoXmlIdentity } from '../cql-model-info.lib';
 import type {
   CqlDebugExpressionResultDto,
   CqlDebugStartPayload,
@@ -52,26 +54,45 @@ export async function runCqlDebugSession(
     });
 
     const modelManager = new ModelManager(undefined, true);
+    const rootFhirVersion =
+      extractCqlUsingDeclarations(payload.cql).find(d => d.name === 'FHIR')?.version?.trim() ?? null;
     modelManager.modelInfoLoader.registerModelInfoProvider(
       createModelInfoProvider((id, system, version) => {
-        if (id === 'System' && !system && !version) {
-          return stringAsSource(payload.systemModelInfoXml);
+        if (system) {
+          return null;
         }
-        if (id === 'FHIR' && version === '4.0.1') {
-          return stringAsSource(payload.fhirModelInfoXml);
+        let xml = lookupModelInfoXmlFromPayload(payload, id, version);
+        if (!xml) {
+          return null;
         }
-        return null;
+        const requested = version?.trim();
+        if (requested) {
+          const xmlId = parseModelInfoXmlIdentity(xml);
+          if (!xmlId || xmlId.version !== requested || xmlId.name !== id) {
+            xml = rewriteModelInfoXmlIdentity(xml, id, requested);
+          }
+        }
+        return stringAsSource(xml);
       }),
       true
     );
 
     const includeMap = new Map<string, string>();
     includeMap.set('FHIRHelpers|4.0.1', payload.fhirHelpersCql);
+    includeMap.set('FHIRHelpers|', payload.fhirHelpersCql);
     includeMap.set(`${payload.libraryName}|${payload.libraryVersion ?? '0.0.1'}`, payload.cql);
     includeMap.set(payload.libraryName, payload.cql);
     for (const include of payload.includeSources) {
-      includeMap.set(`${include.id}|${include.version ?? ''}`, include.cql);
-      includeMap.set(include.id, include.cql);
+      const cql =
+        include.id === 'FHIRHelpers'
+          ? rewriteFhirHelpersCql(
+              include.cql,
+              include.version?.trim() || '4.0.1',
+              rootFhirVersion || include.version?.trim() || '4.0.1'
+            )
+          : include.cql;
+      includeMap.set(`${include.id}|${include.version ?? ''}`, cql);
+      includeMap.set(include.id, cql);
     }
 
     const libraryManager = new LibraryManager(
@@ -84,7 +105,24 @@ export async function runCqlDebugSession(
       createLibrarySourceProvider((id, _system, version) => {
         const exact = includeMap.get(`${id}|${version ?? ''}`);
         if (exact) {
-          return stringAsSource(exact);
+          return stringAsSource(
+            id === 'FHIRHelpers'
+              ? rewriteFhirHelpersCql(
+                  exact,
+                  version?.trim() || '4.0.1',
+                  rootFhirVersion || version?.trim() || '4.0.1'
+                )
+              : exact
+          );
+        }
+        if (id === 'FHIRHelpers' && payload.fhirHelpersCql) {
+          return stringAsSource(
+            rewriteFhirHelpersCql(
+              payload.fhirHelpersCql,
+              version?.trim() || '4.0.1',
+              rootFhirVersion || version?.trim() || '4.0.1'
+            )
+          );
         }
         const bare = includeMap.get(id);
         return bare ? stringAsSource(bare) : null;

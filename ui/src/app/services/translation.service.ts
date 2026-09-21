@@ -3,10 +3,10 @@
 import { Injectable, inject } from '@angular/core';
 // @ts-expect-error No type definitions available for @lhncbc/ucum-lhc
 import * as ucum from '@lhncbc/ucum-lhc';
-import { 
-  ModelManager, 
-  LibraryManager, 
-  CqlTranslator, 
+import {
+  ModelManager,
+  LibraryManager,
+  CqlTranslator,
   CqlCompilerException,
   createModelInfoProvider,
   createLibrarySourceProvider,
@@ -16,6 +16,14 @@ import {
 import { CqlLocatorUtilsService } from './cql-locator-utils.service';
 import { CqlLibrarySourceService, LibraryTranslationContext } from './cql-library-source.service';
 import { ElmIncludeParser } from './elm-include.lib';
+import { CqlModelInfoService } from './cql-model-info.service';
+import {
+  extractCqlUsingDeclarations,
+  modelInfoCacheKey,
+  parseModelInfoXmlIdentity,
+  rewriteFhirHelpersCql,
+  rewriteModelInfoXmlIdentity
+} from './cql-model-info.lib';
 
 export type { LibraryTranslationContext } from './cql-library-source.service';
 
@@ -37,24 +45,34 @@ export interface RawTranslationResult {
   hasErrors: boolean;
 }
 
+/** Per-translate isolated engine. ModelManager allows only one FHIR version by name. */
+interface TranslationEngine {
+  modelManager: ModelManager;
+  libraryManager: LibraryManager;
+  /** Root library `using FHIR` version, if any. */
+  fhirModelVersion: string | null;
+}
+
 @Injectable({
   providedIn: 'root'
 })
 export class TranslationService {
-  private modelManager: ModelManager;
-  private libraryManager: LibraryManager;
   private locatorUtils = inject(CqlLocatorUtilsService);
   private librarySourceService = inject(CqlLibrarySourceService);
   private elmIncludeParser = inject(ElmIncludeParser);
-  
-  // Hardcoded FHIR version - not configurable
+  private modelInfoService = inject(CqlModelInfoService);
+
   private readonly FHIR_VERSION = '4.0.1';
   private readonly MAX_INCLUDE_RESOLVE_ITERATIONS = 5;
 
-  private modelInfoCache = new Map<string, string>();
   private librarySourceCache = new Map<string, string>();
   private translationAssetsLoaded = false;
   private translationAssetsLoadPromise: Promise<void> | null = null;
+
+  /** FIFO queue so concurrent lint/translate jobs do not interleave. */
+  private exclusiveTail: Promise<void> = Promise.resolve();
+  /** >0 while an exclusive job is running (including awaits). Enables reentrancy. */
+  private exclusiveDepth = 0;
 
   private async fetchTextResource(path: string): Promise<string> {
     const response = await fetch(path);
@@ -70,17 +88,16 @@ export class TranslationService {
    * fetched text and serve from memory synchronously during translation.
    */
   async ensureTranslationAssetsLoaded(): Promise<void> {
-    if (this.translationAssetsLoaded) return;
-    if (this.translationAssetsLoadPromise) return this.translationAssetsLoadPromise;
+    if (this.translationAssetsLoaded) {
+      return;
+    }
+    if (this.translationAssetsLoadPromise) {
+      return this.translationAssetsLoadPromise;
+    }
 
     this.translationAssetsLoadPromise = Promise.all([
-      this.fetchTextResource('/cql/system-modelinfo.xml').then(text => {
-        this.modelInfoCache.set('/cql/system-modelinfo.xml', text);
-      }),
-      this.fetchTextResource(`/cql/fhir-modelinfo-${this.FHIR_VERSION}.xml`).then(text => {
-        this.modelInfoCache.set(`/cql/fhir-modelinfo-${this.FHIR_VERSION}.xml`, text);
-      }),
-      this.fetchTextResource(`/cql/FHIRHelpers-${this.FHIR_VERSION}.cql`).then(text => {
+      this.modelInfoService.ensureBundledLoaded(),
+      this.fetchTextResource(`/cql/FHIRHelpers-${this.FHIR_VERSION}.cql`).then((text) => {
         this.librarySourceCache.set(`/cql/FHIRHelpers-${this.FHIR_VERSION}.cql`, text);
       })
     ]).then(() => {
@@ -91,18 +108,46 @@ export class TranslationService {
   }
 
   constructor() {
-    // Create ModelManager with default model info loading enabled
-    this.modelManager = new ModelManager(undefined, true);
-    
-    // Create UCUM service for unit validation (same pattern as cql-to-elm-ui)
+    void this.ensureTranslationAssetsLoaded();
+  }
+
+  /**
+   * Serialize translate jobs. Re-entrant: nested calls (e.g. definition-index compiling
+   * an include while already inside an exclusive job) run immediately to avoid deadlock.
+   */
+  private runExclusive<T>(fn: () => T | Promise<T>): Promise<T> {
+    if (this.exclusiveDepth > 0) {
+      return Promise.resolve().then(() => fn());
+    }
+    const run = this.exclusiveTail.then(async () => {
+      this.exclusiveDepth++;
+      try {
+        return await fn();
+      } finally {
+        this.exclusiveDepth--;
+      }
+    });
+    this.exclusiveTail = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  /**
+   * Build a fresh ModelManager/LibraryManager for one translate job.
+   * Closures capture this engine so concurrent jobs cannot steal managers.
+   */
+  private createTranslationEngine(cql: string): TranslationEngine {
+    const fhirModelVersion =
+      extractCqlUsingDeclarations(cql).find((d) => d.name === 'FHIR')?.version?.trim() || null;
+
+    const modelManager = new ModelManager(undefined, false);
+
     const ucumUtils = ucum.UcumLhcUtils.getInstance();
     const validateUnit = (unit: string): string | null => {
       const result = ucumUtils.validateUnitString(unit);
-      if (result.status === 'valid') {
-        return null;
-      } else {
-        return result.msg[0];
-      }
+      return result.status === 'valid' ? null : result.msg[0];
     };
     const unsupportedUcumOp = (): never => {
       throw new Error('Unsupported operation');
@@ -113,82 +158,94 @@ export class TranslationService {
       unsupportedUcumOp,
       unsupportedUcumOp
     );
-    
-    // Register model info provider for System and FHIR models
-    const modelInfoProvider = createModelInfoProvider(
-      (id: string, system: string | null | undefined, version: string | null | undefined) => {
-        // System model
-        if (id === 'System' && !system && !version) {
-          const xml = this.modelInfoCache.get('/cql/system-modelinfo.xml');
-          return xml ? stringAsSource(xml) : null;
-        }
-        
-        // FHIR model - only support 4.0.1
-        if (id === 'FHIR' && !system && version === this.FHIR_VERSION) {
-          const xml = this.modelInfoCache.get(`/cql/fhir-modelinfo-${this.FHIR_VERSION}.xml`);
-          return xml ? stringAsSource(xml) : null;
-        }
-        
-        // Reject other FHIR versions
-        if (id === 'FHIR' && version !== this.FHIR_VERSION) {
-          console.warn(`FHIR version ${version} is not supported. Only ${this.FHIR_VERSION} is supported.`);
-          return null;
-        }
-        
-        return null;
-      }
-    );
-    
-    this.modelManager.modelInfoLoader.registerModelInfoProvider(modelInfoProvider, true);
-    
-    // Create LibraryManager with the ModelManager and UCUM service
-    this.libraryManager = new LibraryManager(this.modelManager, undefined, undefined, ucumService);
-    
-    // Register library source provider for common libraries like FHIRHelpers
-    const librarySourceProvider = createLibrarySourceProvider(
-      (id: string, system: string | null | undefined, version: string | null | undefined) => {
-        // FHIRHelpers library - only support 4.0.1
-        if (id === 'FHIRHelpers' && !system && version === this.FHIR_VERSION) {
-          const cql = this.librarySourceCache.get(`/cql/FHIRHelpers-${this.FHIR_VERSION}.cql`);
-          return cql ? stringAsSource(cql) : null;
-        }
-        
-        // Reject other FHIRHelpers versions
-        if (id === 'FHIRHelpers' && version !== this.FHIR_VERSION) {
-          console.warn(`FHIRHelpers version ${version} is not supported. Only ${this.FHIR_VERSION} is supported.`);
-          return null;
-        }
 
+    modelManager.modelInfoLoader.registerModelInfoProvider(
+      createModelInfoProvider((id, system, version) => {
+        if (system) {
+          return null;
+        }
+        let xml = this.modelInfoService.lookupXml(id, version);
+        if (!xml) {
+          return null;
+        }
+        const requested = version?.trim();
+        if (requested) {
+          const xmlId = parseModelInfoXmlIdentity(xml);
+          if (!xmlId || xmlId.version !== requested || xmlId.name !== id) {
+            xml = rewriteModelInfoXmlIdentity(xml, id, requested);
+          }
+        }
+        return stringAsSource(xml);
+      }),
+      true
+    );
+
+    const libraryManager = new LibraryManager(modelManager, undefined, undefined, ucumService);
+
+    libraryManager.librarySourceLoader.registerProvider(
+      createLibrarySourceProvider((id, system, version) => {
         const cachedCql = this.librarySourceService.getCachedCql(id, system, version);
-        return cachedCql ? stringAsSource(cachedCql) : null;
-      }
+        if (cachedCql) {
+          return stringAsSource(
+            this.alignFhirHelpersCqlIfNeeded(id, version, cachedCql, fhirModelVersion)
+          );
+        }
+
+        if (id === 'FHIRHelpers' && !system) {
+          const requested = version?.trim() || this.FHIR_VERSION;
+          const bundled = this.librarySourceCache.get(`/cql/FHIRHelpers-${this.FHIR_VERSION}.cql`);
+          if (!bundled) {
+            return null;
+          }
+          if (requested !== this.FHIR_VERSION) {
+            console.warn(
+              `FHIRHelpers version '${requested}' was not found on the content/evaluation FHIR server; using bundled ${this.FHIR_VERSION} (version label adjusted).`
+            );
+          }
+          return stringAsSource(
+            this.alignFhirHelpersCqlIfNeeded(id, requested, bundled, fhirModelVersion)
+          );
+        }
+
+        return null;
+      })
     );
-    
-    this.libraryManager.librarySourceLoader.registerProvider(librarySourceProvider);
 
-    // Begin loading translation assets immediately to minimize latency.
-    // Callers that need translation should still await ensureTranslationAssetsLoaded().
-    void this.ensureTranslationAssetsLoaded();
+    return { modelManager, libraryManager, fhirModelVersion };
   }
-
-  // Translation assets are loaded via ensureTranslationAssetsLoaded() and cached.
 
   /**
    * Translate CQL to ELM, prefetching included libraries from the FHIR server first.
    * Discovers dependencies from stored ELM and compiler output ELM (not CQL text).
    */
-  async translateCqlToElmAsync(cql: string, context?: LibraryTranslationContext): Promise<TranslationResult> {
-    await this.ensureTranslationAssetsLoaded();
+  translateCqlToElmAsync(
+    cql: string,
+    context?: LibraryTranslationContext
+  ): Promise<TranslationResult> {
+    return this.runExclusive(() => this.translateCqlToElmAsyncExclusive(cql, context));
+  }
 
-    if (context?.fhirLibraryId && !context.isDirty) {
-      try {
-        await this.librarySourceService.prefetchFromStoredLibrary(context.fhirLibraryId);
-      } catch (error) {
-        console.warn('Failed to prefetch library includes from stored ELM:', error);
-      }
+  private async translateCqlToElmAsyncExclusive(
+    cql: string,
+    context?: LibraryTranslationContext
+  ): Promise<TranslationResult> {
+    await this.ensureTranslationAssetsLoaded();
+    await this.prefetchTranslationDependencies(cql, context);
+
+    const conflict = this.findFhirModelVersionConflict(cql);
+    if (conflict) {
+      return {
+        elmXml: null,
+        elmJson: null,
+        errors: [conflict],
+        warnings: [],
+        messages: [],
+        hasErrors: true
+      };
     }
 
-    let result = this.translateCqlToElm(cql);
+    let engine = this.createTranslationEngine(cql);
+    let result = this.translateCqlToElmWithEngine(cql, engine);
 
     for (let iteration = 0; iteration < this.MAX_INCLUDE_RESOLVE_ITERATIONS; iteration++) {
       const missingRefs = this.getUncachedFhirIncludesFromElm(result.elmXml);
@@ -201,7 +258,21 @@ export class TranslationService {
         break;
       }
 
-      result = this.translateCqlToElm(cql);
+      const again = this.findFhirModelVersionConflict(cql);
+      if (again) {
+        return {
+          elmXml: null,
+          elmJson: null,
+          errors: [again],
+          warnings: [],
+          messages: [],
+          hasErrors: true
+        };
+      }
+
+      // Fresh engine after cache growth so compiledLibraries cannot retain a partial first pass.
+      engine = this.createTranslationEngine(cql);
+      result = this.translateCqlToElmWithEngine(cql, engine);
     }
 
     return result;
@@ -210,18 +281,34 @@ export class TranslationService {
   /**
    * Translate CQL to ELM and return raw exceptions, prefetching FHIR library includes first.
    */
-  async translateCqlToElmRawAsync(cql: string, context?: LibraryTranslationContext): Promise<RawTranslationResult> {
-    await this.ensureTranslationAssetsLoaded();
+  translateCqlToElmRawAsync(
+    cql: string,
+    context?: LibraryTranslationContext
+  ): Promise<RawTranslationResult> {
+    return this.runExclusive(() => this.translateCqlToElmRawAsyncExclusive(cql, context));
+  }
 
-    if (context?.fhirLibraryId && !context.isDirty) {
-      try {
-        await this.librarySourceService.prefetchFromStoredLibrary(context.fhirLibraryId);
-      } catch (error) {
-        console.warn('Failed to prefetch library includes from stored ELM:', error);
-      }
+  private async translateCqlToElmRawAsyncExclusive(
+    cql: string,
+    context?: LibraryTranslationContext
+  ): Promise<RawTranslationResult> {
+    await this.ensureTranslationAssetsLoaded();
+    await this.prefetchTranslationDependencies(cql, context);
+
+    const conflict = this.findFhirModelVersionConflict(cql);
+    if (conflict) {
+      return {
+        elmXml: null,
+        elmJson: null,
+        errors: [{ message: conflict } as CqlCompilerException],
+        warnings: [],
+        messages: [],
+        hasErrors: true
+      };
     }
 
-    let result = this.translateCqlToElmRaw(cql);
+    let engine = this.createTranslationEngine(cql);
+    let result = this.translateCqlToElmRawWithEngine(cql, engine);
 
     for (let iteration = 0; iteration < this.MAX_INCLUDE_RESOLVE_ITERATIONS; iteration++) {
       const missingRefs = this.getUncachedFhirIncludesFromElm(result.elmXml);
@@ -234,16 +321,57 @@ export class TranslationService {
         break;
       }
 
-      result = this.translateCqlToElmRaw(cql);
+      const again = this.findFhirModelVersionConflict(cql);
+      if (again) {
+        return {
+          elmXml: null,
+          elmJson: null,
+          errors: [{ message: again } as CqlCompilerException],
+          warnings: [],
+          messages: [],
+          hasErrors: true
+        };
+      }
+
+      engine = this.createTranslationEngine(cql);
+      result = this.translateCqlToElmRawWithEngine(cql, engine);
     }
 
     return result;
   }
 
+  private async prefetchTranslationDependencies(
+    cql: string,
+    context?: LibraryTranslationContext
+  ): Promise<void> {
+    const { missing } = await this.modelInfoService.prefetchForCql(cql);
+    if (missing.length > 0) {
+      const detail = missing
+        .map((m) => (m.version ? `${m.name} version '${m.version}'` : m.name))
+        .join(', ');
+      console.warn(
+        `ModelInfo not found on content/evaluation FHIR for: ${detail}. Translation may fail.`
+      );
+    }
+
+    if (context?.fhirLibraryId && !context.isDirty) {
+      try {
+        await this.librarySourceService.prefetchFromStoredLibrary(context.fhirLibraryId);
+      } catch (error) {
+        console.warn('Failed to prefetch library includes from stored ELM:', error);
+      }
+    } else {
+      try {
+        await this.librarySourceService.prefetchIncludesFromCql(cql);
+      } catch (error) {
+        console.warn('Failed to prefetch library includes from CQL:', error);
+      }
+    }
+  }
+
   /**
-   * Drop cached CQL and compiled ELM for included libraries saved on the FHIR server.
-   * The CQL source cache and LibraryManager.compiledLibraries must both be cleared:
-   * refreshing CQL alone leaves stale function signatures in compiledLibraries.
+   * Drop cached CQL/ELM for included libraries. Each translate uses a fresh engine, so
+   * compiledLibraries need not be cleared on a shared manager.
    */
   invalidateIncludedLibraryCache(
     path?: string,
@@ -255,56 +383,124 @@ export class TranslationService {
     if (path && cqlContent?.trim()) {
       this.librarySourceService.setCachedCql(path, system, version, cqlContent);
     }
-    this.invalidateCompiledUserLibraries();
-  }
-
-  private invalidateCompiledUserLibraries(): void {
-    const mapView = this.libraryManager.compiledLibraries?.asJsMapView?.();
-    if (!mapView) {
-      return;
-    }
-
-    for (const key of [...mapView.keys()]) {
-      if (key.id !== 'FHIRHelpers') {
-        mapView.delete(key);
-      }
-    }
   }
 
   private getUncachedFhirIncludesFromElm(elmXml: string | null) {
     if (!elmXml) {
       return [];
     }
-    return this.elmIncludeParser.extractFhirIncludes(elmXml).filter(ref =>
-      !this.librarySourceService.hasCachedCql(ref.path, ref.system, ref.version)
+    return this.elmIncludeParser.extractFhirIncludes(elmXml).filter(
+      (ref) => !this.librarySourceService.hasCachedCql(ref.path, ref.system, ref.version)
     );
   }
 
   /**
-   * Translate CQL to ELM using the @cqframework/cql library.
-   * Requires included libraries to already be present in the FHIR library source cache.
+   * Detect conflicting `using FHIR` versions across root + cached includes (excluding
+   * FHIRHelpers, which are rewritten to the root FHIR version).
    */
-  translateCqlToElm(cql: string): TranslationResult {
-    try {
-      if (!this.translationAssetsLoaded) {
-        return {
-          elmXml: null,
-          elmJson: null,
-          errors: ['Translation assets are still loading. Please try again in a moment.'],
-          warnings: [],
-          messages: [],
-          hasErrors: true
-        };
+  private findFhirModelVersionConflict(cql: string): string | null {
+    const versions = new Map<string, string[]>();
+
+    const add = (source: string, version: string | null): void => {
+      if (!version?.trim()) {
+        return;
       }
+      const v = version.trim();
+      const list = versions.get(v) ?? [];
+      list.push(source);
+      versions.set(v, list);
+    };
 
-      const translator = CqlTranslator.fromText(cql, this.libraryManager);
+    const rootDecls = extractCqlUsingDeclarations(cql);
+    for (const d of rootDecls) {
+      if (d.name === 'FHIR') {
+        add('root library', d.version);
+      }
+    }
 
-      // Extract errors, warnings, and messages
-    const errors = [...(translator.errors?.asJsReadonlyArrayView() ?? [])];
-    const warnings = [...(translator.warnings?.asJsReadonlyArrayView() ?? [])];
-    const messages = [...(translator.messages?.asJsReadonlyArrayView() ?? [])];
+    const includes = this.librarySourceService.collectTransitiveCachedSources('', cql);
+    for (const include of includes) {
+      if (include.id === 'FHIRHelpers') {
+        continue;
+      }
+      for (const d of extractCqlUsingDeclarations(include.cql)) {
+        if (d.name === 'FHIR') {
+          add(
+            `include ${include.id}${include.version ? ` version '${include.version}'` : ''}`,
+            d.version
+          );
+        }
+      }
+    }
 
-      // Format exception messages
+    if (versions.size <= 1) {
+      return null;
+    }
+
+    const detail = [...versions.entries()]
+      .map(([version, sources]) => `FHIR ${version} (${sources.join(', ')})`)
+      .join('; ');
+    return (
+      `Conflicting FHIR model versions in the library graph: ${detail}. ` +
+      `The translator can load only one FHIR model version per compile. ` +
+      `Align all non-FHIRHelpers libraries to the same \`using FHIR version\`, or open them separately.`
+    );
+  }
+
+  private alignFhirHelpersCqlIfNeeded(
+    id: string,
+    helpersVersion: string | null | undefined,
+    cql: string,
+    rootFhirModelVersion: string | null
+  ): string {
+    if (id !== 'FHIRHelpers') {
+      return cql;
+    }
+    const helpersVer = helpersVersion?.trim() || this.FHIR_VERSION;
+    const fhirVer = rootFhirModelVersion?.trim() || helpersVer;
+    return rewriteFhirHelpersCql(cql, helpersVer, fhirVer);
+  }
+
+  /**
+   * Translate CQL to ELM. Serialized via the exclusive FIFO queue (same as async APIs).
+   */
+  translateCqlToElm(cql: string): Promise<TranslationResult> {
+    return this.runExclusive(() => this.translateCqlToElmExclusive(cql));
+  }
+
+  private translateCqlToElmExclusive(cql: string): TranslationResult {
+    if (!this.translationAssetsLoaded) {
+      return {
+        elmXml: null,
+        elmJson: null,
+        errors: ['Translation assets are still loading. Please try again in a moment.'],
+        warnings: [],
+        messages: [],
+        hasErrors: true
+      };
+    }
+    const conflict = this.findFhirModelVersionConflict(cql);
+    if (conflict) {
+      return {
+        elmXml: null,
+        elmJson: null,
+        errors: [conflict],
+        warnings: [],
+        messages: [],
+        hasErrors: true
+      };
+    }
+    return this.translateCqlToElmWithEngine(cql, this.createTranslationEngine(cql));
+  }
+
+  private translateCqlToElmWithEngine(cql: string, engine: TranslationEngine): TranslationResult {
+    try {
+      const translator = CqlTranslator.fromText(cql, engine.libraryManager);
+
+      const errors = [...(translator.errors?.asJsReadonlyArrayView() ?? [])];
+      const warnings = [...(translator.warnings?.asJsReadonlyArrayView() ?? [])];
+      const messages = [...(translator.messages?.asJsReadonlyArrayView() ?? [])];
+
       const errorMessages = errors
         .filter((e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null)
         .map((e: CqlCompilerException) => this.formatException(e));
@@ -338,7 +534,6 @@ export class TranslationService {
         hasErrors: errorMessages.length > 0
       };
     } catch (error) {
-      // Handle unexpected errors during translation
       const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         elmXml: null,
@@ -352,33 +547,61 @@ export class TranslationService {
   }
 
   /**
-   * Translate CQL to ELM and return raw exceptions (for validation use).
-   * Requires included libraries to already be present in the FHIR library source cache.
+   * Translate CQL to ELM and return raw exceptions. Serialized via the exclusive FIFO queue.
    */
-  translateCqlToElmRaw(cql: string): RawTranslationResult {
+  translateCqlToElmRaw(cql: string): Promise<RawTranslationResult> {
+    return this.runExclusive(() => this.translateCqlToElmRawExclusive(cql));
+  }
+
+  private translateCqlToElmRawExclusive(cql: string): RawTranslationResult {
+    if (!this.translationAssetsLoaded) {
+      return {
+        elmXml: null,
+        elmJson: null,
+        errors: [
+          {
+            message: 'Translation assets are still loading. Please try again in a moment.'
+          } as CqlCompilerException
+        ],
+        warnings: [],
+        messages: [],
+        hasErrors: true
+      };
+    }
+    const conflict = this.findFhirModelVersionConflict(cql);
+    if (conflict) {
+      return {
+        elmXml: null,
+        elmJson: null,
+        errors: [{ message: conflict } as CqlCompilerException],
+        warnings: [],
+        messages: [],
+        hasErrors: true
+      };
+    }
+    return this.translateCqlToElmRawWithEngine(cql, this.createTranslationEngine(cql));
+  }
+
+  private translateCqlToElmRawWithEngine(
+    cql: string,
+    engine: TranslationEngine
+  ): RawTranslationResult {
     try {
-      if (!this.translationAssetsLoaded) {
-        return {
-          elmXml: null,
-          elmJson: null,
-          errors: [
-            { message: 'Translation assets are still loading. Please try again in a moment.' } as CqlCompilerException
-          ],
-          warnings: [],
-          messages: [],
-          hasErrors: true
-        };
-      }
+      const translator = CqlTranslator.fromText(cql, engine.libraryManager);
 
-      const translator = CqlTranslator.fromText(cql, this.libraryManager);
+      const errors = [...(translator.errors?.asJsReadonlyArrayView() ?? [])];
+      const warnings = [...(translator.warnings?.asJsReadonlyArrayView() ?? [])];
+      const messages = [...(translator.messages?.asJsReadonlyArrayView() ?? [])];
 
-    const errors = [...(translator.errors?.asJsReadonlyArrayView() ?? [])];
-    const warnings = [...(translator.warnings?.asJsReadonlyArrayView() ?? [])];
-    const messages = [...(translator.messages?.asJsReadonlyArrayView() ?? [])];
-
-      const rawErrors = errors.filter((e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null);
-      const rawWarnings = warnings.filter((e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null);
-      const rawMessages = messages.filter((e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null);
+      const rawErrors = errors.filter(
+        (e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null
+      );
+      const rawWarnings = warnings.filter(
+        (e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null
+      );
+      const rawMessages = messages.filter(
+        (e: CqlCompilerException | null | undefined): e is CqlCompilerException => e != null
+      );
 
       let elmXml: string | null = null;
       try {
@@ -403,7 +626,6 @@ export class TranslationService {
         hasErrors: rawErrors.length > 0
       };
     } catch (error) {
-      // Handle unexpected errors during translation
       const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         elmXml: null,
@@ -419,29 +641,40 @@ export class TranslationService {
   /**
    * Snapshot of translation assets for in-browser debug Workers (plain strings only).
    */
-  getDebugTranslationAssets(): {
+  getDebugTranslationAssets(cql?: string): {
     systemModelInfoXml: string;
     fhirModelInfoXml: string;
     fhirHelpersCql: string;
+    modelInfoByKey: Record<string, string>;
   } {
-    const systemModelInfoXml = this.modelInfoCache.get('/cql/system-modelinfo.xml');
-    const fhirModelInfoXml = this.modelInfoCache.get(`/cql/fhir-modelinfo-${this.FHIR_VERSION}.xml`);
     const fhirHelpersCql = this.librarySourceCache.get(`/cql/FHIRHelpers-${this.FHIR_VERSION}.cql`);
+    const systemModelInfoXml =
+      this.modelInfoService.lookupXml('System', null) ??
+      this.modelInfoService.lookupXml('System', '1.0.0');
+    const fhirModelInfoXml = this.modelInfoService.lookupXml('FHIR', this.FHIR_VERSION);
     if (!systemModelInfoXml || !fhirModelInfoXml || !fhirHelpersCql) {
-      throw new Error('Translation assets are not loaded yet. Call ensureTranslationAssetsLoaded() first.');
+      throw new Error(
+        'Translation assets are not loaded yet. Call ensureTranslationAssetsLoaded() first.'
+      );
     }
-    return { systemModelInfoXml, fhirModelInfoXml, fhirHelpersCql };
+    const decls = cql ? extractCqlUsingDeclarations(cql) : [];
+    const keys = [
+      { name: 'System', version: null as string | null },
+      { name: 'System', version: '1.0.0' },
+      { name: 'FHIR', version: this.FHIR_VERSION },
+      ...decls.map((d) => ({ name: d.name, version: d.version }))
+    ];
+    const modelInfoByKey = this.modelInfoService.snapshotForDebug(keys);
+    modelInfoByKey[modelInfoCacheKey('System', null)] = systemModelInfoXml;
+    modelInfoByKey[modelInfoCacheKey('FHIR', this.FHIR_VERSION)] = fhirModelInfoXml;
+    return { systemModelInfoXml, fhirModelInfoXml, fhirHelpersCql, modelInfoByKey };
   }
 
-  /**
-   * Format a CqlCompilerException into a readable error message
-   * Uses shared locator utility to extract line/column information
-   */
   formatException(exception: CqlCompilerException): string {
     const message = exception.message || 'Unknown error';
     const locatorInfo = this.locatorUtils.extractLocatorInfo(exception);
     const locatorStr = this.locatorUtils.formatLocator(locatorInfo);
-    
+
     return locatorStr ? `${message} ${locatorStr}` : message;
   }
 }

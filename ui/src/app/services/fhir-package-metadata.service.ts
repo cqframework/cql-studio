@@ -18,6 +18,11 @@ import {
   filenameIsUnderExamplePrefixes
 } from './fhir-package-directories.lib';
 import { fhirPackageAuthorToString } from './fhir-package-manifest.lib';
+import {
+  isModelDefinitionTypeField,
+  libraryTypeCode,
+  MODEL_DEFINITION_TYPE_CODE
+} from './cql-model-info.lib';
 
 const TERMINOLOGY_TYPES = new Set(['CodeSystem', 'ValueSet', 'ConceptMap', 'NamingSystem']);
 
@@ -147,8 +152,14 @@ export class FhirPackageMetadataService {
         type?: unknown;
       };
       // `type` is a string on some resources (StructureDefinition.type, Bundle.type) but a
-      // CodeableConcept on others (Library.type); only surface it when it's actually a string.
-      return { ...obj, type: typeof obj.type === 'string' ? obj.type : undefined };
+      // CodeableConcept on others (Library.type).
+      let typeStr: string | undefined;
+      if (typeof obj.type === 'string') {
+        typeStr = obj.type;
+      } else {
+        typeStr = libraryTypeCode(obj.type);
+      }
+      return { ...obj, type: typeStr };
     } catch {
       return null;
     }
@@ -178,7 +189,13 @@ export class FhirPackageMetadataService {
     const bundleType = fromFile === 'Bundle' ? summary?.type : undefined;
     const spAbstractBase =
       fromFile === 'SearchParameter' && this.searchParameterHasAbstractBaseType(filename, files);
-    const suggested = this.suggestTarget(rt);
+    const typeField = (f.type ?? summary?.type ?? '').trim();
+    const isModelDefinition =
+      rt === 'Library' &&
+      (isModelDefinitionTypeField(typeField) ||
+        /modelinfo/i.test(filename) ||
+        typeField.toLowerCase().includes(MODEL_DEFINITION_TYPE_CODE));
+    const suggested = this.suggestTarget(rt, isModelDefinition);
     return {
       rowKey: filename,
       filename,
@@ -187,28 +204,41 @@ export class FhirPackageMetadataService {
       url: (f.url ?? summary?.url ?? '').trim(),
       version: (f.version ?? summary?.version ?? '').trim(),
       kind: (f.kind ?? summary?.kind ?? '').trim(),
-      typeField: (f.type ?? summary?.type ?? '').trim(),
+      typeField,
       isExample,
       suggestedTarget: suggested,
       targetTerminology: suggested === 'terminology',
       targetData: suggested === 'data',
-      category: this.categoryFor(rt, f.kind, f.type),
-      importNote: this.importNoteFor(rt, suggested, isExample, bundleType, spAbstractBase),
-      selected: this.rowSelectedByDefault(isExample, rt, fromFile, bundleType, spAbstractBase)
+      targetContent: suggested === 'content',
+      category: this.categoryFor(rt, f.kind, typeField),
+      importNote: this.importNoteFor(rt, suggested, isExample, bundleType, spAbstractBase, isModelDefinition),
+      selected: this.rowSelectedByDefault(
+        isExample,
+        rt,
+        fromFile,
+        bundleType,
+        spAbstractBase,
+        isModelDefinition
+      )
     };
   }
 
   /**
    * Example instances are selected. Default-off for CapabilityStatement, ImplementationGuide,
    * unknown/inferred-missing types, and searchset Bundles (not persistable; often referenced by IGs).
+   * Model-definition Libraries are selected by default.
    */
   private rowSelectedByDefault(
     isExample: boolean,
     resourceType: string,
     inferredFromFile: string,
     bundleType: string | undefined,
-    searchParameterAbstractBase: boolean
+    searchParameterAbstractBase: boolean,
+    isModelDefinition: boolean
   ): boolean {
+    if (isModelDefinition) {
+      return true;
+    }
     if (isExample) {
       return true;
     }
@@ -222,9 +252,12 @@ export class FhirPackageMetadataService {
     );
   }
 
-  private suggestTarget(resourceType: string): SuggestedImportTarget {
+  private suggestTarget(resourceType: string, isModelDefinition: boolean): SuggestedImportTarget {
     if (TERMINOLOGY_TYPES.has(resourceType)) {
       return 'terminology';
+    }
+    if (isModelDefinition) {
+      return 'content';
     }
     return 'data';
   }
@@ -252,7 +285,13 @@ export class FhirPackageMetadataService {
     if (resourceType === 'CapabilityStatement' || resourceType === 'CompartmentDefinition') {
       return 'Conformance';
     }
-    if (resourceType === 'Questionnaire' || resourceType === 'Library') {
+    if (resourceType === 'Library') {
+      if (isModelDefinitionTypeField(type) || (type ?? '').toLowerCase().includes(MODEL_DEFINITION_TYPE_CODE)) {
+        return 'Library (model-definition)';
+      }
+      return type ? `Library (${type})` : 'Knowledge / narrative';
+    }
+    if (resourceType === 'Questionnaire') {
       return 'Knowledge / narrative';
     }
     if (type) {
@@ -266,7 +305,8 @@ export class FhirPackageMetadataService {
     target: SuggestedImportTarget,
     isExample: boolean,
     bundleType: string | undefined,
-    searchParameterAbstractBase: boolean
+    searchParameterAbstractBase: boolean,
+    isModelDefinition: boolean
   ): string {
     if (resourceType === 'Bundle' && bundleType === 'searchset') {
       return 'FHIR search result bundle (searchset); not a storable instance on most servers (HAPI-0522). US Core lists these under the IG; skip import.';
@@ -274,11 +314,17 @@ export class FhirPackageMetadataService {
     if (resourceType === 'Bundle' && (bundleType === 'transaction' || bundleType === 'batch')) {
       return `FHIR ${bundleType} Bundle; posted to the server root so entries are processed. The Bundle wrapper is not stored.`;
     }
+    if (isModelDefinition) {
+      return 'CQL ModelInfo Library (type=model-definition); imported to the content endpoint for translator use.';
+    }
     if (isExample) {
       return 'Example instance (paths under package.json directories.example / directories.examples); optional for testing.';
     }
     if (target === 'terminology') {
       return 'Typical terminology server artifact (expand/validate).';
+    }
+    if (target === 'content') {
+      return 'Knowledge artifact for the content endpoint (library dependencies / ModelInfo).';
     }
     if (resourceType === 'ImplementationGuide') {
       return 'References many `definition.resource` entries, often example Bundles (`searchset`) that cannot be persisted. Importing this alone commonly fails with HAPI-1094 (missing referenced Bundle). Prefer profiles and ValueSets; omit this row for typical validation imports.';

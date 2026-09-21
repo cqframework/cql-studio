@@ -1,0 +1,239 @@
+<div id="data-models" class="container-fluid mt-4 mb-5">
+  <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+    <div>
+      <h1 class="h3 mb-1" id="data-models-title">Data Models</h1>
+      <p class="text-muted mb-0 small">
+        CQL ModelInfo Libraries (<code>type=model-definition</code>) on the active environment
+        <strong>content</strong> endpoint.
+      </p>
+    </div>
+    <div class="text-end small">
+      <div class="text-muted">Content endpoint</div>
+      @if (contentEndpointUrl()) {
+        <a id="data-models-content-endpoint-link" class="text-break" routerLink="/settings/environments">
+          {{ contentEndpointUrl() }}
+        </a>
+      } @else {
+        <a routerLink="/settings/environments">Configure content endpoint</a>
+      }
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-5">
+      <div class="card">
+        <div class="card-header d-flex flex-wrap align-items-center gap-2">
+          <form class="d-flex flex-grow-1 gap-2" (ngSubmit)="onSearchSubmit()">
+            <input
+              id="data-models-search-input"
+              type="search"
+              class="form-control form-control-sm"
+              placeholder="Search by name"
+              [ngModel]="searchTerm()"
+              (ngModelChange)="searchTerm.set($event)"
+              name="dataModelsSearch"
+            />
+            <button id="data-models-search-button" type="submit" class="btn btn-sm btn-primary" [disabled]="loading()">
+              Search
+            </button>
+          </form>
+          <button
+            id="data-models-refresh-button"
+            type="button"
+            class="btn btn-sm btn-outline-secondary"
+            (click)="reload()"
+            [disabled]="loading()"
+          >
+            Refresh
+          </button>
+        </div>
+        <div class="card-body p-0">
+          @if (error()) {
+            <div class="alert alert-danger m-3 mb-0" id="data-models-list-error">{{ error() }}</div>
+          }
+          @if (loading()) {
+            <div class="p-3 text-muted" id="data-models-list-loading">Loading…</div>
+          } @else if (rows().length === 0) {
+            <div class="p-3 text-muted" id="data-models-list-empty">No model-definition Libraries found.</div>
+          } @else {
+            <div class="list-group list-group-flush" id="data-models-list">
+              @for (row of rows(); track row.id ?? $index) {
+                <button
+                  type="button"
+                  class="list-group-item list-group-item-action"
+                  [class.active]="selected()?.id === row.id"
+                  [id]="'data-models-row-' + (row.id ?? $index)"
+                  (click)="selectLibrary(row)"
+                >
+                  <div class="fw-semibold">{{ displayName(row) }}</div>
+                  <div class="small text-muted text-truncate">{{ row.id }} · {{ row.url || 'no url' }}</div>
+                </button>
+              }
+            </div>
+          }
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+          <span class="small text-muted">
+            Page {{ page() }}
+            @if (total() != null) {
+              · {{ total() }} total
+            }
+          </span>
+          <div class="btn-group btn-group-sm">
+            <button
+              id="data-models-page-prev"
+              type="button"
+              class="btn btn-outline-secondary"
+              (click)="goPage(-1)"
+              [disabled]="loading() || page() <= 1"
+            >
+              Prev
+            </button>
+            <button
+              id="data-models-page-next"
+              type="button"
+              class="btn btn-outline-secondary"
+              (click)="goPage(1)"
+              [disabled]="loading() || rows().length < pageSize()"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-3">
+        <div class="card-header">Add ModelInfo</div>
+        <div class="card-body">
+          <div class="d-flex flex-wrap gap-2 mb-3">
+            <label class="btn btn-sm btn-outline-primary mb-0" id="data-models-upload-json-label">
+              Upload Library JSON
+              <input
+                id="data-models-upload-json"
+                type="file"
+                accept=".json,application/json"
+                class="d-none"
+                (change)="onUploadLibraryJson($event)"
+                [disabled]="!!busyAction()"
+              />
+            </label>
+            <label class="btn btn-sm btn-outline-primary mb-0" id="data-models-upload-xml-label">
+              Upload ModelInfo XML
+              <input
+                id="data-models-upload-xml"
+                type="file"
+                accept=".xml,application/xml,text/xml"
+                class="d-none"
+                (change)="onUploadModelInfoXml($event)"
+                [disabled]="!!busyAction()"
+              />
+            </label>
+          </div>
+
+          <h2 class="h6">Install catalog</h2>
+          <p class="small text-muted mb-2">
+            FHIR 4.3.0 / 5.0.0 installs also synthesize a matching
+            <code>FHIRHelpers</code> logic-library on the content endpoint (from bundled 4.0.1 helpers
+            with version labels rewritten). System / QICore / USQualityCore install ModelInfo only.
+          </p>
+          <div class="list-group list-group-flush border rounded" id="data-models-catalog">
+            @for (entry of catalog; track entry.id) {
+              <div class="list-group-item d-flex align-items-center justify-content-between gap-2">
+                <div>
+                  <div class="fw-medium">{{ entry.label }}</div>
+                  <div class="d-flex flex-wrap gap-1 align-items-center">
+                    <span class="badge" [class]="kindBadgeClass(entry.kind)">{{ entry.kind }}</span>
+                    @if (entry.companionHelpers; as helpers) {
+                      <span class="badge text-bg-info" [id]="'data-models-helpers-badge-' + entry.id">
+                        + {{ helpers.label ?? ('FHIRHelpers ' + helpers.version) }}
+                      </span>
+                    }
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="btn btn-sm btn-primary"
+                  [id]="'data-models-install-' + entry.id"
+                  (click)="installCatalogEntry(entry)"
+                  [disabled]="!!busyAction()"
+                >
+                  @if (busyAction() === entry.id) {
+                    Installing…
+                  } @else {
+                    Install
+                  }
+                </button>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-7">
+      <div class="card h-100">
+        @if (!selected()) {
+          <div class="card-body text-muted" id="data-models-detail-empty">
+            Select a ModelInfo Library to inspect FHIR JSON and decoded ModelInfo XML.
+          </div>
+        } @else {
+          <div class="card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div>
+              <div class="fw-semibold" id="data-models-detail-title">{{ displayName(selected()!) }}</div>
+              <div class="small text-muted">{{ selected()!.id }}</div>
+            </div>
+            <button
+              id="data-models-delete-button"
+              type="button"
+              class="btn btn-sm btn-outline-danger"
+              (click)="deleteSelected()"
+              [disabled]="!!busyAction()"
+            >
+              Delete
+            </button>
+          </div>
+          <div class="card-body">
+            <ul class="nav nav-tabs mb-3" id="data-models-detail-tabs">
+              <li class="nav-item">
+                <button
+                  id="data-models-tab-library"
+                  type="button"
+                  class="nav-link"
+                  [class.active]="detailTab() === 'library'"
+                  (click)="setDetailTab('library')"
+                >
+                  Library
+                </button>
+              </li>
+              <li class="nav-item">
+                <button
+                  id="data-models-tab-modelinfo"
+                  type="button"
+                  class="nav-link"
+                  [class.active]="detailTab() === 'modelinfo'"
+                  (click)="setDetailTab('modelinfo')"
+                >
+                  ModelInfo
+                </button>
+              </li>
+            </ul>
+
+            @if (detailTab() === 'library') {
+              <div id="data-models-library-pane">
+                <app-syntax-highlighter [code]="libraryJsonPreview(selected()!)" language="json" />
+              </div>
+            } @else {
+              <div id="data-models-modelinfo-pane">
+                @if (decodedXml(); as xml) {
+                  <app-syntax-highlighter [code]="xml" language="xml" />
+                } @else {
+                  <p class="text-muted mb-0">No application/xml content found on this Library.</p>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+</div>

@@ -116,13 +116,15 @@
               title="Log to Console" aria-label="Log to Console">
               <i class="bi bi-terminal" aria-hidden="true"></i>
             </button>
-            <button type="button"
-              class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
-              id="cql-inspector-last-value-open"
-              (click)="openFhirValue(last.value)"
-              title="Open in new tab" aria-label="Open in new tab">
-              <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
-            </button>
+            @if (canOpenFhirValueInNewTab(last.value)) {
+              <button type="button"
+                class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+                id="cql-inspector-last-value-open"
+                (click)="openFhirValue(last.value)"
+                title="Open in new tab" aria-label="Open in new tab">
+                <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+              </button>
+            }
           </span>
         } @else {
           <span class="text-break ms-1">{{ last.value }}</span>
@@ -179,13 +181,15 @@
                       title="Log to Console" aria-label="Log to Console">
                       <i class="bi bi-terminal" aria-hidden="true"></i>
                     </button>
-                    <button type="button"
-                      class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
-                      [id]="'cql-inspector-variable-open-' + i"
-                      (click)="openFhirValue(variable.value)"
-                      title="Open in new tab" aria-label="Open in new tab">
-                      <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
-                    </button>
+                    @if (canOpenFhirValueInNewTab(variable.value)) {
+                      <button type="button"
+                        class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+                        [id]="'cql-inspector-variable-open-' + i"
+                        (click)="openFhirValue(variable.value)"
+                        title="Open in new tab" aria-label="Open in new tab">
+                        <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                      </button>
+                    }
                   </div>
                 } @else {
                   {{ variable.value }}
@@ -296,13 +300,15 @@
                       title="Log to Console" aria-label="Log to Console">
                       <i class="bi bi-terminal" aria-hidden="true"></i>
                     </button>
-                    <button type="button"
-                      class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
-                      [id]="'cql-inspector-result-open-' + i"
-                      (click)="openFhirValue(result.value)"
-                      title="Open in new tab" aria-label="Open in new tab">
-                      <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
-                    </button>
+                    @if (canOpenFhirValueInNewTab(result.value)) {
+                      <button type="button"
+                        class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+                        [id]="'cql-inspector-result-open-' + i"
+                        (click)="openFhirValue(result.value)"
+                        title="Open in new tab" aria-label="Open in new tab">
+                        <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                      </button>
+                    }
                   </div>
                 } @else {
                   {{ result.value }}

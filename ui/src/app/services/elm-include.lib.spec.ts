@@ -33,8 +33,28 @@ describe('ElmIncludeParser', () => {
     ]);
   });
 
-  it('extractFhirIncludes skips bundled FHIRHelpers', () => {
+  it('extractFhirIncludes skips bundled FHIRHelpers 4.0.1 only', () => {
     expect(parser.extractFhirIncludes(helloCommonElm)).toEqual([]);
+  });
+
+  it('extractFhirIncludesFromCql fetches non-bundled FHIRHelpers versions', () => {
+    const cql = `library Test version '1.0.0'
+include FHIRHelpers version '4.3.0'
+include BMI version '1.0.1'`;
+    expect(parser.extractFhirIncludesFromCql(cql)).toEqual([
+      {
+        path: 'FHIRHelpers',
+        version: '4.3.0',
+        localIdentifier: null,
+        system: null,
+      },
+      {
+        path: 'BMI',
+        version: '1.0.1',
+        localIdentifier: null,
+        system: null,
+      },
+    ]);
   });
 
   it('parses HelloWorld stored ELM via CqlToElmError fallback for HelloCommon', () => {

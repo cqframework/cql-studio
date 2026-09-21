@@ -298,6 +298,11 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'data-models',
+        loadComponent: () =>
+          import('./components/data-models/data-models.component').then((m) => m.DataModelsComponent),
+      },
+      {
         path: 'ide',
         loadComponent: () =>
           import('./components/ide-layout/ide-layout.component').then((m) => m.IdeLayoutComponent),

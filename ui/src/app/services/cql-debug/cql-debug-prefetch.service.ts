@@ -8,6 +8,7 @@ import { PatientService } from '../patient.service';
 import { TerminologyService } from '../terminology.service';
 import { TranslationService } from '../translation.service';
 import { CqlLibrarySourceService } from '../cql-library-source.service';
+import { CqlModelInfoService } from '../cql-model-info.service';
 import { SettingsService } from '../settings.service';
 import { buildHttpHeaders } from '../endpoint-config.lib';
 import type { PrefetchedValueSetExpansion } from './cql-debug-terminology-provider';
@@ -29,13 +30,15 @@ export class CqlDebugPrefetchService {
   private readonly patientService = inject(PatientService);
   private readonly terminologyService = inject(TerminologyService);
   private readonly translationService = inject(TranslationService);
+  private readonly modelInfoService = inject(CqlModelInfoService);
   private readonly librarySourceService = inject(CqlLibrarySourceService);
   private readonly settingsService = inject(SettingsService);
   private readonly http = inject(HttpClient);
 
   async buildStartPayload(input: CqlDebugPrefetchInput): Promise<CqlDebugStartPayload> {
     await this.translationService.ensureTranslationAssetsLoaded();
-    const assets = this.translationService.getDebugTranslationAssets();
+    await this.modelInfoService.prefetchForCql(input.cql);
+    const assets = this.translationService.getDebugTranslationAssets(input.cql);
 
     let bundle: Bundle | null = null;
     if (input.subjectId) {
@@ -79,6 +82,7 @@ export class CqlDebugPrefetchService {
       includeSources,
       systemModelInfoXml: assets.systemModelInfoXml,
       fhirModelInfoXml: assets.fhirModelInfoXml,
+      modelInfoByKey: assets.modelInfoByKey,
       fhirHelpersCql: assets.fhirHelpersCql,
       subjectId: input.subjectId,
       expressionNames: input.expressionNames,

@@ -31,7 +31,28 @@ import { createBundleDataProvider } from './cql-debug-bundle-data-provider';
 import { createPrefetchedTerminologyProvider } from './cql-debug-terminology-provider';
 import { createDebugUcumService } from './cql-debug-ucum.lib';
 import { applyCqlEngineRuntimePatches } from './cql-debug-engine-patches';
+import { lookupModelInfoXmlFromPayload } from './cql-debug-model-info.lib';
 import type { Bundle } from 'fhir/r4';
+
+function registerModelInfoByKey(
+  mm: ModelManager,
+  modelInfoByKey: Record<string, string>
+): void {
+  mm.modelInfoLoader.registerModelInfoProvider(
+    createModelInfoProvider((id, system, version) => {
+      if (system) {
+        return null;
+      }
+      const xml = lookupModelInfoXmlFromPayload(
+        { modelInfoByKey, systemModelInfoXml: '', fhirModelInfoXml: '' },
+        id,
+        version
+      );
+      return xml ? stringAsSource(xml) : null;
+    }),
+    true
+  );
+}
 
 const pkgPathCandidates = [
   join(process.cwd(), 'node_modules/@cqframework/cql/package.json'),
@@ -98,14 +119,10 @@ define ObsQuantity: singleton from ([Observation] O return O.value as Quantity)
 `;
 
     const mm = new ModelManager(undefined, true);
-    mm.modelInfoLoader.registerModelInfoProvider(
-      createModelInfoProvider((id, system, version) => {
-        if (id === 'System' && !system && !version) return stringAsSource(systemXml);
-        if (id === 'FHIR' && version === '4.0.1') return stringAsSource(fhirXml);
-        return null;
-      }),
-      true
-    );
+    registerModelInfoByKey(mm, {
+      'System|': systemXml,
+      'FHIR|4.0.1': fhirXml
+    });
     const lm = new LibraryManager(mm, undefined, undefined, createDebugUcumService());
     lm.librarySourceLoader.registerProvider(
       createLibrarySourceProvider((id, _system, version) => {
@@ -190,14 +207,10 @@ define "Most Recent BMI":
 `;
 
     const mm = new ModelManager(undefined, true);
-    mm.modelInfoLoader.registerModelInfoProvider(
-      createModelInfoProvider((id, system, version) => {
-        if (id === 'System' && !system && !version) return stringAsSource(systemXml);
-        if (id === 'FHIR' && version === '4.0.1') return stringAsSource(fhirXml);
-        return null;
-      }),
-      true
-    );
+    registerModelInfoByKey(mm, {
+      'System|': systemXml,
+      'FHIR|4.0.1': fhirXml
+    });
     const lm = new LibraryManager(mm, undefined, undefined, createDebugUcumService());
     lm.librarySourceLoader.registerProvider(
       createLibrarySourceProvider((id) => {
@@ -291,14 +304,10 @@ define FirstDesc:
 `;
 
     const mm = new ModelManager(undefined, true);
-    mm.modelInfoLoader.registerModelInfoProvider(
-      createModelInfoProvider((id, system, version) => {
-        if (id === 'System' && !system && !version) return stringAsSource(systemXml);
-        if (id === 'FHIR' && version === '4.0.1') return stringAsSource(fhirXml);
-        return null;
-      }),
-      true
-    );
+    registerModelInfoByKey(mm, {
+      'System|': systemXml,
+      'FHIR|4.0.1': fhirXml
+    });
     const lm = new LibraryManager(mm, undefined, undefined, createDebugUcumService());
     lm.librarySourceLoader.registerProvider(
       createLibrarySourceProvider(id => {
@@ -402,13 +411,7 @@ define GramsInKg: convert 1000.0 'g' to 'kg'
 `;
 
     const mm = new ModelManager(undefined, true);
-    mm.modelInfoLoader.registerModelInfoProvider(
-      createModelInfoProvider((id, system, version) => {
-        if (id === 'System' && !system && !version) return stringAsSource(systemXml);
-        return null;
-      }),
-      true
-    );
+    registerModelInfoByKey(mm, { 'System|': systemXml });
     const lm = new LibraryManager(mm, undefined, undefined, createDebugUcumService());
     lm.librarySourceLoader.registerProvider(
       createLibrarySourceProvider((id) => (id === 'BmiUnits' ? stringAsSource(cql) : null))
@@ -449,13 +452,7 @@ describe('cql-debug-engine-patches (BigDecimal divide / scale)', () => {
     applyCqlEngineRuntimePatches();
     const systemXml = readFileSync(join(cqlPublic, 'system-modelinfo.xml'), 'utf8');
     const mm = new ModelManager(undefined, true);
-    mm.modelInfoLoader.registerModelInfoProvider(
-      createModelInfoProvider((id, system, version) => {
-        if (id === 'System' && !system && !version) return stringAsSource(systemXml);
-        return null;
-      }),
-      true
-    );
+    registerModelInfoByKey(mm, { 'System|': systemXml });
     const cql = `
 library DecimalPatchSpike version '0.0.1'
 define Ratio: 1.2 / 0.9
@@ -487,13 +484,7 @@ describe('BreakpointHandler attach', () => {
     }
     const systemXml = readFileSync(join(cqlPublic, 'system-modelinfo.xml'), 'utf8');
     const mm = new ModelManager(undefined, true);
-    mm.modelInfoLoader.registerModelInfoProvider(
-      createModelInfoProvider((id, system, version) => {
-        if (id === 'System' && !system && !version) return stringAsSource(systemXml);
-        return null;
-      }),
-      true
-    );
+    registerModelInfoByKey(mm, { 'System|': systemXml });
     const cql = `
 library PauseSpike version '0.0.1'
 define Answer: 1 + 1
@@ -585,14 +576,10 @@ define Displayed:
 `;
 
     const mm = new ModelManager(undefined, true);
-    mm.modelInfoLoader.registerModelInfoProvider(
-      createModelInfoProvider((id, system, version) => {
-        if (id === 'System' && !system && !version) return stringAsSource(systemXml);
-        if (id === 'FHIR' && version === '4.0.1') return stringAsSource(fhirXml);
-        return null;
-      }),
-      true
-    );
+    registerModelInfoByKey(mm, {
+      'System|': systemXml,
+      'FHIR|4.0.1': fhirXml
+    });
     const lm = new LibraryManager(mm, undefined, undefined, createDebugUcumService());
     lm.librarySourceLoader.registerProvider(
       createLibrarySourceProvider(id => {

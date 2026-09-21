@@ -108,7 +108,12 @@ describe('CqlLibrarySourceService', () => {
     const fetched = await service.prefetchIncludesFromElmXml(helloWorldElm);
     expect(fetched).toBe(true);
     expect(service.getCachedCql('HelloCommon', null, '0.0.0')).toBe(helloCommonCql);
-    expect(libraryService.findByNameAndVersion).toHaveBeenCalledWith('HelloCommon', '0.0.0', true);
+    expect(libraryService.findByNameAndVersion).toHaveBeenCalledWith(
+      'HelloCommon',
+      '0.0.0',
+      true,
+      'logic-library'
+    );
   });
 
   it('returns false on cache hit for second prefetch when tree is already complete', async () => {

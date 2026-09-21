@@ -1,6 +1,7 @@
 // Author: Preston Lee
 
 import { Injector, runInInjectionContext } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
 import { Bundle, Patient, Resource } from 'fhir/r4';
 import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
@@ -22,13 +23,19 @@ function createService(opts: {
   const injector = Injector.create({
     providers: [
       FhirPackageImportService,
+      { provide: HttpClient, useValue: { post: opts.dataPost } },
       { provide: TerminologyService, useValue: { postBundle: opts.termPost } },
       { provide: FhirClientService, useValue: { postBundle: opts.dataPost } },
       {
         provide: SettingsService,
         useValue: {
           getEffectiveTerminologyEndpointAddress: () => opts.termUrl ?? 'http://localhost/fhir',
-          getEffectiveDataEndpointAddress: () => opts.dataUrl ?? 'http://localhost/fhir'
+          getEffectiveDataEndpointAddress: () => opts.dataUrl ?? 'http://localhost/fhir',
+          getEffectiveContentEndpointAddress: () => opts.dataUrl ?? 'http://localhost/fhir',
+          getEndpointHttpContext: () => ({
+            address: opts.dataUrl ?? 'http://localhost/fhir',
+            headers: {}
+          })
         }
       }
     ]

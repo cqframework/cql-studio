@@ -1,6 +1,6 @@
 // Author: Preston Lee
 
-export type SuggestedImportTarget = 'terminology' | 'data';
+export type SuggestedImportTarget = 'terminology' | 'data' | 'content';
 
 export interface PackageSummaryVm {
   name: string;
@@ -38,6 +38,7 @@ export interface IndexedResourceRowVm {
   suggestedTarget: SuggestedImportTarget;
   targetTerminology: boolean;
   targetData: boolean;
+  targetContent: boolean;
   category: string;
   importNote: string;
   selected: boolean;
@@ -46,5 +47,6 @@ export interface IndexedResourceRowVm {
 export interface ImportSelectionSummary {
   terminologyCount: number;
   dataCount: number;
+  contentCount: number;
   mergedSingleEndpoint: boolean;
 }

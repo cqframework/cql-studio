@@ -60,9 +60,9 @@ describe('CqlDefinitionIndexService', () => {
     librarySourceService.elmIncludeParser = new ElmIncludeParser();
 
     const translationService = Object.create(TranslationService.prototype) as unknown as {
-      translateCqlToElmRaw: (cql: string) => RawTranslationResult;
+      translateCqlToElmRawAsync: (cql: string) => Promise<RawTranslationResult>;
     };
-    translationService.translateCqlToElmRaw = () => ({
+    translationService.translateCqlToElmRawAsync = async () => ({
       elmXml: helloCommonElm,
       elmJson: null,
       errors: [],

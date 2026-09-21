@@ -31,8 +31,12 @@ export interface CqlDebugStartPayload {
   libraryVersion?: string | null;
   cql: string;
   includeSources: Array<{ id: string; version?: string | null; cql: string }>;
+  /** @deprecated Prefer modelInfoByKey; retained for older workers. */
   systemModelInfoXml: string;
+  /** @deprecated Prefer modelInfoByKey; retained for older workers. */
   fhirModelInfoXml: string;
+  /** Map of `name|version` → ModelInfo XML (includes System and FHIR). */
+  modelInfoByKey: Record<string, string>;
   fhirHelpersCql: string;
   subjectId: string | null;
   expressionNames: string[];

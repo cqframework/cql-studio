@@ -8,6 +8,8 @@ import {
   ElmIncludeParser,
   ElmIncludeRef
 } from './elm-include.lib';
+import { LOGIC_LIBRARY_TYPE_CODE } from './cql-model-info.lib';
+import { rewriteFhirHelpersCql } from './cql-model-info.lib';
 
 export interface LibraryTranslationContext {
   fhirLibraryId?: string | null;
@@ -185,9 +187,7 @@ export class CqlLibrarySourceService {
     let library: Library | null = null;
 
     if (!this.cqlCache.has(key)) {
-      library = await firstValueFrom(
-        this.libraryService.findByNameAndVersion(ref.path, ref.version ?? undefined, true)
-      );
+      library = await this.findLogicLibrary(ref.path, ref.version);
       if (!library) {
         visiting.delete(key);
         return false;
@@ -199,7 +199,11 @@ export class CqlLibrarySourceService {
         return false;
       }
 
-      this.cqlCache.set(key, cqlContent);
+      const aligned =
+        ref.path === 'FHIRHelpers' && ref.version
+          ? rewriteFhirHelpersCql(cqlContent, ref.version, ref.version)
+          : cqlContent;
+      this.cqlCache.set(key, aligned);
       fetchedAny = true;
     }
 
@@ -207,9 +211,7 @@ export class CqlLibrarySourceService {
     // children from CQL when present so grandchild includes are not missed.
     if (!this.elmCache.has(key)) {
       if (!library) {
-        library = await firstValueFrom(
-          this.libraryService.findByNameAndVersion(ref.path, ref.version ?? undefined, true)
-        );
+        library = await this.findLogicLibrary(ref.path, ref.version);
       }
       if (library) {
         const elmXml = await firstValueFrom(this.libraryService.getElmXml(library));
@@ -237,5 +239,22 @@ export class CqlLibrarySourceService {
 
     visiting.delete(key);
     return fetchedAny;
+  }
+
+  /** Resolve logic-library includes: content first, then evaluation. */
+  private async findLogicLibrary(
+    name: string,
+    version: string | null | undefined
+  ): Promise<Library | null> {
+    const ver = version ?? undefined;
+    const fromContent = await firstValueFrom(
+      this.libraryService.findByNameAndVersion(name, ver, true, LOGIC_LIBRARY_TYPE_CODE)
+    );
+    if (fromContent) {
+      return fromContent;
+    }
+    return firstValueFrom(
+      this.libraryService.findByNameAndVersion(name, ver, false, LOGIC_LIBRARY_TYPE_CODE)
+    );
   }
 }

@@ -16,18 +16,32 @@ export interface ElmIncludeRef {
   providedIn: 'root'
 })
 export class ElmIncludeParser {
-  private static readonly bundledLibraryPaths = new Set(['FHIRHelpers']);
+  /** Bundled asset version under `ui/public/cql/FHIRHelpers-4.0.1.cql`. */
+  static readonly BUNDLED_FHIR_HELPERS_VERSION = '4.0.1';
 
   cacheKey(path: string, system: string | null | undefined, version: string | null | undefined): string {
     return `${system ?? ''}|${path}|${version ?? ''}`;
   }
 
+  /** True for FHIRHelpers regardless of version (export / UI skips). */
   isBundledLibraryPath(path: string): boolean {
-    return ElmIncludeParser.bundledLibraryPaths.has(path);
+    return path === 'FHIRHelpers';
+  }
+
+  /**
+   * Only the Studio-bundled FHIRHelpers 4.0.1 is treated as local.
+   * Other FHIRHelpers versions are fetched from content/evaluation FHIR.
+   */
+  isBundledLibrary(ref: Pick<ElmIncludeRef, 'path' | 'version'>): boolean {
+    if (ref.path !== 'FHIRHelpers') {
+      return false;
+    }
+    const version = ref.version?.trim() || ElmIncludeParser.BUNDLED_FHIR_HELPERS_VERSION;
+    return version === ElmIncludeParser.BUNDLED_FHIR_HELPERS_VERSION;
   }
 
   isFhirResolvable(ref: ElmIncludeRef): boolean {
-    return !!ref.path && !this.isBundledLibraryPath(ref.path);
+    return !!ref.path && !this.isBundledLibrary(ref);
   }
 
   /**

@@ -62,16 +62,16 @@ export class CqlValidationService {
   private translationService = inject(TranslationService);
   private locatorUtils = inject(CqlLocatorUtilsService);
 
-  validate(cql: string, doc?: CqlValidationDoc): ValidationResult {
-    return this.runFullValidation(cql, doc).validation;
+  validate(cql: string, doc?: CqlValidationDoc): Promise<ValidationResult> {
+    return this.runFullValidation(cql, doc).then((full) => full.validation);
   }
 
   /** Single translator invocation; prefer this when you need errors and warnings together. */
-  runFullValidation(cql: string, doc?: CqlValidationDoc): FullValidationResult {
+  async runFullValidation(cql: string, doc?: CqlValidationDoc): Promise<FullValidationResult> {
     if (!cql?.trim()) {
       return this.emptyFullValidation();
     }
-    const raw = this.translationService.translateCqlToElmRaw(cql);
+    const raw = await this.translationService.translateCqlToElmRaw(cql);
     return this.buildFullValidation(raw, doc);
   }
 
@@ -250,8 +250,8 @@ export class CqlValidationService {
   /**
    * Get structured errors with line/column information
    */
-  getStructuredErrors(cql: string): StructuredError[] {
-    return this.runFullValidation(cql).structuredErrors;
+  async getStructuredErrors(cql: string): Promise<StructuredError[]> {
+    return (await this.runFullValidation(cql)).structuredErrors;
   }
 
   getStructuredErrorsFromRaw(rawResult: RawTranslationResult): StructuredError[] {
@@ -268,8 +268,8 @@ export class CqlValidationService {
     }));
   }
 
-  getStructuredWarnings(cql: string): StructuredError[] {
-    return this.runFullValidation(cql).structuredWarnings;
+  async getStructuredWarnings(cql: string): Promise<StructuredError[]> {
+    return (await this.runFullValidation(cql)).structuredWarnings;
   }
 
   getStructuredWarningsFromRaw(rawResult: RawTranslationResult): StructuredError[] {

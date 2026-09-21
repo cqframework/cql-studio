@@ -10,6 +10,11 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { SettingsService } from './settings.service';
 import { buildHttpHeaders } from './endpoint-config.lib';
 import { appendEvaluateEndpointParameters } from './cql-evaluate-parameters.lib';
+import {
+	LOGIC_LIBRARY_TYPE_CODE,
+	MODEL_DEFINITION_TYPE_CODE,
+	libraryTypeSearchToken
+} from './cql-model-info.lib';
 
 @Injectable({
 	providedIn: 'root'
@@ -70,15 +75,24 @@ export class LibraryService extends BaseService {
 		return this.contentBaseUrl() + LibraryService.LIBRARY_PATH;
 	}
 
-	search(searchTerm: string): Observable<Bundle> {
-		return this.http.get<Bundle>(this.url() + "?title:contains=" + searchTerm, { headers: this.evaluationHeaders() });
+	contentUrlFor(id: string): string {
+		return this.contentBaseUrl() + '/Library/' + id;
 	}
 
-	// Search libraries with pagination and sorting
+	search(searchTerm: string): Observable<Bundle> {
+		const type = encodeURIComponent(libraryTypeSearchToken(LOGIC_LIBRARY_TYPE_CODE));
+		return this.http.get<Bundle>(
+			this.url() + `?type=${type}&title:contains=` + encodeURIComponent(searchTerm),
+			{ headers: this.evaluationHeaders() }
+		);
+	}
+
+	// Search logic-library Libraries with pagination and sorting
 	// Uses title:contains for searching (searches the human-friendly title field)
 	searchPaginated(searchTerm: string, page: number = 1, pageSize: number = 10, sortBy: string = 'name', order: 'asc' | 'desc' = 'asc'): Observable<Bundle> {
 		const offset = (page - 1) * pageSize;
-		let url = this.url() + `?_count=${pageSize}&_offset=${offset}`;
+		const type = encodeURIComponent(libraryTypeSearchToken(LOGIC_LIBRARY_TYPE_CODE));
+		let url = this.url() + `?type=${type}&_count=${pageSize}&_offset=${offset}`;
 		
 		// Add search parameter - search on title field
 		const encodedTerm = encodeURIComponent(searchTerm);
@@ -96,10 +110,11 @@ export class LibraryService extends BaseService {
 		return this.http.get<Bundle>(url, { headers: this.evaluationHeaders() });
 	}
 
-	// Get paginated list of all libraries
+	// Get paginated list of logic-library Libraries (excludes model-definition, etc.)
 	getAll(page: number = 1, pageSize: number = 10, sortBy: string = 'name', order: 'asc' | 'desc' = 'asc'): Observable<Bundle> {
 		const offset = (page - 1) * pageSize;
-		let url = this.url() + `?_count=${pageSize}&_offset=${offset}`;
+		const type = encodeURIComponent(libraryTypeSearchToken(LOGIC_LIBRARY_TYPE_CODE));
+		let url = this.url() + `?type=${type}&_count=${pageSize}&_offset=${offset}`;
 		
 		// Add sorting parameters
 		if (sortBy === 'name') {
@@ -132,11 +147,19 @@ export class LibraryService extends BaseService {
 		return this.http.get<Library>(this.uncachedUrl(this.urlFor(id)), { headers: this.evaluationHeaders() });
 	}
 
-	findByNameAndVersion(name: string, version?: string, useContentEndpoint = false): Observable<Library | null> {
+	findByNameAndVersion(
+		name: string,
+		version?: string,
+		useContentEndpoint = false,
+		typeCode?: string
+	): Observable<Library | null> {
 		const base = useContentEndpoint ? this.contentUrl() : this.url();
 		let url = base + `?name=${encodeURIComponent(name)}&_count=1`;
 		if (version) {
 			url += `&version=${encodeURIComponent(version)}`;
+		}
+		if (typeCode) {
+			url += `&type=${encodeURIComponent(libraryTypeSearchToken(typeCode))}`;
 		}
 		return this.http.get<Bundle>(url, { headers: useContentEndpoint ? this.contentHeaders() : this.evaluationHeaders() }).pipe(
 			map(bundle => {
@@ -144,6 +167,61 @@ export class LibraryService extends BaseService {
 				return entry?.resourceType === 'Library' ? entry as Library : null;
 			}),
 			catchError(() => of(null))
+		);
+	}
+
+	/**
+	 * Search model-definition Libraries on the content endpoint (paginated).
+	 * Falls back to evaluation when content address is empty (effective-address rules).
+	 */
+	searchModelDefinitions(
+		searchTerm: string,
+		page: number = 1,
+		pageSize: number = 10,
+		useContentEndpoint = true
+	): Observable<Bundle> {
+		const offset = (page - 1) * pageSize;
+		const base = useContentEndpoint ? this.contentUrl() : this.url();
+		let url =
+			base +
+			`?type=${encodeURIComponent(libraryTypeSearchToken(MODEL_DEFINITION_TYPE_CODE))}` +
+			`&_count=${pageSize}&_offset=${offset}&_sort=name`;
+		const term = searchTerm.trim();
+		if (term) {
+			url += `&name:contains=${encodeURIComponent(term)}`;
+		}
+		return this.http.get<Bundle>(url, {
+			headers: useContentEndpoint ? this.contentHeaders() : this.evaluationHeaders()
+		});
+	}
+
+	getOnContent(id: string): Observable<Library> {
+		return this.http.get<Library>(this.uncachedUrl(this.contentUrlFor(id)), {
+			headers: this.contentHeaders()
+		});
+	}
+
+	postOnContent(library: Library): Observable<Library> {
+		return this.http.post<Library>(this.contentUrl(), JSON.stringify(library), {
+			headers: this.contentHeaders()
+		});
+	}
+
+	putOnContent(library: Library): Observable<Library> {
+		return this.http.put<Library>(this.contentUrlFor(library.id!), JSON.stringify(library), {
+			headers: this.contentHeaders()
+		});
+	}
+
+	deleteOnContent(library: Library): Observable<Library> {
+		return this.http.delete<Library>(this.contentUrlFor(library.id!), {
+			headers: this.contentHeaders()
+		}).pipe(
+			tap(() => {
+				if (library.id) {
+					this.deletedLibraryIds.update((ids) => new Set(ids).add(library.id!));
+				}
+			})
 		);
 	}
 

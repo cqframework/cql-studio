@@ -252,9 +252,7 @@ export class CqlDebugService {
     this._callStack.set([]);
     this._lastValue.set(null);
     this._variables.set([]);
-    this._warnings.set([
-      'FHIR choice/extension mapping is best-effort (valueQuantity->value, etc.). Results may drift from Execute.',
-    ]);
+    this._warnings.set([]);
     this._progressDetail.set('Preparing session…');
     this._progressElapsedMs.set(0);
     this.ideStateService.setExecutionStatus('Preparing debug session...');

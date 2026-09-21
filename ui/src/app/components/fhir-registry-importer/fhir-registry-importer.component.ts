@@ -238,6 +238,7 @@ export class FhirRegistryImporterComponent {
   protected readonly selectionSummary = computed(() => {
     let terminology = 0;
     let data = 0;
+    let content = 0;
     for (const st of this.packagesByName().values()) {
       if (!st.includePackage || st.loadStatus !== 'loaded') {
         continue;
@@ -252,12 +253,15 @@ export class FhirRegistryImporterComponent {
         if (r.targetData) {
           data++;
         }
+        if (r.targetContent) {
+          content++;
+        }
       }
     }
     const tu = this.settingsService.getEffectiveTerminologyEndpointAddress().replace(/\/+$/, '');
     const fu = this.settingsService.getEffectiveDataEndpointAddress().replace(/\/+$/, '');
     const merged = terminology > 0 && data > 0 && tu === fu;
-    return { terminology, data, mergedSingleEndpoint: merged };
+    return { terminology, data, content, mergedSingleEndpoint: merged };
   });
 
   protected readonly planList = computed(() => {
@@ -1079,13 +1083,23 @@ export class FhirRegistryImporterComponent {
     );
   }
 
-  toggleRowTarget(row: IndexedResourceRowVm, target: 'terminology' | 'data', checked: boolean): void {
+  toggleRowTarget(
+    row: IndexedResourceRowVm,
+    target: 'terminology' | 'data' | 'content',
+    checked: boolean
+  ): void {
     this.updateActiveRows((rows) =>
       rows.map((r) => {
         if (r.rowKey !== row.rowKey) {
           return r;
         }
-        return target === 'terminology' ? { ...r, targetTerminology: checked } : { ...r, targetData: checked };
+        if (target === 'terminology') {
+          return { ...r, targetTerminology: checked };
+        }
+        if (target === 'content') {
+          return { ...r, targetContent: checked };
+        }
+        return { ...r, targetData: checked };
       })
     );
   }
@@ -1118,14 +1132,20 @@ export class FhirRegistryImporterComponent {
     this.updateActiveRows((rows) => rows.map((r) => (r.isExample ? { ...r, selected } : r)));
   }
 
-  setVisibleTargets(target: 'terminology' | 'data', checked: boolean): void {
+  setVisibleTargets(target: 'terminology' | 'data' | 'content', checked: boolean): void {
     const keys = new Set(this.filteredRows().map((r) => r.rowKey));
     this.updateActiveRows((rows) =>
       rows.map((r) => {
         if (!keys.has(r.rowKey)) {
           return r;
         }
-        return target === 'terminology' ? { ...r, targetTerminology: checked } : { ...r, targetData: checked };
+        if (target === 'terminology') {
+          return { ...r, targetTerminology: checked };
+        }
+        if (target === 'content') {
+          return { ...r, targetContent: checked };
+        }
+        return { ...r, targetData: checked };
       })
     );
   }
@@ -1289,8 +1309,11 @@ export class FhirRegistryImporterComponent {
         for (const row of selectedRows) {
           selectedByPath.set(row.filename, row);
         }
-        const { termRes, dataRes } = this.packageImportService.partitionByTargets(resources, selectedByPath);
-        if (termRes.length === 0 && dataRes.length === 0) {
+        const { termRes, dataRes, contentRes } = this.packageImportService.partitionByTargets(
+          resources,
+          selectedByPath
+        );
+        if (termRes.length === 0 && dataRes.length === 0 && contentRes.length === 0) {
           accumulated.push({
             packageName: name,
             channel: '—',
@@ -1299,7 +1322,7 @@ export class FhirRegistryImporterComponent {
             filename: '—',
             ok: false,
             message:
-              'Nothing to import for the current per-row targets (enable terminology and/or FHIR data).'
+              'Nothing to import for the current per-row targets (enable terminology, FHIR data, and/or content).'
           });
           this.importResultsRows.set([...accumulated]);
           continue;
@@ -1309,7 +1332,8 @@ export class FhirRegistryImporterComponent {
           dataRes,
           (msg) => {
             this.importProgress.set(`Package ${pkgIndex}/${pkgsWithSelection}: ${name} — ${msg}`);
-          }
+          },
+          contentRes
         );
         for (const o of outcomes) {
           accumulated.push({ ...o, packageName: name });

@@ -16,12 +16,13 @@
 
 import { decodeUtf8Bytes } from './utf8-encoding.lib';
 import { Injectable, inject } from '@angular/core';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, firstValueFrom } from 'rxjs';
 import { Bundle, OperationOutcome, Resource, SearchParameter } from 'fhir/r4';
 import { FhirPackageImportItemOutcome } from '../models/fhir-package-import.types';
 import { IndexedResourceRowVm } from '../models/fhir-package-view.model';
 import { resolvePackageArchiveKey } from './fhir-package-archive-path.lib';
-import { collectionBundleToTransaction, collectionEntryToTransactionEntry } from './fhir-bundle-transaction.lib';
+import { collectionBundleToTransaction, collectionEntryToTransactionEntry, normalizeBundleForBasePost } from './fhir-bundle-transaction.lib';
 import {
   cloneBundleEntriesWithHapiSafeClientIds,
   cloneResourcesWithHapiSafeClientIds
@@ -33,6 +34,9 @@ import { describeFhirHttpFailure, fhirOutcomeSummary } from './fhir-http-error.l
 import { TerminologyService } from './terminology.service';
 import { FhirClientService } from './fhir-client.service';
 import { SettingsService } from './settings.service';
+import { normalizeFhirBaseUrlForBundlePost } from './fhir-server-base.lib';
+import { normalizeModelDefinitionLibrary, isModelDefinitionLibrary } from './cql-model-info.lib';
+import type { Library } from 'fhir/r4';
 
 export interface IgImportSanitizeOptions {
   igFilename: string;
@@ -77,6 +81,7 @@ export class FhirPackageImportService {
   private readonly terminologyService = inject(TerminologyService);
   private readonly fhirClientService = inject(FhirClientService);
   private readonly settingsService = inject(SettingsService);
+  private readonly http = inject(HttpClient);
 
   collectResourcesFromFiles(
     selectedRows: IndexedResourceRowVm[],
@@ -127,9 +132,10 @@ export class FhirPackageImportService {
   partitionByTargets(
     resources: Resource[],
     selectedByPath: Map<string, IndexedResourceRowVm>
-  ): { termRes: Resource[]; dataRes: Resource[] } {
+  ): { termRes: Resource[]; dataRes: Resource[]; contentRes: Resource[] } {
     const termRes: Resource[] = [];
     const dataRes: Resource[] = [];
+    const contentRes: Resource[] = [];
     for (const r of resources) {
       const key = (r as unknown as { __filename?: string }).__filename ?? '';
       const row = selectedByPath.get(key);
@@ -142,21 +148,34 @@ export class FhirPackageImportService {
       if (row.targetData) {
         dataRes.push(r);
       }
+      if (row.targetContent) {
+        const prepared =
+          resourceTypeOf(r) === 'Library' && isModelDefinitionLibrary(r as Library)
+            ? normalizeModelDefinitionLibrary(r as Library)
+            : r;
+        (prepared as Resource & { __filename?: string }).__filename = key;
+        contentRes.push(prepared);
+      }
     }
-    return { termRes: this.sortTermResources(termRes), dataRes: this.sortDataResources(dataRes) };
+    return {
+      termRes: this.sortTermResources(termRes),
+      dataRes: this.sortDataResources(dataRes),
+      contentRes: this.sortDataResources(contentRes)
+    };
   }
 
   async importTerminologyAndData(
     termRes: Resource[],
     dataRes: Resource[],
-    onProgress: (message: string) => void
+    onProgress: (message: string) => void,
+    contentRes: Resource[] = []
   ): Promise<FhirPackageImportItemOutcome[]> {
     const outcomes: FhirPackageImportItemOutcome[] = [];
     const tu = this.settingsService.getEffectiveTerminologyEndpointAddress().replace(/\/+$/, '');
     const fu = this.settingsService.getEffectiveDataEndpointAddress().replace(/\/+$/, '');
-    const merged = termRes.length > 0 && dataRes.length > 0 && tu === fu;
+    const mergedTermData = termRes.length > 0 && dataRes.length > 0 && tu === fu;
 
-    if (merged) {
+    if (mergedTermData) {
       const combined = [...termRes, ...dataRes];
       await this.postRegistryTransactionForChannel(
         combined,
@@ -186,7 +205,37 @@ export class FhirPackageImportService {
       }
     }
 
+    if (contentRes.length > 0) {
+      await this.postRegistryTransactionForChannel(
+        contentRes,
+        (bundle) => this.postContentBundle(bundle),
+        'Content',
+        outcomes,
+        onProgress
+      );
+    }
+
     return outcomes;
+  }
+
+  private postContentBundle(bundle: Bundle): Observable<Bundle> {
+    const ctx = this.settingsService.getEndpointHttpContext('content', {
+      'Content-Type': 'application/fhir+json',
+      Accept: 'application/fhir+json'
+    });
+    const baseUrl = normalizeFhirBaseUrlForBundlePost(ctx.address);
+    if (!baseUrl) {
+      return new Observable((subscriber) => {
+        subscriber.error(new Error('FHIR content endpoint is not configured'));
+      });
+    }
+    const payload = normalizeBundleForBasePost(bundle);
+    const headers = new HttpHeaders({
+      'Content-Type': 'application/fhir+json',
+      Accept: 'application/fhir+json',
+      ...ctx.headers
+    });
+    return this.http.post<Bundle>(baseUrl, payload, { headers });
   }
 
   private sortTermResources(list: Resource[]): Resource[] {
