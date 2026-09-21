@@ -7,6 +7,11 @@ import {
   CQL_DEBUG_ENGINE_PACKAGE_VERSION,
   CQL_DEBUG_ENGINE_STATE_GETTER,
   CQL_DEBUG_STATE_HANDLER_FIELD,
+  CQL_DEBUG_STATE_STACK_FIELD,
+  CQL_DEBUG_ACTIVATION_FRAME_ELEMENT_FIELD,
+  CQL_DEBUG_ACTIVATION_FRAME_VARIABLES_FIELD,
+  CQL_DEBUG_VARIABLE_NAME_FIELD,
+  CQL_DEBUG_VARIABLE_VALUE_FIELD,
   CqlDebugHandlerMethods,
   attachBreakpointHandler,
   createPauseActionSentinel,
@@ -92,6 +97,11 @@ describe('cql-debug-engine-api (5.3.0 contract)', () => {
     expect(CqlDebugHandlerMethods.waitForResume).toBe('b9g');
     expect(CQL_DEBUG_STATE_HANDLER_FIELD).toBe('k9j_1');
     expect(CQL_DEBUG_ENGINE_STATE_GETTER).toBe('ia0');
+    expect(CQL_DEBUG_STATE_STACK_FIELD).toBe('h9j_1');
+    expect(CQL_DEBUG_ACTIVATION_FRAME_ELEMENT_FIELD).toBe('i9q_1');
+    expect(CQL_DEBUG_ACTIVATION_FRAME_VARIABLES_FIELD).toBe('m9q_1');
+    expect(CQL_DEBUG_VARIABLE_NAME_FIELD).toBe('y9i_1');
+    expect(CQL_DEBUG_VARIABLE_VALUE_FIELD).toBe('z9i_1');
   });
 
   it('pause sentinel equals recognizes PAUSE enum string', () => {

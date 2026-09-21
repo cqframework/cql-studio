@@ -15,6 +15,8 @@ export interface CqlDebugStackFrame {
   column: number | null;
   locator: string | null;
   localId: string | null;
+  /** Bindings local to this activation frame (read-only). */
+  variables: CqlDebugVariableDto[];
 }
 
 export interface CqlDebugLastValueDto {
@@ -64,7 +66,13 @@ interface CqlDebugBreakpointHandlerOptions {
   getStepMode: () => CqlDebugStepMode;
   setStepMode: (mode: CqlDebugStepMode) => void;
   shouldAbort: () => boolean;
+  /** Flat bindings for condition evaluation (innermost wins on shadowing). */
   serializeVariables: (state: unknown) => CqlDebugVariableDto[];
+  /**
+   * Per ExpressionDef activation frame, top (current) first.
+   * Used to populate `CqlDebugStackFrame.variables`.
+   */
+  serializeFrameVariables?: (state: unknown) => CqlDebugVariableDto[][];
   resolveDefineName?: (state: unknown) => string | null;
   resolveLibraryName?: (state: unknown) => string | null;
   /** Optional heartbeat while the engine is evaluating (not paused). */
@@ -73,6 +81,13 @@ interface CqlDebugBreakpointHandlerOptions {
 
 const WAIT_INDEX = 0;
 const MODE_INDEX = 1;
+/** Seqlock sequence for breakpoint payload (even = stable). */
+const BP_SEQ_INDEX = 2;
+/** Byte length of UTF-8 JSON breakpoint payload. */
+const BP_LEN_INDEX = 3;
+const SAB_HEADER_BYTES = 16;
+/** Max JSON payload for live breakpoint sync while the worker is in Atomics.wait. */
+const BP_PAYLOAD_MAX_BYTES = 60 * 1024;
 
 export const CqlDebugSabMode = {
   continue: 0,
@@ -83,7 +98,7 @@ export const CqlDebugSabMode = {
 } as const;
 
 export function createDebugSharedBuffer(): SharedArrayBuffer {
-  return new SharedArrayBuffer(8);
+  return new SharedArrayBuffer(SAB_HEADER_BYTES + BP_PAYLOAD_MAX_BYTES);
 }
 
 export function notifyDebugResume(sab: SharedArrayBuffer, mode: CqlDebugStepMode): void {
@@ -115,6 +130,63 @@ export function modeFromSab(view: Int32Array): CqlDebugStepMode {
     default:
       return 'continue';
   }
+}
+
+/**
+ * Publishes breakpoints into the debug SAB so a worker blocked in Atomics.wait can
+ * observe enable/disable/remove without processing postMessage (event loop is stalled).
+ */
+export function writeDebugBreakpointsToSab(
+  sab: SharedArrayBuffer,
+  breakpoints: CqlDebugBreakpointSpec[]
+): boolean {
+  const view = new Int32Array(sab);
+  const bytes = new TextEncoder().encode(JSON.stringify(breakpoints));
+  if (bytes.byteLength > BP_PAYLOAD_MAX_BYTES) {
+    return false;
+  }
+  // Seqlock: odd = write in progress.
+  const seq = Atomics.load(view, BP_SEQ_INDEX);
+  Atomics.store(view, BP_SEQ_INDEX, seq | 1);
+  Atomics.store(view, BP_LEN_INDEX, 0);
+  const payload = new Uint8Array(sab, SAB_HEADER_BYTES, BP_PAYLOAD_MAX_BYTES);
+  payload.set(bytes);
+  Atomics.store(view, BP_LEN_INDEX, bytes.byteLength);
+  Atomics.store(view, BP_SEQ_INDEX, (seq | 1) + 1);
+  return true;
+}
+
+/**
+ * Reads breakpoints from the debug SAB. Returns null if unset or a torn read.
+ */
+export function readDebugBreakpointsFromSab(sab: SharedArrayBuffer): CqlDebugBreakpointSpec[] | null {
+  const view = new Int32Array(sab);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const seq1 = Atomics.load(view, BP_SEQ_INDEX);
+    if (seq1 & 1) {
+      continue;
+    }
+    const len = Atomics.load(view, BP_LEN_INDEX);
+    if (len <= 0 || len > BP_PAYLOAD_MAX_BYTES) {
+      return null;
+    }
+    const payload = new Uint8Array(sab, SAB_HEADER_BYTES, len);
+    const copy = payload.slice();
+    const seq2 = Atomics.load(view, BP_SEQ_INDEX);
+    if (seq1 !== seq2 || seq2 & 1) {
+      continue;
+    }
+    try {
+      const parsed: unknown = JSON.parse(new TextDecoder().decode(copy));
+      if (!Array.isArray(parsed)) {
+        return null;
+      }
+      return parsed as CqlDebugBreakpointSpec[];
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 function parseLocator(locator: string | null | undefined): { line: number | null; column: number | null } {
@@ -199,12 +271,57 @@ function buildStackFrame(
     column: callLoc.column ?? loc.column,
     locator: callMeta.locator ?? meta.locator,
     localId: meta.localId,
+    variables: [],
   };
 }
 
 /**
- * Builds a BreakpointHandler-compatible object for @cqframework/cql@5.3.0.
+ * Builds published call stack with pause site at index 0 and per-frame variables.
+ * Replaces the innermost ExpressionDef row with the pause location.
+ * Caller rows use the child's call-site line (where the caller invoked the child).
  */
+export function buildPublishedCallStack(args: {
+  defineName: string | null;
+  libraryName: string | null;
+  line: number | null;
+  column: number | null;
+  locator: string | null;
+  localId: string | null;
+  callStack: CqlDebugStackFrame[];
+  frameVariables: CqlDebugVariableDto[][];
+}): CqlDebugStackFrame[] {
+  const { callStack, frameVariables } = args;
+  const topVariables = frameVariables[0] ?? [];
+  const pauseFrame: CqlDebugStackFrame = {
+    defineName: args.defineName,
+    libraryName: args.libraryName,
+    line: args.line,
+    column: args.column,
+    locator: args.locator,
+    localId: args.localId,
+    variables: topVariables,
+  };
+
+  if (callStack.length === 0) {
+    return [pauseFrame];
+  }
+
+  // Innermost first: [currentDef, caller, ...outermost]
+  const reversed = [...callStack].reverse();
+  const callers = reversed.slice(1).map((frame, index) => {
+    // Child frame (above this caller) carries the call-site locator into that child.
+    const child = reversed[index];
+    return {
+      ...frame,
+      line: child.line ?? frame.line,
+      column: child.column ?? frame.column,
+      locator: child.locator ?? frame.locator,
+      variables: frameVariables[index + 1] ?? [],
+    };
+  });
+  return [pauseFrame, ...callers];
+}
+
 /**
  * Match a breakpoint to an ELM node. Prefer exact locator / localId so line numbers in
  * included libraries (e.g. BMI under OpenCVDRisk) do not collide with the root editor.
@@ -226,7 +343,6 @@ export function breakpointMatchesElm(
 export function createCqlDebugBreakpointHandler(options: CqlDebugBreakpointHandlerOptions): object {
   const view = new Int32Array(options.sab);
   const callStack: CqlDebugStackFrame[] = [];
-  let stepOverDepth: number | null = null;
   let stepOutDepth: number | null = null;
   let lastValue: CqlDebugLastValueDto | null = null;
   let expressionCount = 0;
@@ -237,28 +353,33 @@ export function createCqlDebugBreakpointHandler(options: CqlDebugBreakpointHandl
   const stackDepth = (): number => callStack.length;
 
   const hasEnabledBreakpoints = (): boolean =>
-    options.getBreakpoints().some(bp => bp.enabled);
+    resolveBreakpoints().some(bp => bp.enabled);
+
+  const resolveBreakpoints = (): CqlDebugBreakpointSpec[] => {
+    // Prefer SAB snapshot — postMessage cannot run while this thread is in Atomics.wait
+    // or inside a synchronous engine evaluation loop after resume.
+    const fromSab = readDebugBreakpointsFromSab(options.sab);
+    if (fromSab) {
+      return fromSab;
+    }
+    return options.getBreakpoints();
+  };
 
   const waitForResume = (): void => {
     Atomics.store(view, WAIT_INDEX, 0);
     Atomics.wait(view, WAIT_INDEX, 0);
     const mode = modeFromSab(view);
     options.setStepMode(mode);
-    if (mode === 'stepOver') {
-      stepOverDepth = stackDepth();
-      stepOutDepth = null;
-    } else if (mode === 'stepOut') {
+    if (mode === 'stepOut') {
       if (stackDepth() === 0) {
         // Depth 0: behave like continue.
         options.setStepMode('continue');
-        stepOverDepth = null;
         stepOutDepth = null;
       } else {
         stepOutDepth = stackDepth();
-        stepOverDepth = null;
       }
-    } else if (mode === 'stepInto' || mode === 'continue') {
-      stepOverDepth = null;
+    } else {
+      // stepInto, stepOver (Next), continue, stop — no depth gate for Next.
       stepOutDepth = null;
     }
   };
@@ -271,10 +392,8 @@ export function createCqlDebugBreakpointHandler(options: CqlDebugBreakpointHandl
       return 'abort';
     }
     const mode = options.getStepMode();
-    if (mode === 'stepInto') {
-      return 'step';
-    }
-    if (mode === 'stepOver' && stepOverDepth != null && stackDepth() <= stepOverDepth) {
+    // stepInto and stepOver (Next) both advance one expression with no skip.
+    if (mode === 'stepInto' || mode === 'stepOver') {
       return 'step';
     }
     if (mode === 'stepOut' && stepOutDepth != null && stackDepth() < stepOutDepth) {
@@ -283,7 +402,7 @@ export function createCqlDebugBreakpointHandler(options: CqlDebugBreakpointHandl
     const meta = readElmMeta(elm);
     const { line } = parseLocator(meta.locator);
     let conditionalHit = false;
-    for (const bp of options.getBreakpoints()) {
+    for (const bp of resolveBreakpoints()) {
       if (!bp.enabled || !breakpointMatchesElm(bp, meta, line)) {
         continue;
       }
@@ -302,7 +421,7 @@ export function createCqlDebugBreakpointHandler(options: CqlDebugBreakpointHandl
   ): boolean => {
     const meta = readElmMeta(elm);
     const { line } = parseLocator(meta.locator);
-    for (const bp of options.getBreakpoints()) {
+    for (const bp of resolveBreakpoints()) {
       if (!bp.enabled || !bp.condition?.trim()) {
         continue;
       }
@@ -362,16 +481,32 @@ export function createCqlDebugBreakpointHandler(options: CqlDebugBreakpointHandl
       const current = callStack[callStack.length - 1] ?? null;
       const defineName =
         options.resolveDefineName?.(state) ?? current?.defineName ?? null;
+      const libraryName =
+        options.resolveLibraryName?.(state) ?? current?.libraryName ?? null;
+      const frameVariables = options.serializeFrameVariables?.(state) ?? [];
+      // When per-frame serialization is unavailable, attach the flat list to the top frame.
+      const effectiveFrameVariables =
+        frameVariables.length > 0 ? frameVariables : [variables];
+      const stack = buildPublishedCallStack({
+        defineName,
+        libraryName,
+        line: loc.line,
+        column: loc.column,
+        locator: meta.locator,
+        localId: meta.localId,
+        callStack,
+        frameVariables: effectiveFrameVariables,
+      });
       options.onPause({
         locator: meta.locator,
         localId: meta.localId,
-        libraryName: options.resolveLibraryName?.(state) ?? current?.libraryName ?? null,
+        libraryName,
         defineName,
         line: loc.line,
         column: loc.column,
         stackDepth: stackDepth(),
-        stack: [...callStack].reverse(),
-        variables,
+        stack,
+        variables: stack[0]?.variables ?? variables,
         lastValue,
       });
       waitForResume();

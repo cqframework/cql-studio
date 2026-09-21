@@ -1,6 +1,13 @@
 // Author: Preston Lee
 
 import type { CqlDebugVariableDto } from './cql-debug-breakpoint-handler';
+import {
+  CQL_DEBUG_ACTIVATION_FRAME_ELEMENT_FIELD,
+  CQL_DEBUG_ACTIVATION_FRAME_VARIABLES_FIELD,
+  CQL_DEBUG_STATE_STACK_FIELD,
+  CQL_DEBUG_VARIABLE_NAME_FIELD,
+  CQL_DEBUG_VARIABLE_VALUE_FIELD,
+} from './cql-debug-engine-api';
 import { extractFhirJsonPayload } from './cql-debug-fhir-bridge';
 
 function cqlValueToDisplay(value: unknown): { type: string; value: string } {
@@ -51,22 +58,130 @@ function cqlValueToDisplay(value: unknown): { type: string; value: string } {
   };
 }
 
-/**
- * Best-effort variable extraction from engine State (version-sensitive internals).
- */
-export function serializeDebugVariables(state: unknown): CqlDebugVariableDto[] {
+type KotlinIterator = { u: () => boolean; v: () => unknown };
+
+function iterateKotlinDeque(deque: unknown): unknown[] {
+  if (!deque || typeof deque !== 'object') {
+    return [];
+  }
+  const obj = deque as Record<string, unknown>;
+  if (typeof obj['t'] !== 'function') {
+    return [];
+  }
+  const out: unknown[] = [];
+  try {
+    const iterator = (obj['t'] as () => KotlinIterator).call(obj);
+    while (iterator.u()) {
+      out.push(iterator.v());
+    }
+  } catch {
+    /* ignore version-sensitive iterator failures */
+  }
+  return out;
+}
+
+function variableFromEngineObject(obj: Record<string, unknown>): CqlDebugVariableDto | null {
+  const name =
+    (typeof obj['name'] === 'string' && obj['name']) ||
+    (typeof obj[CQL_DEBUG_VARIABLE_NAME_FIELD] === 'string' &&
+      (obj[CQL_DEBUG_VARIABLE_NAME_FIELD] as string)) ||
+    null;
+  if (!name) {
+    return null;
+  }
+  const value = obj['value'] ?? obj[CQL_DEBUG_VARIABLE_VALUE_FIELD];
+  if (value === undefined) {
+    return null;
+  }
+  const display = debugValueToDto(value);
+  return {
+    name,
+    type: display.type,
+    value: display.value,
+    ...(display.fhir ? { fhir: true } : {}),
+  };
+}
+
+function serializeVariablesFromActivationFrame(frame: unknown): CqlDebugVariableDto[] {
+  if (!frame || typeof frame !== 'object') {
+    return [];
+  }
+  const record = frame as Record<string, unknown>;
+  const variablesDeque = record[CQL_DEBUG_ACTIVATION_FRAME_VARIABLES_FIELD] ?? record['variables'];
   const out: CqlDebugVariableDto[] = [];
+  for (const item of iterateKotlinDeque(variablesDeque)) {
+    if (!item || typeof item !== 'object') {
+      continue;
+    }
+    const variable = variableFromEngineObject(item as Record<string, unknown>);
+    if (variable) {
+      out.push(variable);
+    }
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * True when an activation-frame element looks like an ExpressionDef (has a define name).
+ * Skips root (null) and Retrieve frames (dataType, no ExpressionDef name).
+ */
+function isExpressionDefElement(element: unknown): boolean {
+  if (!element || typeof element !== 'object') {
+    return false;
+  }
+  const record = element as { name?: unknown; dataType?: unknown };
+  return typeof record.name === 'string' && record.name.trim().length > 0 && record.dataType == null;
+}
+
+/**
+ * Per ExpressionDef activation frame, top (current) first — matches UI call-stack order.
+ * No cross-frame name collapse.
+ */
+export function serializeDebugVariablesByActivationFrame(state: unknown): CqlDebugVariableDto[][] {
   if (!state || typeof state !== 'object') {
-    return out;
+    return [];
   }
   const record = state as Record<string, unknown>;
+  const stack = record[CQL_DEBUG_STATE_STACK_FIELD] ?? record['stack'];
+  const frames = iterateKotlinDeque(stack);
+  const out: CqlDebugVariableDto[][] = [];
+  for (const frame of frames) {
+    if (!frame || typeof frame !== 'object') {
+      continue;
+    }
+    const frameRecord = frame as Record<string, unknown>;
+    const element =
+      frameRecord[CQL_DEBUG_ACTIVATION_FRAME_ELEMENT_FIELD] ?? frameRecord['element'];
+    if (!isExpressionDefElement(element)) {
+      continue;
+    }
+    out.push(serializeVariablesFromActivationFrame(frame));
+  }
+  return out;
+}
 
-  // Activation frame stacks are mangled; scan array-like deques for Variable-like objects.
+/**
+ * Flat variable list for condition evaluation (innermost / first frame wins on shadowing).
+ */
+export function serializeDebugVariables(state: unknown): CqlDebugVariableDto[] {
+  const byFrame = serializeDebugVariablesByActivationFrame(state);
+  if (byFrame.length > 0) {
+    const byName = new Map<string, CqlDebugVariableDto>();
+    // Walk outermost → innermost so innermost overwrites (matches resolveVariable top-first).
+    for (let i = byFrame.length - 1; i >= 0; i--) {
+      for (const variable of byFrame[i]) {
+        byName.set(variable.name, variable);
+      }
+    }
+    return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  // Fallback: legacy deep scan when stack fields are unavailable.
+  const out: CqlDebugVariableDto[] = [];
+  const record = state as Record<string, unknown>;
   for (const value of Object.values(record)) {
     collectFromUnknown(value, out, 0);
   }
-
-  // Deduplicate by name (last wins).
   const byName = new Map<string, CqlDebugVariableDto>();
   for (const variable of out) {
     byName.set(variable.name, variable);
@@ -89,32 +204,15 @@ function collectFromUnknown(node: unknown, out: CqlDebugVariableDto[], depth: nu
   }
   const obj = node as Record<string, unknown>;
 
-  // Kotlin ArrayDeque-like: try iterator protocol via .t()
   if (typeof obj['t'] === 'function') {
-    try {
-      const iterator = (obj['t'] as () => { u: () => boolean; v: () => unknown }).call(obj);
-      while (iterator.u()) {
-        collectFromUnknown(iterator.v(), out, depth + 1);
-      }
-    } catch {
-      /* ignore */
+    for (const item of iterateKotlinDeque(obj)) {
+      collectFromUnknown(item, out, depth + 1);
     }
   }
 
-  // Variable-like: name + value fields (mangled y9i_1 / z9i_1 in 5.3.0, or public)
-  const name =
-    (typeof obj['name'] === 'string' && obj['name']) ||
-    (typeof obj['y9i_1'] === 'string' && (obj['y9i_1'] as string)) ||
-    null;
-  const value = obj['value'] ?? obj['z9i_1'];
-  if (name && value !== undefined) {
-    const display = debugValueToDto(value);
-    out.push({
-      name,
-      type: display.type,
-      value: display.value,
-      ...(display.fhir ? { fhir: true } : {}),
-    });
+  const variable = variableFromEngineObject(obj);
+  if (variable) {
+    out.push(variable);
   }
 
   for (const child of Object.values(obj)) {

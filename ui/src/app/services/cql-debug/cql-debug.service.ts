@@ -9,6 +9,7 @@ import { CqlDebugPrefetchService, countResourcesByType } from './cql-debug-prefe
 import {
   createDebugSharedBuffer,
   notifyDebugResume,
+  writeDebugBreakpointsToSab,
   type CqlDebugBreakpointSpec,
   type CqlDebugLastValueDto,
   type CqlDebugPauseFrame,
@@ -49,6 +50,7 @@ export class CqlDebugService {
   private readonly _pausedFrame = signal<CqlDebugPauseFrame | null>(null);
   private readonly _variables = signal<CqlDebugVariableDto[]>([]);
   private readonly _callStack = signal<CqlDebugStackFrame[]>([]);
+  private readonly _selectedStackIndex = signal(0);
   private readonly _lastValue = signal<CqlDebugLastValueDto | null>(null);
   private readonly _results = signal<CqlDebugExpressionResultDto[]>([]);
   private readonly _banner = signal(
@@ -71,6 +73,7 @@ export class CqlDebugService {
   readonly pausedFrame = this._pausedFrame.asReadonly();
   readonly variables = this._variables.asReadonly();
   readonly callStack = this._callStack.asReadonly();
+  readonly selectedStackIndex = this._selectedStackIndex.asReadonly();
   readonly lastValue = this._lastValue.asReadonly();
   readonly results = this._results.asReadonly();
   readonly banner = this._banner.asReadonly();
@@ -250,6 +253,7 @@ export class CqlDebugService {
     this._pausedFrame.set(null);
     this._pausedLine.set(null);
     this._callStack.set([]);
+    this._selectedStackIndex.set(0);
     this._lastValue.set(null);
     this._variables.set([]);
     this._warnings.set([]);
@@ -324,6 +328,7 @@ export class CqlDebugService {
 
       this.ensureWorker();
       this.sab = createDebugSharedBuffer();
+      writeDebugBreakpointsToSab(this.sab, this._breakpoints());
       this._status.set('running');
       this._progressDetail.set('Starting in-browser engine…');
       this.ideStateService.setExecutionStatus('Debugging (in-browser engine)...');
@@ -359,6 +364,18 @@ export class CqlDebugService {
     this.sendCommand('stepOut');
   }
 
+  selectStackFrame(index: number): void {
+    const stack = this._callStack();
+    if (index < 0 || index >= stack.length) {
+      return;
+    }
+    this._selectedStackIndex.set(index);
+    const frame = stack[index];
+    this._variables.set(frame.variables ?? []);
+    // Drive editor pause highlight from the selected frame (not only the top pause site).
+    this._pausedLine.set(frame.line);
+  }
+
   stop(): void {
     this.sendCommand('stop');
     this.postToWorker({ type: 'stop' });
@@ -386,7 +403,10 @@ export class CqlDebugService {
     if (!this._isDebugging()) {
       return;
     }
+    // Publish breakpoints before waking the worker so resume/continue does not
+    // re-hit breakpoints removed while paused (postMessage is stalled in Atomics.wait).
     if (this.sab) {
+      writeDebugBreakpointsToSab(this.sab, this._breakpoints());
       notifyDebugResume(this.sab, command);
     }
     this.postToWorker({ type: 'command', command });
@@ -396,12 +416,16 @@ export class CqlDebugService {
       this._pausedFrame.set(null);
       this._pausedLine.set(null);
       this._callStack.set([]);
+      this._selectedStackIndex.set(0);
       // Keep lastValue visible between steps; clear bindings until the next pause.
       this._variables.set([]);
     }
   }
 
   private syncBreakpointsToWorker(): void {
+    if (this.sab) {
+      writeDebugBreakpointsToSab(this.sab, this._breakpoints());
+    }
     this.postToWorker({ type: 'setBreakpoints', breakpoints: this._breakpoints() });
   }
 
@@ -440,19 +464,26 @@ export class CqlDebugService {
         this._status.set('paused');
         this._progressDetail.set(null);
         this._pausedFrame.set(message.frame);
-        this._variables.set(message.frame.variables);
         this._callStack.set(message.frame.stack);
+        this._selectedStackIndex.set(0);
+        this._variables.set(message.frame.stack[0]?.variables ?? message.frame.variables);
         this._lastValue.set(message.frame.lastValue);
-        this._pausedLine.set(message.frame.line);
         {
-          const parts = ['About to evaluate'];
+          const highlightLine = message.frame.stack[0]?.line ?? message.frame.line;
+          this._pausedLine.set(highlightLine);
+          if (highlightLine != null) {
+            this.ideStateService.requestNavigateToPosition(highlightLine, 0);
+          }
+        }
+        {
+          const parts: string[] = [];
           if (message.frame.defineName) {
             parts.push(message.frame.defineName);
           }
           if (message.frame.line != null) {
-            parts.push(`· line ${message.frame.line}`);
+            parts.push(`line ${message.frame.line}`);
           }
-          this.ideStateService.setExecutionStatus(parts.join(' '));
+          this.ideStateService.setExecutionStatus(parts.join(' · '));
         }
         break;
       case 'completed':
@@ -481,6 +512,7 @@ export class CqlDebugService {
     this._pausedFrame.set(null);
     this._pausedLine.set(null);
     this._callStack.set([]);
+    this._selectedStackIndex.set(0);
     this._lastValue.set(null);
     this._progressDetail.set(null);
     this._progressElapsedMs.set(0);

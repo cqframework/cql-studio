@@ -21,7 +21,7 @@
     <button id="cql-inspector-step-over-btn" type="button"
       class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
       (click)="stepOver()" [disabled]="!debugService.isPaused()"
-      title="Step Over — skip nested defines" aria-label="Step Over">
+      title="Next — next expression" aria-label="Next">
       <i class="bi bi-arrow-right" aria-hidden="true"></i>
     </button>
     <button id="cql-inspector-step-out-btn" type="button"
@@ -57,12 +57,11 @@
         <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
           (click)="navigateToLine(frame.line)"
           [title]="'Go to line ' + (frame.line ?? '')">
-          About to evaluate
           @if (frame.defineName) {
             <span>{{ frame.defineName }}</span>
           }
           @if (frame.line) {
-            <span>(line {{ frame.line }})</span>
+            <span [class.ms-1]="!!frame.defineName">(line {{ frame.line }})</span>
           }
         </button>
       }
@@ -140,13 +139,14 @@
     } @else {
       <ol id="cql-inspector-call-stack" class="list-group list-group-numbered list-group-flush mb-3">
         @for (frame of debugService.callStack(); track $index) {
-          <li class="list-group-item px-0 py-1 small d-flex justify-content-between gap-2">
-            <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none"
-              (click)="navigateToLine(frame.line)"
-              [disabled]="frame.line == null">
+          <li class="list-group-item px-0 py-1 small d-flex justify-content-between gap-2"
+            [class.bg-warning-subtle]="debugService.selectedStackIndex() === $index">
+            <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none small"
+              (click)="selectCallStackFrame($index, frame.line)"
+              [disabled]="frame.line == null && !frame.defineName">
               {{ frame.defineName || '(anonymous)' }}
               @if (frame.line) {
-                <span class="text-muted"> · line {{ frame.line }}</span>
+                <span class="text-muted"> · {{ frame.line }}</span>
               }
             </button>
           </li>
@@ -155,8 +155,10 @@
     }
 
     <h6 class="text-uppercase small text-muted">Bindings in scope</h6>
-    @if (debugService.variables().length === 0) {
-      <p class="small text-muted">No bindings available yet for this pause.</p>
+    @if (!debugService.isPaused()) {
+      <p class="small text-muted">Available while paused.</p>
+    } @else if (debugService.variables().length === 0) {
+      <p class="small text-muted">No bindings in this frame.</p>
     } @else {
       <table id="cql-inspector-variables" class="table table-sm table-striped">
         <thead>

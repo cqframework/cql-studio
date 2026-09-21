@@ -334,8 +334,9 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
 
     effect(() => {
       const line = this.debugService.pausedLine();
-      if (this.editor) {
-        setDebugPausedLine(this.editor, line);
+      const editor = this.editor;
+      if (editor) {
+        setDebugPausedLine(editor, line);
       }
     });
 
@@ -701,6 +702,8 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
       
       this.isInitializing = false;
       this.initializationRetries = 0; // Reset retry counter on success
+      // Re-apply pause highlight after rebuild (effect won't re-run if pausedLine unchanged).
+      setDebugPausedLine(this.editor, this.debugService.pausedLine());
       this.tryConsumePendingNavigation();
       
       // Update form validity signal after initialization

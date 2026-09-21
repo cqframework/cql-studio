@@ -49,6 +49,13 @@ export class InspectorTabComponent {
     this.debugService.stop();
   }
 
+  protected selectCallStackFrame(index: number, line: number | null): void {
+    this.debugService.selectStackFrame(index);
+    // Navigation is also triggered via pausedLine → setDebugPausedLine(scrollIntoView);
+    // keep an explicit navigate for library-aware pending navigation.
+    this.navigateToLine(line);
+  }
+
   protected onConditionChange(id: string, value: string): void {
     this.debugService.updateBreakpointCondition(id, value);
   }

@@ -15,6 +15,8 @@ import {
   createDebugSharedBuffer,
   modeFromSab,
   notifyDebugResume,
+  readDebugBreakpointsFromSab,
+  writeDebugBreakpointsToSab,
   type CqlDebugPauseFrame,
   type CqlDebugStepMode,
 } from './cql-debug-breakpoint-handler';
@@ -88,6 +90,65 @@ describe('CqlDebugSabMode stepOut', () => {
   });
 });
 
+describe('debug SAB breakpoint sync', () => {
+  it('round-trips breakpoints including empty list', () => {
+    const sab = createDebugSharedBuffer();
+    expect(readDebugBreakpointsFromSab(sab)).toBeNull();
+
+    const bps = [
+      { id: 'bp-1', line: 10, enabled: true, locator: '10:1-10:5', localId: '1' },
+      { id: 'bp-2', line: 20, enabled: false, condition: 'x == 1' },
+    ];
+    expect(writeDebugBreakpointsToSab(sab, bps)).toBe(true);
+    expect(readDebugBreakpointsFromSab(sab)).toEqual(bps);
+
+    expect(writeDebugBreakpointsToSab(sab, [])).toBe(true);
+    expect(readDebugBreakpointsFromSab(sab)).toEqual([]);
+  });
+
+  it('does not pause on a breakpoint removed via SAB while "paused"', () => {
+    const sab = createDebugSharedBuffer();
+    const bp = { id: 'bp-1', line: 5, enabled: true, locator: '5:1-5:5', localId: '1' };
+    writeDebugBreakpointsToSab(sab, [bp]);
+
+    let stepMode: CqlDebugStepMode = 'continue';
+    let pauseCount = 0;
+    const handler = createCqlDebugBreakpointHandler({
+      sab,
+      getBreakpoints: () => [bp], // stale worker-local list (postMessage not applied)
+      getStepMode: () => stepMode,
+      setStepMode: mode => {
+        stepMode = mode;
+      },
+      shouldAbort: () => false,
+      serializeVariables: () => [],
+      onPause: () => {
+        pauseCount += 1;
+      },
+    }) as Record<string, (...args: unknown[]) => unknown>;
+
+    Atomics.wait = ((typedArray: Int32Array) => {
+      notifyDebugResume(sab, 'continue');
+      return 'ok';
+    }) as typeof Atomics.wait;
+
+    handler[CqlDebugHandlerMethods.onBeforeExpression](
+      { locator: '5:1-5:5', localId: '1' },
+      {}
+    );
+    expect(pauseCount).toBe(1);
+
+    // Simulate remove-while-paused: SAB updated, worker message queue not drained.
+    writeDebugBreakpointsToSab(sab, []);
+    stepMode = 'continue';
+    handler[CqlDebugHandlerMethods.onBeforeExpression](
+      { locator: '5:1-5:5', localId: '1' },
+      {}
+    );
+    expect(pauseCount).toBe(1);
+  });
+});
+
 describe('createCqlDebugBreakpointHandler call stack', () => {
   const originalWait = Atomics.wait;
 
@@ -102,7 +163,7 @@ describe('createCqlDebugBreakpointHandler call stack', () => {
     }) as typeof Atomics.wait;
   }
 
-  it('pushes and pops ExpressionDef frames and exposes reversed stack on pause', () => {
+  it('publishes pause site at stack[0] and callers below', () => {
     const sab = createDebugSharedBuffer();
     stubAtomicsWaitAsContinue(sab, 'continue');
     let stepMode: CqlDebugStepMode = 'stepInto';
@@ -134,8 +195,11 @@ describe('createCqlDebugBreakpointHandler call stack', () => {
     expect(paused!.stackDepth).toBe(2);
     expect(paused!.stack.length).toBe(2);
     expect(paused!.stack[0].defineName).toBe('Inner');
-    expect(paused!.stack[0].line).toBe(11);
+    expect(paused!.stack[0].line).toBe(21);
+    expect(paused!.stack[0].localId).toBe('leaf');
     expect(paused!.stack[1].defineName).toBe('Outer');
+    // Caller row shows where Outer invoked Inner (child call-site), not Outer’s define start.
+    expect(paused!.stack[1].line).toBe(11);
     expect(paused!.defineName).toBe('Inner');
 
     handler[CqlDebugHandlerMethods.onExpressionDefEvaluated](inner, {}, 1);
@@ -144,7 +208,90 @@ describe('createCqlDebugBreakpointHandler call stack', () => {
     stepMode = 'stepInto';
     handler[CqlDebugHandlerMethods.onBeforeExpression](leaf, {});
     expect(paused!.stackDepth).toBe(0);
-    expect(paused!.stack.length).toBe(0);
+    expect(paused!.stack.length).toBe(1);
+    expect(paused!.stack[0].line).toBe(21);
+  });
+
+  it('attaches per-frame variables to published stack frames', () => {
+    const sab = createDebugSharedBuffer();
+    stubAtomicsWaitAsContinue(sab, 'continue');
+    let stepMode: CqlDebugStepMode = 'stepInto';
+    let paused: CqlDebugPauseFrame | null = null;
+    const handler = createCqlDebugBreakpointHandler({
+      sab,
+      getBreakpoints: () => [],
+      getStepMode: () => stepMode,
+      setStepMode: mode => {
+        stepMode = mode;
+      },
+      shouldAbort: () => false,
+      serializeVariables: () => [{ name: 'x', type: 'Integer', value: '2' }],
+      serializeFrameVariables: () => [
+        [{ name: 'x', type: 'Integer', value: '2' }],
+        [{ name: 'x', type: 'Integer', value: '1' }],
+      ],
+      onPause: frame => {
+        paused = frame;
+      },
+    }) as Record<string, (...args: unknown[]) => unknown>;
+
+    handler[CqlDebugHandlerMethods.onExpressionDefEntered](
+      { name: 'Outer', locator: '10:1-12:1' },
+      null,
+      {}
+    );
+    handler[CqlDebugHandlerMethods.onExpressionDefEntered](
+      { name: 'Inner', locator: '20:1-22:1' },
+      { locator: '11:5-11:10' },
+      {}
+    );
+    handler[CqlDebugHandlerMethods.onBeforeExpression]({ locator: '21:3-21:8' }, {});
+
+    expect(paused!.stack[0].variables).toEqual([{ name: 'x', type: 'Integer', value: '2' }]);
+    expect(paused!.stack[1].variables).toEqual([{ name: 'x', type: 'Integer', value: '1' }]);
+    expect(paused!.variables).toEqual([{ name: 'x', type: 'Integer', value: '2' }]);
+  });
+
+  it('stepOver (Next) pauses inside nested defines', () => {
+    const sab = createDebugSharedBuffer();
+    let stepMode: CqlDebugStepMode = 'stepOver';
+    let pauseCount = 0;
+    const handler = createCqlDebugBreakpointHandler({
+      sab,
+      getBreakpoints: () => [],
+      getStepMode: () => stepMode,
+      setStepMode: mode => {
+        stepMode = mode;
+      },
+      shouldAbort: () => false,
+      serializeVariables: () => [],
+      onPause: () => {
+        pauseCount += 1;
+      },
+    }) as Record<string, (...args: unknown[]) => unknown>;
+
+    Atomics.wait = ((typedArray: Int32Array) => {
+      notifyDebugResume(sab, 'stepOver');
+      return 'ok';
+    }) as typeof Atomics.wait;
+
+    handler[CqlDebugHandlerMethods.onExpressionDefEntered](
+      { name: 'Outer', locator: '1:1-10:1' },
+      null,
+      {}
+    );
+    // Resume from an outer pause as stepOver, then enter nested define.
+    handler[CqlDebugHandlerMethods.onBeforeExpression]({ locator: '2:1-2:5' }, {});
+    expect(pauseCount).toBe(1);
+    expect(stepMode).toBe('stepOver');
+
+    handler[CqlDebugHandlerMethods.onExpressionDefEntered](
+      { name: 'Inner', locator: '20:1-22:1' },
+      { locator: '3:1-3:5' },
+      {}
+    );
+    handler[CqlDebugHandlerMethods.onBeforeExpression]({ locator: '21:1-21:5' }, {});
+    expect(pauseCount).toBe(2);
   });
 
   it('records lastValue from onAfterExpression', () => {

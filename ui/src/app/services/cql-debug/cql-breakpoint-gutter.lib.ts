@@ -122,5 +122,14 @@ export function createCqlBreakpointGutterExtensions(
 }
 
 export function setDebugPausedLine(view: EditorView, line: number | null): void {
-  view.dispatch({ effects: debugPausedLineEffect.of(line) });
+  if (line == null || line < 1 || line > view.state.doc.lines) {
+    view.dispatch({ effects: debugPausedLineEffect.of(line) });
+    return;
+  }
+  const docLine = view.state.doc.line(line);
+  view.dispatch({
+    effects: debugPausedLineEffect.of(line),
+    selection: { anchor: docLine.from, head: docLine.from },
+    scrollIntoView: true,
+  });
 }

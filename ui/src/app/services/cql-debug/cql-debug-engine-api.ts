@@ -12,6 +12,21 @@ export const CQL_DEBUG_STATE_HANDLER_FIELD = 'k9j_1';
 /** CqlEngine internal getter returning State (engine.mjs 5.3.0). */
 export const CQL_DEBUG_ENGINE_STATE_GETTER = 'ia0';
 
+/** State.stack (ArrayDeque&lt;ActivationFrame&gt;) — engine.mjs 5.3.0. */
+export const CQL_DEBUG_STATE_STACK_FIELD = 'h9j_1';
+
+/** ActivationFrame.element — engine.mjs 5.3.0. */
+export const CQL_DEBUG_ACTIVATION_FRAME_ELEMENT_FIELD = 'i9q_1';
+
+/** ActivationFrame.variables (Deque&lt;Variable&gt;) — engine.mjs 5.3.0. */
+export const CQL_DEBUG_ACTIVATION_FRAME_VARIABLES_FIELD = 'm9q_1';
+
+/** Variable.name — engine.mjs 5.3.0. */
+export const CQL_DEBUG_VARIABLE_NAME_FIELD = 'y9i_1';
+
+/** Variable.value — engine.mjs 5.3.0. */
+export const CQL_DEBUG_VARIABLE_VALUE_FIELD = 'z9i_1';
+
 /** BreakpointHandler mangled methods (engine.mjs 5.3.0). */
 export const CqlDebugHandlerMethods = {
   onBeforeExpression: 'x9f',

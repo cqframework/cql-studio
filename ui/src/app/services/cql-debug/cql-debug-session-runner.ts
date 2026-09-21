@@ -23,7 +23,11 @@ import { createPrefetchedTerminologyProvider } from './cql-debug-terminology-pro
 import { createDebugUcumService } from './cql-debug-ucum.lib';
 import { applyCqlEngineRuntimePatches } from './cql-debug-engine-patches';
 import { lookupModelInfoXmlFromPayload } from './cql-debug-model-info.lib';
-import { expressionResultToDto, serializeDebugVariables } from './cql-debug-value-dto';
+import {
+  expressionResultToDto,
+  serializeDebugVariables,
+  serializeDebugVariablesByActivationFrame,
+} from './cql-debug-value-dto';
 import { extractCqlUsingDeclarations, rewriteFhirHelpersCql, rewriteModelInfoXmlIdentity, parseModelInfoXmlIdentity } from '../cql-model-info.lib';
 import type {
   CqlDebugExpressionResultDto,
@@ -161,6 +165,7 @@ export async function runCqlDebugSession(
       setStepMode: hooks.setStepMode,
       shouldAbort: hooks.shouldAbort,
       serializeVariables: serializeDebugVariables,
+      serializeFrameVariables: serializeDebugVariablesByActivationFrame,
       onPause: frame => {
         hooks.postMessage({ type: 'paused', frame });
       },
