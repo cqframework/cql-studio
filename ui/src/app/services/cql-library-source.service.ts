@@ -92,11 +92,22 @@ export class CqlLibrarySourceService {
 
   async prefetchFromStoredLibrary(fhirLibraryId: string): Promise<boolean> {
     const library = await firstValueFrom(this.libraryService.get(fhirLibraryId));
+    const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(library));
+    if (cqlContent.trim()) {
+      return this.prefetchIncludesFromCql(cqlContent);
+    }
+
+    // No CQL attachment — fall back to stored ELM include refs.
     const elmXml = await firstValueFrom(this.libraryService.getElmXml(library));
     if (!elmXml.trim()) {
       return false;
     }
     return this.prefetchIncludesFromElmXml(elmXml);
+  }
+
+  /** Prefetch transitive includes discovered from CQL `include` directives. */
+  async prefetchIncludesFromCql(cql: string, visiting: Set<string> = new Set()): Promise<boolean> {
+    return this.fetchMissingIncludes(this.elmIncludeParser.extractFhirIncludesFromCql(cql), visiting);
   }
 
   async fetchMissingIncludes(refs: ElmIncludeRef[], visiting: Set<string> = new Set()): Promise<boolean> {
@@ -110,39 +121,121 @@ export class CqlLibrarySourceService {
     return fetchedAny;
   }
 
+  /**
+   * Collect every FHIR-resolvable include whose CQL is already in cache, walking the
+   * transitive graph via CQL `include` directives when CQL is present (ELM only when
+   * CQL is not). Used by the debug worker payload for chains like
+   * LipidManagement → OpenCVDRisk → BMI.
+   */
+  collectTransitiveCachedSources(
+    elmXml: string,
+    rootCql?: string | null
+  ): Array<{ id: string; version?: string | null; system?: string | null; cql: string }> {
+    const out: Array<{ id: string; version?: string | null; system?: string | null; cql: string }> = [];
+    const seen = new Set<string>();
+
+    const childRefsFor = (cql: string, path: string, system: string | null, version: string | null): ElmIncludeRef[] => {
+      if (cql.trim()) {
+        return this.elmIncludeParser.extractFhirIncludesFromCql(cql);
+      }
+      const childElm = this.getCachedElm(path, system, version);
+      return childElm?.trim() ? this.elmIncludeParser.extractFhirIncludes(childElm) : [];
+    };
+
+    const visitRefs = (refs: ElmIncludeRef[]): void => {
+      for (const include of refs) {
+        const key = this.elmIncludeParser.cacheKey(include.path, include.system, include.version);
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+
+        const cached = this.getCachedCql(include.path, include.system, include.version);
+        if (!cached) {
+          continue;
+        }
+        out.push({
+          id: include.path,
+          version: include.version,
+          system: include.system,
+          cql: cached,
+        });
+
+        visitRefs(childRefsFor(cached, include.path, include.system, include.version));
+      }
+    };
+
+    if (rootCql?.trim()) {
+      visitRefs(this.elmIncludeParser.extractFhirIncludesFromCql(rootCql));
+    } else if (elmXml?.trim()) {
+      visitRefs(this.elmIncludeParser.extractFhirIncludes(elmXml));
+    }
+
+    return out;
+  }
+
   private async ensureLibraryCached(ref: ElmIncludeRef, visiting: Set<string>): Promise<boolean> {
     const key = this.elmIncludeParser.cacheKey(ref.path, ref.system, ref.version);
-    if (this.cqlCache.has(key)) {
-      return false;
-    }
     if (visiting.has(key)) {
       return false;
     }
     visiting.add(key);
 
-    const library = await firstValueFrom(
-      this.libraryService.findByNameAndVersion(ref.path, ref.version ?? undefined, true)
-    );
-    if (!library) {
-      visiting.delete(key);
-      return false;
+    let fetchedAny = false;
+    let library: Library | null = null;
+
+    if (!this.cqlCache.has(key)) {
+      library = await firstValueFrom(
+        this.libraryService.findByNameAndVersion(ref.path, ref.version ?? undefined, true)
+      );
+      if (!library) {
+        visiting.delete(key);
+        return false;
+      }
+
+      const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(library));
+      if (!cqlContent.trim()) {
+        visiting.delete(key);
+        return false;
+      }
+
+      this.cqlCache.set(key, cqlContent);
+      fetchedAny = true;
     }
 
-    const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(library));
-    if (!cqlContent.trim()) {
-      visiting.delete(key);
-      return false;
+    // Cache ELM when available (definition index / other consumers), but always walk
+    // children from CQL when present so grandchild includes are not missed.
+    if (!this.elmCache.has(key)) {
+      if (!library) {
+        library = await firstValueFrom(
+          this.libraryService.findByNameAndVersion(ref.path, ref.version ?? undefined, true)
+        );
+      }
+      if (library) {
+        const elmXml = await firstValueFrom(this.libraryService.getElmXml(library));
+        if (elmXml.trim()) {
+          this.elmCache.set(key, elmXml);
+        }
+      }
     }
 
-    this.cqlCache.set(key, cqlContent);
-
-    const elmXml = await firstValueFrom(this.libraryService.getElmXml(library));
-    if (elmXml.trim()) {
-      this.elmCache.set(key, elmXml);
-      await this.prefetchIncludesFromElmXml(elmXml, visiting);
+    const cql = this.cqlCache.get(key);
+    if (cql?.trim()) {
+      const childFetched = await this.prefetchIncludesFromCql(cql, visiting);
+      if (childFetched) {
+        fetchedAny = true;
+      }
+    } else {
+      const elmXml = this.elmCache.get(key);
+      if (elmXml?.trim()) {
+        const childFetched = await this.prefetchIncludesFromElmXml(elmXml, visiting);
+        if (childFetched) {
+          fetchedAny = true;
+        }
+      }
     }
 
     visiting.delete(key);
-    return true;
+    return fetchedAny;
   }
 }

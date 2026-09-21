@@ -108,6 +108,15 @@
       </div>
     }
 
+    @if (hasTabType('inspector')) {
+      <div
+        class="h-100"
+        [class.d-none]="getActiveTab()?.type !== 'inspector'"
+        [attr.aria-hidden]="getActiveTab()?.type !== 'inspector'">
+        <app-inspector-tab></app-inspector-tab>
+      </div>
+    }
+
     <!-- Clipboard Tab -->
     @if (getActiveTab()?.type === 'clipboard') {
       <app-clipboard-tab

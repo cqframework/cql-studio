@@ -417,6 +417,23 @@ export class TranslationService {
   }
 
   /**
+   * Snapshot of translation assets for in-browser debug Workers (plain strings only).
+   */
+  getDebugTranslationAssets(): {
+    systemModelInfoXml: string;
+    fhirModelInfoXml: string;
+    fhirHelpersCql: string;
+  } {
+    const systemModelInfoXml = this.modelInfoCache.get('/cql/system-modelinfo.xml');
+    const fhirModelInfoXml = this.modelInfoCache.get(`/cql/fhir-modelinfo-${this.FHIR_VERSION}.xml`);
+    const fhirHelpersCql = this.librarySourceCache.get(`/cql/FHIRHelpers-${this.FHIR_VERSION}.cql`);
+    if (!systemModelInfoXml || !fhirModelInfoXml || !fhirHelpersCql) {
+      throw new Error('Translation assets are not loaded yet. Call ensureTranslationAssetsLoaded() first.');
+    }
+    return { systemModelInfoXml, fhirModelInfoXml, fhirHelpersCql };
+  }
+
+  /**
    * Format a CqlCompilerException into a readable error message
    * Uses shared locator utility to extract line/column information
    */

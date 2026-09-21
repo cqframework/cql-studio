@@ -74,6 +74,14 @@ export class IdeTabRegistryService {
       allowedPanels: ['right'],
       defaultPanel: 'right'
     });
+
+    this.registerTabType({
+      type: 'inspector',
+      title: 'Inspector',
+      component: null as any,
+      allowedPanels: ['right'],
+      defaultPanel: 'right'
+    });
   }
 
   registerTabType(definition: TabTypeDefinition): void {

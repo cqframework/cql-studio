@@ -345,7 +345,7 @@ export class IdeStateService {
       content,
       type: 'json',
       status,
-      expanded: false,
+      expanded: true,
       timestamp: new Date()
     };
     this.addOutputSection(section);

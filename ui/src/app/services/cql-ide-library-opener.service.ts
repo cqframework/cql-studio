@@ -6,7 +6,7 @@ import { Library } from 'fhir/r4';
 import { LibraryService } from './library.service';
 import { IdeStateService } from './ide-state.service';
 import { ElmIncludeRef } from './elm-include.lib';
-import { WorkspaceLibraryOrigin } from '../components/cql-ide/shared/ide-types';
+import { WorkspaceLibraryOrigin, LibraryResource } from '../components/cql-ide/shared/ide-types';
 
 export interface PendingLibraryOpen {
   library: Library;
@@ -82,6 +82,13 @@ export class CqlIdeLibraryOpenerService {
         this.ideStateService.updateLibraryResource(existingId, { workspaceOrigin });
       }
       this.ideStateService.selectLibraryResource(existingId);
+
+      // Dirty tabs keep local edits; clean tabs refresh so Navigation version/CQL stay in sync.
+      const existing = this.ideStateService.libraryResources().find(lib => lib.id === existingId);
+      if (!existing?.isDirty && !existing?.contentLoading) {
+        await this.refreshOpenLibraryFromServer(existingId);
+      }
+
       await this.waitForLibraryReady(existingId);
       return existingId;
     }
@@ -104,11 +111,7 @@ export class CqlIdeLibraryOpenerService {
     if (fromUrl) {
       const libraryResource = {
         id: freshLibrary.id,
-        name: freshLibrary.name || freshLibrary.id,
-        title: freshLibrary.title || freshLibrary.name || freshLibrary.id,
-        version: freshLibrary.version || '1.0.0',
-        description: freshLibrary.description || `Library ${freshLibrary.name || freshLibrary.id}`,
-        url: freshLibrary.url || this.libraryService.urlFor(freshLibrary.id),
+        ...this.ideFieldsFromFhirLibrary(freshLibrary),
         cqlContent: '',
         originalContent: '',
         isActive: false,
@@ -126,8 +129,10 @@ export class CqlIdeLibraryOpenerService {
       const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(freshLibrary));
       if (fromUrl) {
         this.ideStateService.updateLibraryResource(freshLibrary.id!, {
+          ...this.ideFieldsFromFhirLibrary(freshLibrary),
           cqlContent,
           originalContent: cqlContent,
+          library: freshLibrary,
           contentLoading: false,
           contentLoadError: undefined
         });
@@ -135,11 +140,7 @@ export class CqlIdeLibraryOpenerService {
       } else {
         const libraryResource = {
           id: freshLibrary.id!,
-          name: freshLibrary.name || freshLibrary.id!,
-          title: freshLibrary.title || freshLibrary.name || freshLibrary.id!,
-          version: freshLibrary.version || '1.0.0',
-          description: freshLibrary.description || `Library ${freshLibrary.name || freshLibrary.id}`,
-          url: freshLibrary.url || this.libraryService.urlFor(freshLibrary.id!),
+          ...this.ideFieldsFromFhirLibrary(freshLibrary),
           cqlContent,
           originalContent: cqlContent,
           isActive: false,
@@ -166,6 +167,52 @@ export class CqlIdeLibraryOpenerService {
       }
       return null;
     }
+  }
+
+  /**
+   * Re-fetch Library + CQL from the server into an already-open IDE tab.
+   * Syncs FHIR metadata fields (including version) used by the FHIR tab.
+   */
+  async refreshOpenLibraryFromServer(libraryId: string): Promise<boolean> {
+    try {
+      const freshLibrary = await firstValueFrom(this.libraryService.get(libraryId));
+      if (!freshLibrary.id) {
+        return false;
+      }
+      const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(freshLibrary));
+      const cqlAttachment = freshLibrary.content?.find(c => c.contentType === 'text/cql');
+      const fromUrl = !!(cqlAttachment?.url && !cqlAttachment?.data);
+      this.ideStateService.updateLibraryResource(libraryId, {
+        ...this.ideFieldsFromFhirLibrary(freshLibrary),
+        cqlContent,
+        originalContent: cqlContent,
+        isDirty: false,
+        library: freshLibrary,
+        contentLoading: false,
+        contentLoadError: undefined,
+        isReadOnly: fromUrl,
+      });
+      this.ideStateService.triggerReload(libraryId);
+      return true;
+    } catch (error) {
+      console.error('Error refreshing library from server:', error);
+      return false;
+    }
+  }
+
+  /** IDE metadata mirrored from a FHIR Library resource (Navigation / FHIR tab). */
+  ideFieldsFromFhirLibrary(library: Library): Pick<
+    LibraryResource,
+    'name' | 'title' | 'version' | 'description' | 'url'
+  > {
+    const id = library.id ?? '';
+    return {
+      name: library.name || id,
+      title: library.title || library.name || id,
+      version: library.version || '1.0.0',
+      description: library.description || `Library ${library.name || id}`,
+      url: library.url || this.libraryService.urlFor(id),
+    };
   }
 
   async openIncludedLibrary(ref: ElmIncludeRef): Promise<string | null> {
@@ -217,11 +264,7 @@ export class CqlIdeLibraryOpenerService {
     if (fromUrl) {
       const libraryResource = {
         id,
-        name: library.name || id,
-        title: library.title || library.name || id,
-        version: library.version || '1.0.0',
-        description: library.description || `Library ${library.name || id}`,
-        url: library.url || this.libraryService.urlFor(id),
+        ...this.ideFieldsFromFhirLibrary(library),
         cqlContent: '',
         originalContent: '',
         isActive: false,
@@ -239,8 +282,10 @@ export class CqlIdeLibraryOpenerService {
       const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(library));
       if (fromUrl) {
         this.ideStateService.updateLibraryResource(id, {
+          ...this.ideFieldsFromFhirLibrary(library),
           cqlContent,
           originalContent: cqlContent,
+          library,
           contentLoading: false,
           contentLoadError: undefined
         });
@@ -248,11 +293,7 @@ export class CqlIdeLibraryOpenerService {
       } else {
         const libraryResource = {
           id,
-          name: library.name || id,
-          title: library.title || library.name || id,
-          version: library.version || '1.0.0',
-          description: library.description || `Library ${library.name || id}`,
-          url: library.url || this.libraryService.urlFor(id),
+          ...this.ideFieldsFromFhirLibrary(library),
           cqlContent,
           originalContent: cqlContent,
           isActive: false,

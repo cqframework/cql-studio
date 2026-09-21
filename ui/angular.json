@@ -65,7 +65,8 @@
               "prismjs/plugins/line-numbers/prism-line-numbers.min.js",
               "prismjs/plugins/keep-markup/prism-keep-markup.min.js",
               "prism-js-fold/prism-js-fold.js"
-            ]
+            ],
+            "webWorkerTsConfig": "tsconfig.worker.json"
           },
           "configurations": {
             "production": {
@@ -98,6 +99,12 @@
         },
         "serve": {
           "builder": "@angular/build:dev-server",
+          "options": {
+            "headers": {
+              "Cross-Origin-Opener-Policy": "same-origin",
+              "Cross-Origin-Embedder-Policy": "require-corp"
+            }
+          },
           "configurations": {
             "production": {
               "buildTarget": "cql-studio:build:production"

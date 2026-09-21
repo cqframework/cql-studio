@@ -1,0 +1,317 @@
+<div id="cql-inspector-tab" class="inspector-tab h-100 d-flex flex-column overflow-hidden">
+  <div class="d-flex align-items-center flex-shrink-0 gap-1 px-2 py-1 border-bottom"
+    role="toolbar" aria-label="Debug controls"
+    [class.bg-secondary-subtle]="debugService.status() === 'idle'"
+    [class.bg-info-subtle]="debugService.status() === 'prefetching' || debugService.status() === 'running'"
+    [class.bg-warning-subtle]="debugService.status() === 'paused'"
+    [class.bg-success-subtle]="debugService.status() === 'completed'"
+    [class.bg-danger-subtle]="debugService.status() === 'error'">
+    <button id="cql-inspector-resume-btn" type="button"
+      class="btn btn-sm btn-link text-success text-decoration-none px-1 py-0"
+      (click)="resume()" [disabled]="!debugService.isPaused()"
+      title="Resume" aria-label="Resume">
+      <i class="bi bi-play-fill" aria-hidden="true"></i>
+    </button>
+    <button id="cql-inspector-step-into-btn" type="button"
+      class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+      (click)="stepInto()" [disabled]="!debugService.isPaused()"
+      title="Step Into — next sub-expression" aria-label="Step Into">
+      <i class="bi bi-arrow-down-right" aria-hidden="true"></i>
+    </button>
+    <button id="cql-inspector-step-over-btn" type="button"
+      class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+      (click)="stepOver()" [disabled]="!debugService.isPaused()"
+      title="Step Over — skip nested defines" aria-label="Step Over">
+      <i class="bi bi-arrow-right" aria-hidden="true"></i>
+    </button>
+    <button id="cql-inspector-step-out-btn" type="button"
+      class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+      (click)="stepOut()" [disabled]="!debugService.isPaused()"
+      title="Step Out — finish this define and stop in caller" aria-label="Step Out">
+      <i class="bi bi-arrow-up-left" aria-hidden="true"></i>
+    </button>
+    <button id="cql-inspector-stop-btn" type="button"
+      class="btn btn-sm btn-link text-danger text-decoration-none px-1 py-0"
+      (click)="stop()" [disabled]="!debugService.isDebugging()"
+      title="Stop" aria-label="Stop">
+      <i class="bi bi-stop-fill" aria-hidden="true"></i>
+    </button>
+    <div class="d-flex align-items-center gap-2 ms-auto small">
+      @if (debugService.status() === 'prefetching' || debugService.status() === 'running') {
+        <span class="spinner-border spinner-border-sm text-info" role="status"
+          aria-label="Debug engine working"></span>
+      }
+      <span id="cql-inspector-status" class="badge"
+        [class.bg-secondary]="debugService.status() === 'idle'"
+        [class.bg-info]="debugService.status() === 'prefetching' || debugService.status() === 'running'"
+        [class.bg-warning]="debugService.status() === 'paused'"
+        [class.bg-success]="debugService.status() === 'completed'"
+        [class.bg-danger]="debugService.status() === 'error'">
+        {{ debugService.status() }}
+      </span>
+      @if (debugService.progressDetail(); as progress) {
+        <span id="cql-inspector-progress" class="text-muted text-truncate" style="max-width: 18rem;"
+          [title]="progress">{{ progress }}</span>
+      }
+      @if (debugService.isPaused() && debugService.pausedFrame(); as frame) {
+        <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none"
+          (click)="navigateToLine(frame.line)"
+          [title]="'Go to line ' + (frame.line ?? '')">
+          About to evaluate
+          @if (frame.defineName) {
+            <span>{{ frame.defineName }}</span>
+          }
+          @if (frame.line) {
+            <span>(line {{ frame.line }})</span>
+          }
+        </button>
+      }
+    </div>
+  </div>
+
+  <div class="flex-grow-1 overflow-auto px-3 py-2">
+    @if (debugService.breakpointPlacementMessage(); as placementMessage) {
+      <div id="cql-inspector-breakpoint-message" class="alert alert-warning py-1 px-2 small mb-2"
+        role="status">
+        {{ placementMessage }}
+      </div>
+    }
+    @if (debugService.banner()) {
+      <div class="small text-muted mb-2">{{ debugService.banner() }}</div>
+    }
+    @if (debugService.warnings().length > 0) {
+      <div id="cql-inspector-warnings" class="alert alert-warning py-1 px-2 small mb-2" role="status">
+        <ul class="mb-0 ps-3">
+          @for (warning of debugService.warnings(); track warning) {
+            <li>{{ warning }}</li>
+          }
+        </ul>
+      </div>
+    }
+    @if (debugService.error()) {
+      <div id="cql-inspector-error" class="alert alert-danger py-1 px-2 small mb-2" role="alert">
+        {{ debugService.error() }}
+      </div>
+    }
+
+    @if (debugService.lastValue(); as last) {
+      <h6 class="text-uppercase small text-muted">Last result</h6>
+      <p id="cql-inspector-last-value" class="small mb-3">
+        @if (last.defineName) {
+          <span class="text-muted">{{ last.defineName }}</span>
+          <span class="text-muted"> · </span>
+        }
+        @if (last.line) {
+          <button type="button" class="btn btn-link btn-sm p-0 align-baseline"
+            (click)="navigateToLine(last.line)">line {{ last.line }}</button>
+          <span class="text-muted"> · </span>
+        }
+        <code>{{ last.type }}</code>
+        @if (last.fhir) {
+          <span class="d-inline-flex gap-1 align-items-center ms-1">
+            <button type="button"
+              class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+              id="cql-inspector-last-value-log"
+              (click)="logFhirValue(last.defineName || 'Last result', last.value)"
+              title="Log to Console" aria-label="Log to Console">
+              <i class="bi bi-terminal" aria-hidden="true"></i>
+            </button>
+            <button type="button"
+              class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+              id="cql-inspector-last-value-open"
+              (click)="openFhirValue(last.value)"
+              title="Open in new tab" aria-label="Open in new tab">
+              <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+            </button>
+          </span>
+        } @else {
+          <span class="text-break ms-1">{{ last.value }}</span>
+        }
+      </p>
+    }
+
+    <h6 class="text-uppercase small text-muted">Call Stack</h6>
+    @if (!debugService.isPaused()) {
+      <p class="small text-muted">Available while paused.</p>
+    } @else if (debugService.callStack().length === 0) {
+      <p class="small text-muted">No call stack for this pause.</p>
+    } @else {
+      <ol id="cql-inspector-call-stack" class="list-group list-group-numbered list-group-flush mb-3">
+        @for (frame of debugService.callStack(); track $index) {
+          <li class="list-group-item px-0 py-1 small d-flex justify-content-between gap-2">
+            <button type="button" class="btn btn-link btn-sm p-0 text-start text-decoration-none"
+              (click)="navigateToLine(frame.line)"
+              [disabled]="frame.line == null">
+              {{ frame.defineName || '(anonymous)' }}
+              @if (frame.line) {
+                <span class="text-muted"> · line {{ frame.line }}</span>
+              }
+            </button>
+          </li>
+        }
+      </ol>
+    }
+
+    <h6 class="text-uppercase small text-muted">Bindings in scope</h6>
+    @if (debugService.variables().length === 0) {
+      <p class="small text-muted">No bindings available yet for this pause.</p>
+    } @else {
+      <table id="cql-inspector-variables" class="table table-sm table-striped">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Type</th>
+            <th scope="col">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (variable of debugService.variables(); track variable.name; let i = $index) {
+            <tr>
+              <td>{{ variable.name }}</td>
+              <td><code>{{ variable.type }}</code></td>
+              <td class="text-break">
+                @if (variable.fhir) {
+                  <div class="d-inline-flex gap-1 align-items-center">
+                    <button type="button"
+                      class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+                      [id]="'cql-inspector-variable-log-' + i"
+                      (click)="logFhirValue(variable.name, variable.value)"
+                      title="Log to Console" aria-label="Log to Console">
+                      <i class="bi bi-terminal" aria-hidden="true"></i>
+                    </button>
+                    <button type="button"
+                      class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+                      [id]="'cql-inspector-variable-open-' + i"
+                      (click)="openFhirValue(variable.value)"
+                      title="Open in new tab" aria-label="Open in new tab">
+                      <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                } @else {
+                  {{ variable.value }}
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    <h6 class="text-uppercase small text-muted mt-3">Breakpoints</h6>
+    <p class="small text-muted mb-2">
+      Click editor gutter to toggle. Alt-click opens the condition field.
+      Breakpoints only bind to ELM expression starts.
+    </p>
+    @if (debugService.breakpoints().length === 0) {
+      <p class="small text-muted">No breakpoints set.</p>
+    } @else {
+      <table id="cql-inspector-breakpoints" class="table table-sm">
+        <thead>
+          <tr>
+            <th scope="col">On</th>
+            <th scope="col">Line</th>
+            <th scope="col">Condition</th>
+            <th scope="col"></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (bp of debugService.breakpoints(); track bp.id) {
+            <tr [class.table-warning]="debugService.focusBreakpointId() === bp.id">
+              <td>
+                <input class="form-check-input" type="checkbox"
+                  [id]="'cql-inspector-bp-enabled-' + bp.id"
+                  [ngModel]="bp.enabled"
+                  (ngModelChange)="onEnabledChange(bp.id, $event)" />
+              </td>
+              <td>
+                <button type="button" class="btn btn-link btn-sm p-0"
+                  (click)="navigateToLine(bp.line)">
+                  {{ bp.line }}
+                </button>
+              </td>
+              <td>
+                <input type="text" class="form-control form-control-sm"
+                  [id]="'cql-inspector-bp-condition-' + bp.id"
+                  placeholder="name == value"
+                  [ngModel]="bp.condition ?? ''"
+                  (ngModelChange)="onConditionChange(bp.id, $event)" />
+              </td>
+              <td>
+                <button type="button" class="btn btn-sm btn-outline-danger"
+                  [id]="'cql-inspector-bp-remove-' + bp.id"
+                  (click)="removeBreakpoint(bp.id)" title="Remove breakpoint">
+                  <i class="bi bi-x"></i>
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    <h6 class="text-uppercase small text-muted mt-3">Prefetch Snapshot</h6>
+    @if (debugService.prefetchResourceCounts().length === 0) {
+      <p class="small text-muted">No prefetch snapshot yet.</p>
+    } @else {
+      <table id="cql-inspector-prefetch" class="table table-sm table-striped">
+        <thead>
+          <tr>
+            <th scope="col">Resource Type</th>
+            <th scope="col">Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of debugService.prefetchResourceCounts(); track row.type) {
+            <tr>
+              <td><code>{{ row.type }}</code></td>
+              <td>{{ row.count }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+
+    @if (debugService.results().length > 0) {
+      <h6 class="text-uppercase small text-muted mt-3">Last Results</h6>
+      <table id="cql-inspector-results" class="table table-sm table-striped">
+        <thead>
+          <tr>
+            <th scope="col">Expression</th>
+            <th scope="col">Type</th>
+            <th scope="col">Value</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (result of debugService.results(); track result.name; let i = $index) {
+            <tr>
+              <td>{{ result.name }}</td>
+              <td><code>{{ result.type }}</code></td>
+              <td class="text-break">
+                @if (result.fhir) {
+                  <div class="d-inline-flex gap-1 align-items-center">
+                    <button type="button"
+                      class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+                      [id]="'cql-inspector-result-log-' + i"
+                      (click)="logFhirValue(result.name, result.value)"
+                      title="Log to Console" aria-label="Log to Console">
+                      <i class="bi bi-terminal" aria-hidden="true"></i>
+                    </button>
+                    <button type="button"
+                      class="btn btn-sm btn-link text-body-secondary text-decoration-none px-1 py-0"
+                      [id]="'cql-inspector-result-open-' + i"
+                      (click)="openFhirValue(result.value)"
+                      title="Open in new tab" aria-label="Open in new tab">
+                      <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                } @else {
+                  {{ result.value }}
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  </div>
+</div>

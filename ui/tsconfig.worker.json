@@ -1,0 +1,29 @@
+/* Author: Preston Lee */
+
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "outDir": "./out-tsc/worker",
+    "lib": ["ES2022", "WebWorker"],
+    "types": []
+  },
+  "include": [
+    "src/app/workers/**/*.ts",
+    "src/app/services/cql-debug/cql-debug-breakpoint-handler.ts",
+    "src/app/services/cql-debug/cql-debug-protocol.ts",
+    "src/app/services/cql-debug/cql-debug-session-runner.ts",
+    "src/app/services/cql-debug/cql-debug-engine-api.ts",
+    "src/app/services/cql-debug/cql-debug-engine-patches.ts",
+    "src/app/services/cql-debug/cql-debug-bundle-data-provider.ts",
+    "src/app/services/cql-debug/cql-debug-fhir-bridge.ts",
+    "src/app/services/cql-debug/cql-debug-terminology-provider.ts",
+    "src/app/services/cql-debug/cql-debug-ucum.lib.ts",
+    "src/app/services/cql-debug/cql-debug-value-dto.ts"
+  ],
+  "exclude": [
+    "src/**/*.spec.ts",
+    "src/app/services/cql-debug/cql-debug.service.ts",
+    "src/app/services/cql-debug/cql-debug-prefetch.service.ts",
+    "src/app/services/cql-debug/cql-breakpoint-gutter.lib.ts"
+  ]
+}

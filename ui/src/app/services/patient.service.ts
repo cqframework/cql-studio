@@ -53,12 +53,16 @@ export class PatientService extends BaseService {
 		return this.http.get<Patient>(this.urlFor(id), { headers: this.headersForDataEndpoint() });
 	}
 
-	getEverything(id: string, options?: { types?: string[] }): Observable<Bundle> {
-		let url = `${this.urlFor(id)}/$everything`;
+	getEverything(id: string, options?: { types?: string[]; count?: number }): Observable<Bundle> {
+		const params = new URLSearchParams();
 		const types = (options?.types ?? []).filter(t => t.trim() && t !== 'Patient');
 		if (types.length > 0) {
-			url += `?_type=${encodeURIComponent(types.join(','))}`;
+			params.set('_type', types.join(','));
 		}
+		// HAPI defaults to a small page; debug prefetch needs the full compartment.
+		params.set('_count', String(options?.count ?? 500));
+		const qs = params.toString();
+		const url = `${this.urlFor(id)}/$everything${qs ? `?${qs}` : ''}`;
 		return this.http.get<Bundle>(url, { headers: this.headersForDataEndpoint() });
 	}
 

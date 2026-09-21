@@ -24,10 +24,13 @@ export class LibraryService extends BaseService {
 
 	protected settingsService = inject(SettingsService);
 
-	private evaluationHeaders(): HttpHeaders {
+	private evaluationHeaders(extra?: Record<string, string>): HttpHeaders {
 		const ctx = this.settingsService.getEndpointHttpContext('evaluation', {
 			'Content-Type': 'application/fhir+json',
-			Accept: 'application/fhir+json'
+			Accept: 'application/fhir+json',
+			// Cache-Control is CORS-allowed by HAPI; do not send Pragma (not in Allow-Headers).
+			'Cache-Control': 'no-cache, no-store',
+			...(extra ?? {})
 		});
 		return buildHttpHeaders(
 			{ ...this.settingsService.getActiveEnvironment().evaluationServer, address: ctx.address },
@@ -38,7 +41,8 @@ export class LibraryService extends BaseService {
 	private contentHeaders(): HttpHeaders {
 		const ctx = this.settingsService.getEndpointHttpContext('content', {
 			'Content-Type': 'application/fhir+json',
-			Accept: 'application/fhir+json'
+			Accept: 'application/fhir+json',
+			'Cache-Control': 'no-cache, no-store'
 		});
 		return buildHttpHeaders(
 			{ ...this.settingsService.getActiveEnvironment().contentEndpoint, address: ctx.address },
@@ -113,8 +117,19 @@ export class LibraryService extends BaseService {
 		return this.evaluationBaseUrl() + '/Library/' + id;
 	}
 
+	/**
+	 * Bypass HTTP cache for instance reads. HAPI ETags restart after DB reset/reimport
+	 * (often still W/"1"), so a conditional GET can 304 and return a stale Library body
+	 * while search bundles (different URL) show the new version — e.g. Navigation v1.0.1
+	 * vs editor CQL still on 1.0.0 after a hard refresh of the SPA alone.
+	 */
+	private uncachedUrl(url: string): string {
+		const sep = url.includes('?') ? '&' : '?';
+		return `${url}${sep}_=${Date.now()}`;
+	}
+
 	get(id: string) {
-		return this.http.get<Library>(this.urlFor(id), { headers: this.evaluationHeaders() });
+		return this.http.get<Library>(this.uncachedUrl(this.urlFor(id)), { headers: this.evaluationHeaders() });
 	}
 
 	findByNameAndVersion(name: string, version?: string, useContentEndpoint = false): Observable<Library | null> {

@@ -15,7 +15,8 @@ import { IdeContextService } from '../../services/ide-context.service';
 import { TranslationService } from '../../services/translation.service';
 import { LibraryTranslationContextBuilder } from '../../services/library-translation-context.lib';
 import { CqlExecutionService } from '../../services/cql-execution.service';
-import { SettingsService } from '../../services/settings.service';
+import { EnvironmentService } from '../../services/environment.service';
+import { CqlDebugService } from '../../services/cql-debug/cql-debug.service';
 import { OpenCodeLibraryWorkspaceService } from '../../services/opencode-library-workspace.service';
 import { OpenCodeService } from '../../services/opencode.service';
 import { OpenCodeEditorBridgeService } from '../../services/opencode-editor-bridge.service';
@@ -79,7 +80,8 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   private translationService = inject(TranslationService);
   private libraryTranslationContextBuilder = inject(LibraryTranslationContextBuilder);
   private cqlExecutionService = inject(CqlExecutionService);
-  public settingsService = inject(SettingsService);
+  private readonly environmentService = inject(EnvironmentService);
+  private readonly cqlDebugService = inject(CqlDebugService);
   private readonly openCodeLibraryWorkspace = inject(OpenCodeLibraryWorkspaceService);
   private openCodeService = inject(OpenCodeService);
   private openCodeEditorBridge = inject(OpenCodeEditorBridgeService);
@@ -128,6 +130,13 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
         }
         void this.openPendingLibrary(request);
       });
+    });
+
+    effect(() => {
+      // Abort debug when the active environment profile changes.
+      this.environmentService.activeEnvironmentId();
+      this.environmentService.activeEnvironmentSource();
+      untracked(() => this.cqlDebugService.abortOnEnvironmentOrLibraryChange());
     });
   }
 
@@ -283,7 +292,17 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     if (aiTabAdded) {
       this.ideStateService.addTabToPanel('right', aiTab);
     }
-    
+
+    this.ideStateService.addTabToPanel('right', {
+      id: 'inspector-tab',
+      title: 'Inspector',
+      icon: 'bi-bug',
+      type: 'inspector',
+      isActive: false,
+      isClosable: true,
+      component: null
+    });
+
     this.ideStateService.addTabToPanel('bottom', outputTab);
     this.ideStateService.addTabToPanel('bottom', problemsTab);
     this.ideStateService.addTabToPanel('bottom', referencesTab);
@@ -366,6 +385,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
   // Library management
   onLibraryIdChange(libraryId: string): void {
+    this.cqlDebugService.abortOnEnvironmentOrLibraryChange();
     this.ideStateService.selectLibraryResource(libraryId);
     queueMicrotask(() => {
       const editor = this.activeCqlEditor();
@@ -772,6 +792,16 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   // Editor toolbar methods
 
   async onExecuteLibrary(): Promise<void> {
+    if (this.cqlDebugService.isDebugging()) {
+      this.ideStateService.addTextOutput(
+        'Execute Skipped',
+        'Stop the debug session before executing.',
+        'pending'
+      );
+      this.ideStateService.activateOutputTab();
+      return;
+    }
+
     const activeLibrary = this.ideStateService.getActiveLibraryResource();
     if (!activeLibrary) {
       return;
@@ -857,6 +887,32 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     }
   }
 
+  async onDebugLibrary(): Promise<void> {
+    if (this.ideStateService.isExecuting()) {
+      this.ideStateService.addTextOutput(
+        'Debug Skipped',
+        'Wait for Execute to finish before debugging.',
+        'pending'
+      );
+      this.ideStateService.activateOutputTab();
+      return;
+    }
+
+    this.cqlDebugService.ensureInspectorVisible();
+
+    const expressions = this.activeCqlEditor()?.getEvaluateExpressions();
+    if (expressions && expressions.length === 0) {
+      this.ideStateService.addTextOutput(
+        'Debug Skipped',
+        'Select at least one expression, or switch execution scope to All.',
+        'pending'
+      );
+      this.ideStateService.activateOutputTab();
+      return;
+    }
+    await this.cqlDebugService.startDebug(expressions);
+  }
+
   async onReloadLibrary(): Promise<void> {
     const activeLibraryId = this.ideStateService.activeLibraryId();
     if (!activeLibraryId) {
@@ -886,7 +942,9 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
 
       try {
         const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(library));
+        // Keep FHIR-tab metadata (version/name/…) in sync with the server resource.
         this.ideStateService.updateLibraryResource(activeLibraryId, {
+          ...this.libraryOpenerService.ideFieldsFromFhirLibrary(library),
           cqlContent,
           originalContent: cqlContent,
           isDirty: false,

@@ -26,6 +26,7 @@ import { AiTabComponent } from '../tabs/ai-tab/ai-tab.component';
 import { ClipboardTabComponent } from '../tabs/clipboard-tab/clipboard-tab.component';
 import { ReferencesTabComponent } from '../tabs/references-tab/references-tab.component';
 import { ValuesetPeekTabComponent } from '../tabs/valueset-peek-tab/valueset-peek-tab.component';
+import { InspectorTabComponent } from '../tabs/inspector-tab/inspector-tab.component';
 import { OpenCodeLibraryChange } from '../../../models/opencode.model';
 
 @Component({
@@ -42,7 +43,8 @@ import { OpenCodeLibraryChange } from '../../../models/opencode.model';
     AiTabComponent,
     ClipboardTabComponent,
     ReferencesTabComponent,
-    ValuesetPeekTabComponent
+    ValuesetPeekTabComponent,
+    InspectorTabComponent
   ],
   templateUrl: './ide-panel.component.html',
 

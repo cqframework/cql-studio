@@ -104,4 +104,48 @@ export class ElmIncludeParser {
   extractFhirIncludes(elmXml: string): ElmIncludeRef[] {
     return this.extractIncludes(elmXml).filter(ref => this.isFhirResolvable(ref));
   }
+
+  /**
+   * Parse `include` directives from CQL text. Used when FHIR Library resources have no
+   * stored ELM (common for imported packages) so transitive deps like BMI under
+   * OpenCVDRisk can still be discovered.
+   */
+  extractIncludesFromCql(cql: string): ElmIncludeRef[] {
+    if (!cql?.trim()) {
+      return [];
+    }
+
+    // Strip comments so commented-out includes are ignored.
+    const stripped = cql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+    const refs: ElmIncludeRef[] = [];
+    const seen = new Set<string>();
+    const re =
+      /\binclude\s+(?:"([^"]+)"|([A-Za-z_][\w.]*))(?:\s+version\s+'([^']*)')?(?:\s+called\s+[A-Za-z_][\w.]*)?/gi;
+
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(stripped))) {
+      const path = match[1] ?? match[2];
+      if (!path) {
+        continue;
+      }
+      const version = match[3] || null;
+      const key = this.cacheKey(path, null, version);
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      refs.push({
+        path,
+        version,
+        localIdentifier: null,
+        system: null,
+      });
+    }
+
+    return refs;
+  }
+
+  extractFhirIncludesFromCql(cql: string): ElmIncludeRef[] {
+    return this.extractIncludesFromCql(cql).filter(ref => this.isFhirResolvable(ref));
+  }
 }

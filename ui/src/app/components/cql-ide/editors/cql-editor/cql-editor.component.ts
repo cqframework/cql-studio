@@ -30,6 +30,16 @@ import {
 } from '../../../../services/elm-locator.lib';
 import { CqlIdeLibraryOpenerService } from '../../../../services/cql-ide-library-opener.service';
 import { SettingsService } from '../../../../services/settings.service';
+import { CqlDebugService } from '../../../../services/cql-debug/cql-debug.service';
+import {
+  breakpointToggleEffect,
+  createCqlBreakpointGutterExtensions,
+  setDebugPausedLine,
+} from '../../../../services/cql-debug/cql-breakpoint-gutter.lib';
+import {
+  collectDeclarationLines,
+  collectExecutableBreakpointLines,
+} from '../../../../services/cql-debug/cql-debug-breakpoint-lines.lib';
 import { OpenCodeEditorBridgeService } from '../../../../services/opencode-editor-bridge.service';
 import { OpenCodeService } from '../../../../services/opencode.service';
 import { OpenCodeEditorContext } from '../../../../models/opencode.model';
@@ -173,6 +183,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   findReferencesResultChange = output<IdeFindReferencesResult | null>();
   valuesetPeekResultChange = output<IdeValuesetPeekResult | null>();
   executeLibrary = output<void>();
+  debugLibrary = output<void>();
   reloadLibrary = output<void>();
   formatCql = output<void>();
   validateCql = output<void>();
@@ -181,6 +192,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   private editor?: EditorView;
   private grammarManager: CqlGrammarManager;
   private themeCompartment = new Compartment();
+  private breakpointGutterCompartment = new Compartment();
   private _value: string = '';
   private isInitializing: boolean = false;
   private initializationRetries: number = 0;
@@ -195,24 +207,40 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
   private pendingPrediction: { from: number; text: string; revision: number } | null = null;
 
   // Toolbar properties
-  isExecuting: boolean = false;
   protected readonly executionScope = signal<'all' | 'custom'>('all');
   protected readonly selectedExpressionNames = signal<ReadonlySet<string>>(new Set());
-  
+
+  protected readonly ideStateService = inject(IdeStateService);
+  private settingsService = inject(SettingsService);
+  protected readonly debugService = inject(CqlDebugService);
+  protected readonly isDebugging = computed(() => this.debugService.isDebugging());
+  protected readonly canDebug = computed(() => {
+    if (!this.debugService.canStartDebug()) {
+      return false;
+    }
+    if (this.executionScope() === 'custom' && this.selectedExpressionNames().size === 0) {
+      return false;
+    }
+    return true;
+  });
+
   // Signal for canExecute state
   private _canExecuteSignal = signal(false);
-  
+
   // Computed signal for canExecute
-  canExecute = computed(() => this._canExecuteSignal());
-  
+  canExecute = computed(
+    () =>
+      this._canExecuteSignal() &&
+      !this.debugService.isDebugging() &&
+      !this.ideStateService.isExecuting()
+  );
+
   // Signal for form validity state
   private _isFormValidSignal = signal(false);
-  
+
   // Computed signal for form validity
   isFormValid = computed(() => this._isFormValidSignal());
 
-  private ideStateService = inject(IdeStateService);
-  private settingsService = inject(SettingsService);
   private readonly openCodeEditorBridge = inject(OpenCodeEditorBridgeService);
   private openCodeService = inject(OpenCodeService);
   private cqlFormatterService = inject(CqlFormatterService);
@@ -248,6 +276,14 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
       return 'Select at least one expression';
     }
     return this.canExecute() ? 'Execute Library' : 'Save library before executing';
+  });
+  protected readonly debugButtonTitle = computed(() => {
+    if (this.executionScope() === 'custom' && this.selectedExpressionNames().size === 0) {
+      return 'Select at least one expression';
+    }
+    return this.canDebug()
+      ? 'Debug with in-browser CQL engine'
+      : 'Debug unavailable';
   });
 
   private definitionIndex: CqlDefinitionIndex | null = null;
@@ -293,6 +329,35 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
             createCqlEditorThemeExtensions(theme, this.height())
           )
         });
+      }
+    });
+
+    effect(() => {
+      const line = this.debugService.pausedLine();
+      if (this.editor) {
+        setDebugPausedLine(this.editor, line);
+      }
+    });
+
+    effect(() => {
+      const breakpoints = this.debugService.breakpoints();
+      if (!this.editor) {
+        return;
+      }
+      const doc = this.editor.state.doc;
+      const effects: StateEffect<unknown>[] = [];
+      // Clear existing markers then re-add from service state
+      for (let line = 1; line <= doc.lines; line++) {
+        const pos = doc.line(line).from;
+        effects.push(breakpointToggleEffect.of({ pos, on: false }));
+      }
+      for (const bp of breakpoints) {
+        if (bp.line >= 1 && bp.line <= doc.lines) {
+          effects.push(breakpointToggleEffect.of({ pos: doc.line(bp.line).from, on: true }));
+        }
+      }
+      if (effects.length > 0) {
+        this.editor.dispatch({ effects });
       }
     });
 
@@ -392,6 +457,15 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
           this.updateCanExecute();
         });
       }
+    });
+  }
+
+  private createBreakpointGutterExtensions() {
+    return createCqlBreakpointGutterExtensions({
+      onToggle: (line, enabled) => this.debugService.setBreakpointAtLine(line, enabled),
+      onAltClick: line => {
+        this.debugService.focusBreakpointCondition(line);
+      },
     });
   }
 
@@ -549,6 +623,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
           this.themeCompartment.of(
             createCqlEditorThemeExtensions(this.settingsService.theme_effective(), this.height())
           ),
+          this.breakpointGutterCompartment.of(this.createBreakpointGutterExtensions()),
           EditorView.updateListener.of((update) => {
             if (!this.canEmitOutputs()) {
               return;
@@ -985,6 +1060,10 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
     this.definitionIndexDirty = this.definitionIndex == null;
     if (this.definitionIndex) {
       this.expressions.set(expressionDefinitions(this.definitionIndex));
+      // Only refresh executable breakpoint lines on successful ELM; keep prior map on failure.
+      const executable = collectExecutableBreakpointLines(full.raw.elmXml);
+      const declarations = collectDeclarationLines(this.definitionIndex, full.raw.elmXml);
+      this.debugService.setExecutableBreakpointLines(executable, declarations);
     }
     this.hoverTypeInfos = extractElmHoverTypeInfos(full.raw.elmXml ?? '');
     if (this.definitionIndex) {
@@ -1910,6 +1989,10 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
 
   onExecuteLibrary(): void {
     this.executeLibrary.emit();
+  }
+
+  onDebugLibrary(): void {
+    this.debugLibrary.emit();
   }
 
   getEvaluateExpressions(): string[] | undefined {

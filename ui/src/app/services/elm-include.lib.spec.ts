@@ -107,4 +107,25 @@ describe('ElmIncludeParser', () => {
   it('returns empty array for invalid XML', () => {
     expect(parser.extractIncludes('not xml')).toEqual([]);
   });
+
+  it('extractIncludesFromCql parses versioned includes and skips FHIRHelpers', () => {
+    const cql = `library OpenCVDRisk version '0.6.1'
+include FHIRHelpers version '4.0.1'
+include BMI version '1.0.1' called BMI
+// include Fake version '9.9.9'
+define X: 1`;
+    expect(parser.extractFhirIncludesFromCql(cql)).toEqual([
+      {
+        path: 'BMI',
+        version: '1.0.1',
+        localIdentifier: null,
+        system: null,
+      },
+    ]);
+  });
+
+  it('extractIncludesFromCql supports quoted library names', () => {
+    const cql = `include "Hello Common" version '0.0.0' called Common`;
+    expect(parser.extractIncludesFromCql(cql)[0]?.path).toBe('Hello Common');
+  });
 });
