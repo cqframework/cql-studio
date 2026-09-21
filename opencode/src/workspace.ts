@@ -206,6 +206,7 @@ export class OpenCodeWorkspaceManager {
     const metadataDirectory = path.join(directory, '.cql-studio');
     const commandsDirectory = path.join(directory, '.opencode', 'commands');
     const validateVsacSkillDirectory = path.join(directory, '.opencode', 'skills', 'validate-vsac');
+    const validateCartosSkillDirectory = path.join(directory, '.opencode', 'skills', 'validate-cartos');
     const attachmentsDirectory = path.join(directory, 'attachments');
     await mkdir(librariesDirectory, { recursive: true, mode: 0o700 });
     // Populate first, then remove directory write permission once all dependencies exist.
@@ -213,6 +214,7 @@ export class OpenCodeWorkspaceManager {
     await mkdir(metadataDirectory, { recursive: true, mode: 0o700 });
     await mkdir(commandsDirectory, { recursive: true, mode: 0o700 });
     await mkdir(validateVsacSkillDirectory, { recursive: true, mode: 0o700 });
+    await mkdir(validateCartosSkillDirectory, { recursive: true, mode: 0o700 });
     await mkdir(attachmentsDirectory, { recursive: true, mode: 0o700 });
 
     const usedNames = new Set<string>();
@@ -284,7 +286,7 @@ export class OpenCodeWorkspaceManager {
       'Preserve the CQL library name and version unless the user explicitly asks to change them.',
       `When repairing CQL, treat the current CQL Studio Problems context as the initial diagnostic set and then run ${MCPToolNames.CQL_VALIDATE} for each edited file.`,
       'Before adding or changing a FHIR conversion helper call, read `dependencies/FHIRHelpers.cql` and use only a function declared there. Preserve the active library\'s existing FHIRHelpers alias, or add the 4.0.1 include when needed.',
-      'Never invent ValueSet, CodeSystem, or VSAC canonical URLs.',
+      'Never invent ValueSet, CodeSystem, VSAC, or Cartos/ONC canonical URLs.',
       'Do not access paths outside this workspace and do not run destructive commands.',
       'CQL Studio will validate and review every file diff before saving it to FHIR.',
       '',
@@ -313,8 +315,8 @@ export class OpenCodeWorkspaceManager {
         template: `Use ${MCPToolNames.CQL_LIBRARY_SEARCH} and ${MCPToolNames.CQL_LIBRARY_READ} to research this Library request without modifying FHIR: $ARGUMENTS`,
       },
       valueset: {
-        description: 'Research an authoritative VSAC ValueSet',
-        template: `Use ${MCPToolNames.VSAC_SEARCH} for ValueSet discovery, ${MCPToolNames.VALIDATE_VSAC} only for an exact URL or OID supplied by the user or existing CQL, and ${MCPToolNames.VALUESET_EXPAND} when concepts must be inspected. Never guess an identifier or canonical URL: $ARGUMENTS`,
+        description: 'Research an authoritative VSAC or Cartos ValueSet',
+        template: `Use ${MCPToolNames.VSAC_SEARCH} for broad NLM VSAC discovery when credentials are available, ${MCPToolNames.CARTOS_SEARCH} for ONC Certification/SVAP/US Core terminology or when VSAC credentials are absent, ${MCPToolNames.VALIDATE_VSAC} / ${MCPToolNames.VALIDATE_CARTOS} only for an exact URL or OID supplied by the user or existing CQL, and ${MCPToolNames.VALUESET_EXPAND} when concepts must be inspected. Never guess an identifier or canonical URL: $ARGUMENTS`,
       },
       context: {
         description: 'Show active CQL Studio endpoints and capabilities',
@@ -330,11 +332,15 @@ export class OpenCodeWorkspaceManager {
       },
       terminology: {
         description: 'Research ValueSets, CodeSystems, and expansions',
-        template: `Research this terminology request using the configured read-only tools. Use ${MCPToolNames.VSAC_SEARCH} for VSAC discovery, ${MCPToolNames.VALIDATE_VSAC} only for an exact user-supplied or existing reference, ${MCPToolNames.VALUESET_EXPAND} for concepts, and ${MCPToolNames.FHIR_READ} or ${MCPToolNames.FHIR_SEARCH} for other configured terminology resources. Never guess a canonical URL or identifier: $ARGUMENTS`,
+        template: `Research this terminology request using the configured read-only tools. Use ${MCPToolNames.VSAC_SEARCH} for VSAC discovery, ${MCPToolNames.CARTOS_SEARCH} for ONC Cartos/Certification/SVAP sets, ${MCPToolNames.VALIDATE_VSAC} / ${MCPToolNames.VALIDATE_CARTOS} only for an exact user-supplied or existing reference, ${MCPToolNames.VALUESET_EXPAND} for concepts, and ${MCPToolNames.FHIR_READ} or ${MCPToolNames.FHIR_SEARCH} for other configured terminology resources. Never guess a canonical URL or identifier: $ARGUMENTS`,
       },
       'validate-vsac': {
         description: 'Validate VSAC references in active CQL or an exact URL/OID',
         template: `Load the validate-vsac skill. Validate $ARGUMENTS when it contains an exact VSAC canonical URL or OID. When no argument is supplied, inspect @${activeFile} and validate every declared VSAC ValueSet reference. Report whether each reference is authoritative in VSAC and whether it is present on the configured terminology endpoint. Do not write any FHIR resource.`,
+      },
+      'validate-cartos': {
+        description: 'Validate Cartos/ONC references in active CQL or an exact URL/id',
+        template: `Load the validate-cartos skill. Validate $ARGUMENTS when it contains an exact Cartos or ONC-related ValueSet canonical URL or id. When no argument is supplied, inspect @${activeFile} and validate Certification/SVAP/US Core ValueSet references via Cartos when appropriate. Report whether each reference resolves in Cartos and whether it is present on the configured terminology endpoint. Do not write any FHIR resource.`,
       },
     };
     await Promise.all(Object.entries(commands).map(([name, command]) =>
@@ -367,6 +373,31 @@ export class OpenCodeWorkspaceManager {
     await writeFile(
       path.join(validateVsacSkillDirectory, 'SKILL.md'),
       validateVsacSkill,
+      { encoding: 'utf8', mode: 0o400 }
+    );
+
+    const validateCartosSkill = [
+      '---',
+      'name: validate-cartos',
+      'description: Validate exact Cartos/ONC ValueSet URLs or ids, and audit Certification/SVAP-related ValueSet declarations without guessing identifiers or modifying FHIR.',
+      'compatibility: opencode',
+      '---',
+      '',
+      '# Validate Cartos terminology',
+      '',
+      `1. Read \`${activeFile}\` when no exact reference was supplied.`,
+      `2. For an exact canonical URL or id supplied by the user or declared in CQL, call \`${MCPToolNames.VALIDATE_CARTOS}\`.`,
+      `3. If only a clinical name or topic is known, use \`${MCPToolNames.CARTOS_SEARCH}\` for ONC Certification/SVAP discovery instead of guessing an identifier. Prefer \`${MCPToolNames.VSAC_SEARCH}\` for broad NLM catalog discovery when VSAC credentials are available.`,
+      `4. Use \`${MCPToolNames.FHIR_SEARCH}\` with the terminology role and an exact canonical URL to determine whether a verified ValueSet is already present on the configured terminology server.`,
+      `5. Use \`${MCPToolNames.VALUESET_EXPAND}\` only when the user asks to inspect concepts or confirm that the configured terminology server can expand an already-present ValueSet.`,
+      '6. Report verified URL, id, version, Cartos status, terminology-server presence, and any validation error.',
+      '',
+      'This skill is read-only. Never call a write endpoint, never invent or normalize a canonical URL, and never treat a general web search result as authoritative Cartos evidence.',
+      '',
+    ].join('\n');
+    await writeFile(
+      path.join(validateCartosSkillDirectory, 'SKILL.md'),
+      validateCartosSkill,
       { encoding: 'utf8', mode: 0o400 }
     );
 
@@ -520,7 +551,7 @@ export class OpenCodeWorkspaceManager {
     workspace.baselineByFile.set(operation.file, operation.content);
     if (workspace.activeFile === previous) workspace.activeFile = operation.file;
     await this.saveManifest(workspace);
-    for (const file of ['AGENTS.md', '.opencode/skills/validate-vsac/SKILL.md', ...(await readdir(path.join(workspace.directory, '.opencode/commands'))).map(name => `.opencode/commands/${name}`)]) {
+    for (const file of ['AGENTS.md', '.opencode/skills/validate-vsac/SKILL.md', '.opencode/skills/validate-cartos/SKILL.md', ...(await readdir(path.join(workspace.directory, '.opencode/commands'))).map(name => `.opencode/commands/${name}`)]) {
       if (!file) continue;
       const absolute = path.join(workspace.directory, file);
       const content = await readFile(absolute, 'utf8');

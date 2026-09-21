@@ -20,6 +20,7 @@ export const DeployConfigKeys = {
   VSAC_FHIR_BASE_URL: 'CQL_STUDIO_VSAC_FHIR_BASE_URL',
   VSAC_BASIC_AUTH_USERNAME: 'CQL_STUDIO_VSAC_BASIC_AUTH_USERNAME',
   VSAC_BASIC_AUTH_PASSWORD: 'CQL_STUDIO_VSAC_BASIC_AUTH_PASSWORD',
+  CARTOS_FHIR_BASE_URL: 'CQL_STUDIO_CARTOS_FHIR_BASE_URL',
 } as const;
 
 type DeployConfigKey = (typeof DeployConfigKeys)[keyof typeof DeployConfigKeys];
@@ -36,6 +37,7 @@ const DeployConfigDefaults: Partial<Record<DeployConfigKey, string>> = {
   [DeployConfigKeys.FHIR_PACKAGE_REGISTRY_BASE_URL]: 'https://packages.fhir.org',
   [DeployConfigKeys.VSAC_FHIR_BASE_URL]: 'https://cts.nlm.nih.gov/fhir',
   [DeployConfigKeys.VSAC_BASIC_AUTH_USERNAME]: 'apikey',
+  [DeployConfigKeys.CARTOS_FHIR_BASE_URL]: 'https://cartos.healthit.gov/TerminologyServer/R4',
 };
 
 function deployConfig(): Record<string, string | undefined> {

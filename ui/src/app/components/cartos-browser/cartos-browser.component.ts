@@ -1,22 +1,23 @@
 // Author: Preston Lee
 
-import {Component, ChangeDetectionStrategy, computed, inject, signal} from '@angular/core';
+import { Component, ChangeDetectionStrategy, computed, inject, signal } from '@angular/core';
 import { NgTemplateOutlet } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
-import { firstValueFrom, Observable } from 'rxjs';
+import { firstValueFrom } from 'rxjs';
 import {
-  VsacService,
+  CartosService,
   capabilityStatementSupportsValueSetSort,
-  valueSetSortFieldChoicesFromCapability
-} from '../../services/vsac.service';
+  valueSetSortFieldChoicesFromCapability,
+} from '../../services/cartos.service';
 import { SettingsService } from '../../services/settings.service';
 import { ToastService } from '../../services/toast.service';
 import { ClipboardService } from '../../services/clipboard.service';
 import { isResourceType } from '../../services/fhir-resource-type.lib';
+import { formatValueSetCqlDeclaration } from '@cql-studio/core';
 import { SyntaxHighlighterComponent } from '../shared/syntax-highlighter/syntax-highlighter.component';
 import { ValueSetDependencyTreeComponent } from '../shared/value-set-dependency/value-set-dependency-tree.component';
-import { Bundle, CapabilityStatement, Coding, Parameters, ValueSet, Resource } from 'fhir/r4';
+import { Bundle, CapabilityStatement, CodeSystem, Coding, Parameters, Resource, ValueSet } from 'fhir/r4';
 import {
   buildValueSetDependencyTree,
   collectImportableDependencyNodes,
@@ -28,28 +29,24 @@ import { RemoteValueSetImportService } from '../../services/remote-fhir-terminol
 import { computeExpansionCanNext } from '../../services/remote-fhir-terminology/remote-fhir-terminology.lib';
 
 @Component({
-  selector: 'app-vsac-browser',
+  selector: 'app-cartos-browser',
   imports: [NgTemplateOutlet, FormsModule, RouterLink, SyntaxHighlighterComponent, ValueSetDependencyTreeComponent],
-  templateUrl: './vsac-browser.component.html',
-
-  styleUrl: './vsac-browser.component.scss',
+  templateUrl: './cartos-browser.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class VsacBrowserComponent {
-  private vsac = inject(VsacService);
+export class CartosBrowserComponent {
+  private cartos = inject(CartosService);
   protected settingsService = inject(SettingsService);
   private remoteImport = inject(RemoteValueSetImportService);
   private toast = inject(ToastService);
   private clipboard = inject(ClipboardService);
 
-  /** Supersedes stale in-flight ValueSet fetches (Open row or Load). */
   private valueSetPullGen = 0;
 
-  protected readonly activeTab = signal<'status' | 'search' | 'valueset' | 'svs'>('search');
+  protected readonly activeTab = signal<'status' | 'search' | 'valueset' | 'codesystem'>('search');
   protected readonly loading = signal(false);
   protected readonly error = signal<string | null>(null);
   protected readonly capability = signal<CapabilityStatement | null>(null);
-  protected readonly vspTypes = signal<string[]>([]);
 
   protected readonly searchTitle = signal('');
   protected readonly searchName = signal('');
@@ -57,30 +54,15 @@ export class VsacBrowserComponent {
   protected readonly searchIdentifier = signal('');
   protected readonly searchVersion = signal('');
   protected readonly searchStatus = signal('active');
-  protected readonly searchPublisher = signal('');
-  protected readonly searchDescription = signal('');
-  protected readonly searchExpansion = signal('');
-  protected readonly searchUsage = signal('');
-  protected readonly searchKeyword = signal('');
-  protected readonly searchCode = signal('');
-  protected readonly searchCodesystem = signal('');
-  protected readonly searchMeasure = signal('');
-  protected readonly searchLibrary = signal('');
-  protected readonly searchDate = signal('');
-  protected readonly searchResourceId = signal('');
-  protected readonly searchLastUpdated = signal('');
   protected readonly searchCount = signal(50);
-  /** When server lists `_sort` for ValueSet: chosen search param, or raw `_sort` if no param list. */
   protected readonly searchSortField = signal('');
   protected readonly searchSortOrder = signal<'asc' | 'desc'>('asc');
   protected readonly searchResults = signal<ValueSet[]>([]);
-  /** Last FHIR searchset bundle (for total + pagination links). */
   protected readonly searchBundle = signal<Bundle | null>(null);
 
   protected readonly valueSetSearchSupportsSort = computed(() =>
     capabilityStatementSupportsValueSetSort(this.capability())
   );
-
   protected readonly valueSetSortFieldOptions = computed(() =>
     this.valueSetSearchSupportsSort() ? valueSetSortFieldChoicesFromCapability(this.capability()) : []
   );
@@ -98,13 +80,7 @@ export class VsacBrowserComponent {
     const previous = pick('previous', 'prev');
     const next = pick('next');
     const last = pick('last');
-    return {
-      first,
-      previous,
-      next,
-      last,
-      showNav: !!(first || previous || next || last)
-    };
+    return { first, previous, next, last, showNav: !!(first || previous || next || last) };
   });
 
   protected readonly expansionPageInfo = computed(() => {
@@ -123,6 +99,7 @@ export class VsacBrowserComponent {
           : `Codes ${offset + 1}–${offset + rows}${rows >= count ? ' (more may exist)' : ''}`;
     return { canPrev: offset > 0, canNext, summary };
   });
+
   protected readonly oidInput = signal('');
   protected readonly loadedValueSet = signal<ValueSet | null>(null);
   protected readonly expandFilter = signal('');
@@ -145,14 +122,11 @@ export class VsacBrowserComponent {
     return collectImportableDependencyNodes(root);
   });
 
-  protected readonly svsProgramsText = signal<string | null>(null);
-  protected readonly svsTagNamesText = signal<string | null>(null);
-  protected readonly svsOid = signal('');
-  protected readonly svsRelease = signal('');
-  protected readonly svsProfile = signal('');
-  protected readonly svsTagName = signal('');
-  protected readonly svsTagValue = signal('');
-  protected readonly svsXmlResult = signal<string | null>(null);
+  protected readonly csSearchName = signal('');
+  protected readonly csSearchUrl = signal('');
+  protected readonly csSearchCount = signal(50);
+  protected readonly codeSystemResults = signal<CodeSystem[]>([]);
+  protected readonly loadedCodeSystem = signal<CodeSystem | null>(null);
 
   protected readonly terminologyImportWarning = computed(() => this.remoteImport.terminologyEndpointIsReadOnly());
 
@@ -166,32 +140,12 @@ export class VsacBrowserComponent {
     }
   });
 
-  setTab(tab: 'status' | 'search' | 'valueset' | 'svs'): void {
+  setTab(tab: 'status' | 'search' | 'valueset' | 'codesystem'): void {
     this.activeTab.set(tab);
   }
 
   setSearchSortOrder(value: string): void {
     this.searchSortOrder.set(value === 'desc' ? 'desc' : 'asc');
-  }
-
-  formatVsacDate(value: string | undefined): string {
-    if (value == null || !String(value).trim()) return '—';
-    const t = String(value).trim();
-    return t.length >= 10 ? t.slice(0, 10) : t;
-  }
-
-  truncateVsDescription(desc: string | undefined, max = 96): string {
-    if (desc == null || !desc.trim()) return '—';
-    const s = desc.trim().replace(/\s+/g, ' ');
-    return s.length <= max ? s : `${s.slice(0, max)}…`;
-  }
-
-  private vsacCredentialsOrWarn(): boolean {
-    if (!this.settingsService.vsacHasApiCredentials()) {
-      this.toast.showWarning('Configure VSAC credentials in Settings.', 'VSAC');
-      return false;
-    }
-    return true;
   }
 
   private errMsg(e: unknown): string {
@@ -200,7 +154,9 @@ export class VsacBrowserComponent {
       if (typeof er === 'string') return er;
       if (er && typeof er === 'object' && 'issue' in er) {
         const issues = (er as { issue?: { diagnostics?: string }[] }).issue;
-        if (issues?.length) return issues.map((i) => i.diagnostics || '').filter(Boolean).join('; ') || JSON.stringify(er);
+        if (issues?.length) {
+          return issues.map((i) => i.diagnostics || '').filter(Boolean).join('; ') || JSON.stringify(er);
+        }
       }
     }
     return e instanceof Error ? e.message : String(e);
@@ -208,19 +164,16 @@ export class VsacBrowserComponent {
 
   async refreshStatus(): Promise<void> {
     if (this.loading()) return;
-    if (!this.vsacCredentialsOrWarn()) return;
     this.loading.set(true);
     this.error.set(null);
     try {
-      const cap = await firstValueFrom(this.vsac.getMetadata());
+      const cap = await firstValueFrom(this.cartos.getMetadata());
       this.capability.set(cap);
-      this.vspTypes.set(extractPackageRelatedTypes(cap));
     } catch (e) {
       this.capability.set(null);
-      this.vspTypes.set([]);
       const msg = this.errMsg(e);
       this.error.set(msg);
-      this.toast.showError(msg, 'VSAC metadata failed');
+      this.toast.showError(msg, 'Cartos metadata failed');
     } finally {
       this.loading.set(false);
     }
@@ -231,48 +184,34 @@ export class VsacBrowserComponent {
     const raw = this.searchSortField().trim();
     if (!raw) return undefined;
     const choices = this.valueSetSortFieldOptions();
-    if (choices.length === 0) {
-      return raw;
-    }
+    if (choices.length === 0) return raw;
     return this.searchSortOrder() === 'desc' ? `-${raw}` : raw;
   }
 
   private applySearchBundle(bundle: Bundle): void {
-    const list = bundle.entry
-      ?.map((entry) => entry.resource)
-      .filter((resource): resource is ValueSet => isResourceType(resource, 'ValueSet')) ?? [];
+    const list =
+      bundle.entry
+        ?.map((entry) => entry.resource)
+        .filter((resource): resource is ValueSet => isResourceType(resource, 'ValueSet')) ?? [];
     this.searchResults.set(list);
     this.searchBundle.set(bundle);
   }
 
   async runSearch(): Promise<void> {
     if (this.loading()) return;
-    if (!this.vsacCredentialsOrWarn()) return;
     this.loading.set(true);
     this.error.set(null);
     try {
       const bundle = await firstValueFrom(
-        this.vsac.searchValueSets({
+        this.cartos.searchValueSets({
           titleContains: this.searchTitle().trim() || undefined,
           nameContains: this.searchName().trim() || undefined,
           url: this.searchUrl().trim() || undefined,
           identifier: this.searchIdentifier().trim() || undefined,
           version: this.searchVersion().trim() || undefined,
           status: this.searchStatus().trim() || undefined,
-          publisherContains: this.searchPublisher().trim() || undefined,
-          descriptionContains: this.searchDescription().trim() || undefined,
-          expansion: this.searchExpansion().trim() || undefined,
-          usage: this.searchUsage().trim() || undefined,
-          keyword: this.searchKeyword().trim() || undefined,
-          code: this.searchCode().trim() || undefined,
-          codesystem: this.searchCodesystem().trim() || undefined,
-          measure: this.searchMeasure().trim() || undefined,
-          library: this.searchLibrary().trim() || undefined,
-          date: this.searchDate().trim() || undefined,
-          _id: this.searchResourceId().trim() || undefined,
-          _lastUpdated: this.searchLastUpdated().trim() || undefined,
           _sort: this.buildSearchSortParam(),
-          _count: this.searchCount()
+          _count: this.searchCount(),
         })
       );
       this.applySearchBundle(bundle);
@@ -281,7 +220,7 @@ export class VsacBrowserComponent {
       this.searchResults.set([]);
       const msg = this.errMsg(e);
       this.error.set(msg);
-      this.toast.showError(msg, 'VSAC search failed');
+      this.toast.showError(msg, 'Cartos search failed');
     } finally {
       this.loading.set(false);
     }
@@ -292,16 +231,120 @@ export class VsacBrowserComponent {
     const url =
       kind === 'first' ? p.first : kind === 'previous' ? p.previous : kind === 'next' ? p.next : p.last;
     if (!url || this.loading()) return;
-    if (!this.vsacCredentialsOrWarn()) return;
     this.loading.set(true);
     this.error.set(null);
     try {
-      const bundle = await firstValueFrom(this.vsac.getValueSetSearchByBundleLink(url));
+      const bundle = await firstValueFrom(this.cartos.getValueSetSearchByBundleLink(url));
       this.applySearchBundle(bundle);
     } catch (e) {
       const msg = this.errMsg(e);
       this.error.set(msg);
-      this.toast.showError(msg, 'VSAC search page failed');
+      this.toast.showError(msg, 'Cartos search page failed');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  private async pullFullValueSetIntoLoaded(preferred: ValueSet | null): Promise<void> {
+    const gen = ++this.valueSetPullGen;
+    const raw = preferred ? preferred.id || preferred.url || '' : this.oidInput().trim();
+    if (!raw) return;
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      const vs = preferred?.id
+        ? await firstValueFrom(this.cartos.getValueSetById(preferred.id))
+        : await firstValueFrom(this.cartos.fetchValueSetByOidOrCanonicalUrl(raw));
+      if (gen !== this.valueSetPullGen) return;
+      this.loadedValueSet.set(vs);
+      this.oidInput.set(vs.id || vs.url || raw);
+      this.activeTab.set('valueset');
+    } catch (e) {
+      if (gen !== this.valueSetPullGen) return;
+      this.loadedValueSet.set(null);
+      const msg = this.errMsg(e);
+      this.error.set(msg);
+      this.toast.showError(msg, 'Load ValueSet failed');
+    } finally {
+      if (gen === this.valueSetPullGen) this.loading.set(false);
+    }
+  }
+
+  async loadValueSetByOid(): Promise<void> {
+    const raw = this.oidInput().trim();
+    if (!raw) {
+      this.toast.showWarning('Enter a value set id or canonical URL.', 'Cartos');
+      return;
+    }
+    if (this.loading()) return;
+    this.expandedValueSet.set(null);
+    this.dependencyTree.set(null);
+    this.dependencyStatusMessage.set(null);
+    await this.pullFullValueSetIntoLoaded(null);
+    await this.autoRecurseDependenciesIfAvailable();
+  }
+
+  async selectSearchResult(vs: ValueSet): Promise<void> {
+    this.expandedValueSet.set(null);
+    this.dependencyTree.set(null);
+    this.dependencyStatusMessage.set(null);
+    await this.pullFullValueSetIntoLoaded(vs);
+    await this.autoRecurseDependenciesIfAvailable();
+  }
+
+  private async autoRecurseDependenciesIfAvailable(): Promise<void> {
+    if (!this.hasComposeValueSetReferences()) return;
+    await this.recurseDependenciesForLoadedValueSet();
+  }
+
+  async expandLoaded(): Promise<void> {
+    const vs = this.loadedValueSet();
+    if (!vs || this.loading()) {
+      if (!vs) this.toast.showWarning('Load a value set first.', 'Cartos');
+      return;
+    }
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      const count = Math.max(1, Number(this.expandCount()) || 100);
+      const offset = Math.max(0, Number(this.expandOffset()) || 0);
+      let expanded: ValueSet;
+      if (vs.id) {
+        const q: Record<string, string | number | boolean | undefined> = { count, offset };
+        const f = this.expandFilter().trim();
+        if (f) q['filter'] = f;
+        const p = this.expandProfile().trim();
+        if (p) q['profile'] = p;
+        expanded = await firstValueFrom(this.cartos.expandValueSetGet(vs.id, q));
+      } else if (vs.url) {
+        const params: Parameters = {
+          resourceType: 'Parameters',
+          parameter: [
+            { name: 'url', valueUri: vs.url },
+            { name: 'count', valueInteger: count },
+            { name: 'offset', valueInteger: offset },
+          ],
+        };
+        const f = this.expandFilter().trim();
+        if (f) params.parameter!.push({ name: 'filter', valueString: f });
+        const p = this.expandProfile().trim();
+        if (p) params.parameter!.push({ name: 'profile', valueString: p });
+        expanded = await firstValueFrom(this.cartos.expandValueSetPost(params));
+      } else {
+        throw new Error('ValueSet has neither id nor url for $expand.');
+      }
+      this.expandedValueSet.set(expanded);
+      if (!expanded.expansion?.contains?.length) {
+        this.toast.showWarning(
+          'Expansion returned no concepts. Proprietary or intensionally-defined sets may omit member codes.',
+          'Cartos $expand'
+        );
+      }
+    } catch (e) {
+      this.expandedValueSet.set(null);
+      const msg = this.errMsg(e);
+      this.error.set(msg);
+      this.toast.showError(msg, 'Cartos $expand failed');
     } finally {
       this.loading.set(false);
     }
@@ -331,199 +374,17 @@ export class VsacBrowserComponent {
     await this.expandLoaded();
   }
 
-  async loadValueSetByOid(): Promise<void> {
-    const raw = this.oidInput().trim();
-    if (!raw) {
-      this.toast.showWarning('Enter a value set OID or id.', 'VSAC');
-      return;
-    }
-    if (this.loading()) return;
-    if (!this.vsacCredentialsOrWarn()) return;
-    this.expandedValueSet.set(null);
-    this.dependencyTree.set(null);
-    this.dependencyStatusMessage.set(null);
-    await this.pullFullValueSetIntoLoaded(null);
-    await this.autoRecurseDependenciesIfAvailable();
+  expansionRows(): { code?: string; display?: string; system?: string }[] {
+    return this.expandedValueSet()?.expansion?.contains ?? [];
   }
 
-  async selectSearchResult(vs: ValueSet): Promise<void> {
-    if (vs.id) {
-      this.oidInput.set(vs.id);
-    } else if (vs.url) {
-      this.oidInput.set(vs.url);
-    }
-    this.expandedValueSet.set(null);
-    this.dependencyTree.set(null);
-    this.dependencyStatusMessage.set(null);
-    this.loadedValueSet.set(vs);
-    this.setTab('valueset');
-    if (!this.oidInput().trim()) {
-      await this.autoRecurseDependenciesIfAvailable();
-      return;
-    }
-    if (!this.vsacCredentialsOrWarn()) return;
-    await this.pullFullValueSetIntoLoaded(vs);
-    await this.autoRecurseDependenciesIfAvailable();
-  }
-
-  /**
-   * Fetches full ValueSet using current `oidInput` (OID, `urn:oid:…`, or canonical http(s) URL).
-   * On failure: clears loaded when `preserveOnError` is null (Load), else restores that snapshot (Open from search).
-   */
-  private async pullFullValueSetIntoLoaded(preserveOnError: ValueSet | null): Promise<void> {
-    const raw = this.oidInput().trim();
-    if (!raw) return;
-    const gen = ++this.valueSetPullGen;
-    this.loading.set(true);
-    this.error.set(null);
-    try {
-      const full = await firstValueFrom(this.vsac.fetchValueSetByOidOrCanonicalUrl(raw));
-      if (gen !== this.valueSetPullGen) return;
-      this.loadedValueSet.set(full);
-      this.dependencyTree.set(null);
-      this.dependencyStatusMessage.set(null);
-      if (full.id) {
-        this.oidInput.set(full.id);
-      } else if (full.url) {
-        this.oidInput.set(full.url);
-      }
-    } catch (e) {
-      if (gen !== this.valueSetPullGen) return;
-      this.loadedValueSet.set(preserveOnError);
-      const msg = this.errMsg(e);
-      this.error.set(msg);
-      this.toast.showError(msg, 'Load ValueSet failed');
-    } finally {
-      if (gen === this.valueSetPullGen) {
-        this.loading.set(false);
-      }
-    }
-  }
-
-  private async autoRecurseDependenciesIfAvailable(): Promise<void> {
-    if (!this.hasComposeValueSetReferences()) return;
-    if (this.loading() || this.dependencyBusy()) return;
-    await this.recurseDependenciesForLoadedValueSet();
-  }
-
-  async expandLoaded(): Promise<void> {
-    if (this.loading()) return;
-    const vs = this.loadedValueSet();
-    if (!vs) {
-      this.toast.showWarning('Load a value set first.', 'VSAC');
-      return;
-    }
-    if (!this.vsacCredentialsOrWarn()) return;
-    this.loading.set(true);
-    this.error.set(null);
-    try {
-      const count = Math.max(1, Number(this.expandCount()) || 100);
-      const offset = Math.max(0, Number(this.expandOffset()) || 0);
-      if (vs.id) {
-        const q: Record<string, string | number | boolean | undefined> = {
-          count,
-          offset
-        };
-        const f = this.expandFilter().trim();
-        if (f) q['filter'] = f;
-        const p = this.expandProfile().trim();
-        if (p) q['profile'] = p;
-        const exp = await firstValueFrom(this.vsac.expandValueSetGet(vs.id, q));
-        this.expandedValueSet.set(exp);
-      } else if (vs.url) {
-        const params: Parameters = {
-          resourceType: 'Parameters',
-          parameter: [
-            { name: 'url', valueUri: vs.url },
-            { name: 'count', valueInteger: count },
-            { name: 'offset', valueInteger: offset }
-          ]
-        };
-        const f = this.expandFilter().trim();
-        if (f) params.parameter!.push({ name: 'filter', valueString: f });
-        const p = this.expandProfile().trim();
-        if (p) params.parameter!.push({ name: 'profile', valueString: p });
-        const exp = await firstValueFrom(this.vsac.expandValueSetPost(params));
-        this.expandedValueSet.set(exp);
-      } else {
-        throw new Error('ValueSet has no id or canonical url for $expand');
-      }
-    } catch (e) {
-      const msg = this.errMsg(e);
-      this.error.set(msg);
-      this.toast.showError(msg, '$expand failed');
-    } finally {
-      this.loading.set(false);
-    }
-  }
-
-  private async fetchSvsPlainText(
-    request: () => Observable<string>,
-    onSuccess: (text: string) => void,
-    errorContext: string
-  ): Promise<void> {
-    if (this.loading()) return;
-    if (!this.vsacCredentialsOrWarn()) return;
-    this.loading.set(true);
-    this.error.set(null);
-    try {
-      onSuccess(await firstValueFrom(request()));
-    } catch (e) {
-      const msg = this.errMsg(e);
-      this.error.set(msg);
-      this.toast.showError(msg, errorContext);
-    } finally {
-      this.loading.set(false);
-    }
-  }
-
-  async fetchPrograms(): Promise<void> {
-    await this.fetchSvsPlainText(() => this.vsac.listPrograms(), (t) => this.svsProgramsText.set(t), 'SVS programs failed');
-  }
-
-  async fetchTagNames(): Promise<void> {
-    await this.fetchSvsPlainText(() => this.vsac.listTagNames(), (t) => this.svsTagNamesText.set(t), 'SVS tagNames failed');
-  }
-
-  async retrieveSvs(): Promise<void> {
-    const oid = this.svsOid().trim();
-    const tagName = this.svsTagName().trim();
-    const tagValue = this.svsTagValue().trim();
-    if (!oid && (!tagName || !tagValue)) {
-      this.toast.showWarning('Enter OID or both tag name and tag value.', 'SVS');
-      return;
-    }
-    if (this.loading()) return;
-    if (!this.vsacCredentialsOrWarn()) return;
-    this.loading.set(true);
-    this.error.set(null);
-    try {
-      const q: Record<string, string> = {};
-      if (oid) q['id'] = oid;
-      if (tagName) q['tagName'] = tagName;
-      if (tagValue) q['tagValue'] = tagValue;
-      const rel = this.svsRelease().trim();
-      if (rel) q['release'] = rel;
-      const prof = this.svsProfile().trim();
-      if (prof) q['profile'] = prof;
-      const xml = await firstValueFrom(this.vsac.retrieveMultipleValueSets(q));
-      this.svsXmlResult.set(xml);
-    } catch (e) {
-      const msg = this.errMsg(e);
-      this.error.set(msg);
-      this.toast.showError(msg, 'RetrieveMultipleValueSets failed');
-    } finally {
-      this.loading.set(false);
-    }
-  }
-
-  async copyVsacOid(): Promise<void> {
+  async copyOid(): Promise<void> {
     const vs = this.loadedValueSet();
     const id = vs?.id || this.oidInput().trim();
     if (!id) return;
     try {
       await navigator.clipboard.writeText(id);
-      this.toast.showSuccess('Copied OID.', 'Clipboard');
+      this.toast.showSuccess('Copied OID/id.', 'Clipboard');
     } catch {
       this.toast.showError('Clipboard not available.', 'Clipboard');
     }
@@ -542,9 +403,11 @@ export class VsacBrowserComponent {
 
   async copyCqlSnippet(): Promise<void> {
     const vs = this.loadedValueSet();
-    if (!vs?.url) return;
-    const name = (vs.title || vs.name || 'VS').replace(/"/g, '\\"');
-    const snippet = `valueset "${name}": '${vs.url}'`;
+    const snippet = vs ? formatValueSetCqlDeclaration(vs) : null;
+    if (!snippet) {
+      this.toast.showWarning('ValueSet has no canonical URL.', 'Clipboard');
+      return;
+    }
     try {
       await navigator.clipboard.writeText(snippet);
       this.toast.showSuccess('Copied CQL snippet.', 'Clipboard');
@@ -570,16 +433,18 @@ export class VsacBrowserComponent {
     await this.copyPlainText(this.loadedValueSetJson(), 'ValueSet JSON copied.');
   }
 
-  async copyProgramsResponse(): Promise<void> {
-    await this.copyPlainText(this.svsProgramsText() ?? '', 'Programs response copied.');
-  }
-
-  async copyTagNamesResponse(): Promise<void> {
-    await this.copyPlainText(this.svsTagNamesText() ?? '', 'tagNames response copied.');
-  }
-
-  async copySvsXmlResponse(): Promise<void> {
-    await this.copyPlainText(this.svsXmlResult() ?? '', 'SVS XML copied.');
+  async copyCqlDeclaration(vs: ValueSet): Promise<void> {
+    const snippet = formatValueSetCqlDeclaration(vs);
+    if (!snippet) {
+      this.toast.showWarning('ValueSet has no canonical URL.', 'Clipboard');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(snippet);
+      this.toast.showSuccess('CQL declaration copied.', 'Clipboard');
+    } catch {
+      this.toast.showError('Failed to copy.', 'Clipboard');
+    }
   }
 
   addLoadedValueSetToAppClipboard(): void {
@@ -593,7 +458,7 @@ export class VsacBrowserComponent {
     }
   }
 
-  addSearchValueSetToAppClipboard(vs: ValueSet): void {
+  addValueSetToAppClipboard(vs: ValueSet): void {
     try {
       this.clipboard.addResource(vs as Resource);
       this.toast.showSuccess('ValueSet added to clipboard.', 'Clipboard');
@@ -602,18 +467,14 @@ export class VsacBrowserComponent {
     }
   }
 
-  addExpansionCodingToAppClipboard(row: { system?: string; code?: string; display?: string }): void {
+  addExpansionCodingToAppClipboard(row: { code?: string; display?: string; system?: string }): void {
     const system = row.system?.trim();
     const code = row.code?.trim();
     if (!system || !code) {
       this.toast.showWarning('Code is missing system or code.', 'Clipboard');
       return;
     }
-    const coding: Coding = {
-      system,
-      code,
-      display: row.display
-    };
+    const coding: Coding = { system, code, display: row.display };
     try {
       this.clipboard.addCoding(coding);
       this.toast.showSuccess('Coding added to clipboard.', 'Clipboard');
@@ -622,10 +483,14 @@ export class VsacBrowserComponent {
     }
   }
 
+  addCodingToAppClipboard(row: { code?: string; display?: string; system?: string }): void {
+    this.addExpansionCodingToAppClipboard(row);
+  }
+
   async importLoadedValueSetToTerminology(): Promise<void> {
     if (this.loading()) return;
     if (this.terminologyImportWarning()) {
-      this.toast.showWarning('Point Terminology Services at a writable server, not a read-only authority (VSAC/NLM or Cartos).', 'Import');
+      this.toast.showWarning('Point Terminology Services at a writable server, not Cartos.', 'Import');
       return;
     }
     const vs = this.loadedValueSet();
@@ -645,17 +510,18 @@ export class VsacBrowserComponent {
       this.toast.showWarning('Load a value set first.', 'Dependencies');
       return;
     }
-    if (!this.vsacCredentialsOrWarn()) return;
     this.dependencyBusy.set(true);
     this.error.set(null);
     this.dependencyStatusMessage.set(null);
     try {
       const rootNode = await buildValueSetDependencyTree(root, (ref) =>
-        firstValueFrom(this.vsac.fetchValueSetByOidOrCanonicalUrl(ref))
+        firstValueFrom(this.cartos.fetchValueSetByOidOrCanonicalUrl(ref))
       );
       this.dependencyTree.set(rootNode);
       const count = this.dependencyImportNodes().length;
-      this.dependencyStatusMessage.set(`Dependency tree built. ${count} ValueSet${count === 1 ? '' : 's'} ready to import.`);
+      this.dependencyStatusMessage.set(
+        `Dependency tree built. ${count} ValueSet${count === 1 ? '' : 's'} ready to import.`
+      );
       this.toast.showSuccess('Dependency tree loaded.', 'Dependencies');
     } catch (e) {
       const msg = this.errMsg(e);
@@ -671,7 +537,7 @@ export class VsacBrowserComponent {
   async importLoadedValueSetWithDependenciesToTerminology(): Promise<void> {
     if (this.loading() || this.dependencyBusy()) return;
     if (this.terminologyImportWarning()) {
-      this.toast.showWarning('Point Terminology Services at a writable server, not a read-only authority (VSAC/NLM or Cartos).', 'Import');
+      this.toast.showWarning('Point Terminology Services at a writable server, not Cartos.', 'Import');
       return;
     }
     if (!this.dependencyTree()) {
@@ -690,7 +556,7 @@ export class VsacBrowserComponent {
     for (const node of nodes) {
       if (!node.valueSet) continue;
       try {
-        await this.postValueSetToTerminologyServerNoToast(node.valueSet);
+        await this.remoteImport.postValueSet(node.valueSet);
         success += 1;
       } catch (e) {
         failed += 1;
@@ -709,7 +575,7 @@ export class VsacBrowserComponent {
   async importSearchValueSetToTerminology(vs: ValueSet): Promise<void> {
     if (this.loading()) return;
     if (this.terminologyImportWarning()) {
-      this.toast.showWarning('Point Terminology Services at a writable server, not a read-only authority (VSAC/NLM or Cartos).', 'Import');
+      this.toast.showWarning('Point Terminology Services at a writable server, not Cartos.', 'Import');
       return;
     }
     await this.postValueSetToTerminologyServer(vs);
@@ -718,7 +584,7 @@ export class VsacBrowserComponent {
   private async postValueSetToTerminologyServer(toSend: ValueSet): Promise<void> {
     this.loading.set(true);
     try {
-      await this.postValueSetToTerminologyServerNoToast(toSend);
+      await this.remoteImport.postValueSet(toSend);
       this.toast.showSuccess('ValueSet posted to terminology server.', 'Import');
     } catch (e) {
       this.toast.showError(this.errMsg(e), 'Import failed');
@@ -727,25 +593,58 @@ export class VsacBrowserComponent {
     }
   }
 
-  private async postValueSetToTerminologyServerNoToast(toSend: ValueSet): Promise<void> {
-    await this.remoteImport.postValueSet(toSend);
-  }
-
-  expansionRows(): { code?: string; display?: string; system?: string }[] {
-    return this.expandedValueSet()?.expansion?.contains ?? [];
-  }
-}
-
-function extractPackageRelatedTypes(cap: CapabilityStatement | null): string[] {
-  if (!cap?.rest?.length) return [];
-  const types = new Set<string>();
-  const keywords = ['package', 'Package', 'valuesetpackage', 'ValueSetPackage'];
-  for (const rest of cap.rest) {
-    for (const r of rest.resource ?? []) {
-      const t = r.type;
-      if (!t) continue;
-      if (keywords.some((k) => t.includes(k))) types.add(t);
+  async runCodeSystemSearch(): Promise<void> {
+    if (this.loading()) return;
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      const bundle = await firstValueFrom(
+        this.cartos.searchCodeSystems({
+          nameContains: this.csSearchName().trim() || undefined,
+          url: this.csSearchUrl().trim() || undefined,
+          _count: this.csSearchCount(),
+        })
+      );
+      const list =
+        bundle.entry
+          ?.map((e) => e.resource)
+          .filter((r): r is CodeSystem => isResourceType(r, 'CodeSystem')) ?? [];
+      this.codeSystemResults.set(list);
+    } catch (e) {
+      this.codeSystemResults.set([]);
+      const msg = this.errMsg(e);
+      this.error.set(msg);
+      this.toast.showError(msg, 'CodeSystem search failed');
+    } finally {
+      this.loading.set(false);
     }
   }
-  return [...types].sort();
+
+  async selectCodeSystem(cs: CodeSystem): Promise<void> {
+    if (!cs.id || this.loading()) return;
+    this.loading.set(true);
+    this.error.set(null);
+    try {
+      const full = await firstValueFrom(this.cartos.getCodeSystemById(cs.id));
+      this.loadedCodeSystem.set(full);
+      this.activeTab.set('codesystem');
+    } catch (e) {
+      this.loadedCodeSystem.set(null);
+      const msg = this.errMsg(e);
+      this.error.set(msg);
+      this.toast.showError(msg, 'Load CodeSystem failed');
+    } finally {
+      this.loading.set(false);
+    }
+  }
+
+  loadedCodeSystemJson(): string {
+    const cs = this.loadedCodeSystem();
+    if (!cs) return '';
+    try {
+      return JSON.stringify(cs, null, 2);
+    } catch {
+      return '';
+    }
+  }
 }

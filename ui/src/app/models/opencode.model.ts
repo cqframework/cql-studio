@@ -58,6 +58,7 @@ export interface CreateOpenCodeSessionRequest extends Omit<
     vsacFhirBaseUrl: string;
     vsacApiUsername: string;
     vsacApiPassword: string;
+    cartosFhirBaseUrl: string;
     searxngBaseUrl: string;
   };
 }

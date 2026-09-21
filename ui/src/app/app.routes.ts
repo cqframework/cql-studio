@@ -255,6 +255,11 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./components/vsac-browser/vsac-browser.component').then((m) => m.VsacBrowserComponent),
       },
+      {
+        path: 'cartos',
+        loadComponent: () =>
+          import('./components/cartos-browser/cartos-browser.component').then((m) => m.CartosBrowserComponent),
+      },
       // Short alias; Angular preserves ?package=&version= on redirect for external deep links.
       { path: 'fhir-registry', redirectTo: 'fhir-registry-importer', pathMatch: 'full' },
       {

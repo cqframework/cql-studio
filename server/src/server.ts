@@ -14,6 +14,7 @@ import { applyPendingMigrations } from './db/migrate.js';
 import { mcpRouter } from './mcp/index.js';
 import { ollamaProxyRouter } from './ollama/proxy.js';
 import { vsacFhirProxyRouter, vsacSiteProxyRouter } from './vsac/proxy.js';
+import { cartosFhirProxyRouter } from './cartos/proxy.js';
 import { createAuthRouter } from './auth/routes.js';
 import { createTeamRouter } from './team/routes.js';
 import { createActivityRouter, createWorkspaceRouter } from './workspace/routes.js';
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
   app.use('/api/ollama', ollamaProxyRouter);
   app.use('/api/vsac/fhir', vsacFhirProxyRouter);
   app.use('/api/vsac/site', vsacSiteProxyRouter);
+  app.use('/api/cartos/fhir', cartosFhirProxyRouter);
   app.use('/api/auth', createAuthRouter(env));
   app.use('/api/teams', createTeamRouter(env));
   app.use('/api/workspaces', createWorkspaceRouter(env));

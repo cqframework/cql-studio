@@ -194,8 +194,9 @@ test('materializes a writable draft, read-only dependencies, MCP config, and a r
       context: /cql_studio_context/,
       fhir: /fhir_read or fhir_search/,
       research: /searxng_search and the hardened fetch tools/,
-      terminology: /vsac_search[\s\S]*valueset_expand/,
+      terminology: /vsac_search[\s\S]*cartos_search[\s\S]*valueset_expand|vsac_search[\s\S]*valueset_expand/,
       'validate-vsac': /validate-vsac skill[\s\S]*validate every declared VSAC ValueSet/,
+      'validate-cartos': /validate-cartos skill[\s\S]*Cartos/,
     };
     for (const [command, expected] of Object.entries(commandExpectations)) {
       assert.match(await readFile(path.join(workspace.directory, `.opencode/commands/${command}.md`), 'utf8'), expected);
@@ -206,6 +207,7 @@ test('materializes a writable draft, read-only dependencies, MCP config, and a r
       '.cql-studio/manifest.json',
       '.opencode/commands/validate.md',
       '.opencode/skills/validate-vsac/SKILL.md',
+      '.opencode/skills/validate-cartos/SKILL.md',
     ]) {
       assert.equal((await stat(path.join(workspace.directory, protectedFile))).mode & 0o777, 0o400);
     }
@@ -213,6 +215,10 @@ test('materializes a writable draft, read-only dependencies, MCP config, and a r
     assert.match(vsacSkill, /name: validate-vsac/);
     assert.match(vsacSkill, /validate_vsac/);
     assert.match(vsacSkill, /This skill is read-only/);
+    const cartosSkill = await readFile(path.join(workspace.directory, '.opencode/skills/validate-cartos/SKILL.md'), 'utf8');
+    assert.match(cartosSkill, /name: validate-cartos/);
+    assert.match(cartosSkill, /validate_cartos/);
+    assert.match(cartosSkill, /This skill is read-only/);
     assert.deepEqual(manager.references(workspace, 'Shared'), [{
       path: 'dependencies/Shared.cql',
       libraryId: 'Shared',

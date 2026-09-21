@@ -5,12 +5,12 @@ import { createServer } from 'node:http';
 import test from 'node:test';
 import { OpenCodeToolExecutor } from '../src/opencode/tools.js';
 
-test('OpenCode exposes the complete 22-tool read-only catalog without model-controlled SearXNG origins', async () => {
+test('OpenCode exposes the complete 24-tool read-only catalog without model-controlled SearXNG origins', async () => {
   const tools = new OpenCodeToolExecutor();
   const definitions = await tools.definitions();
-  assert.equal(definitions.length, 22);
-  assert.equal(new Set(definitions.map(tool => tool.name)).size, 22);
-  for (const expected of ['fetch_content', 'searxng_search_then_fetch', 'vsac_search', 'fhir_read', 'cql_validate', 'cql_library_search', 'cql_library_read']) {
+  assert.equal(definitions.length, 24);
+  assert.equal(new Set(definitions.map(tool => tool.name)).size, 24);
+  for (const expected of ['fetch_content', 'searxng_search_then_fetch', 'vsac_search', 'cartos_search', 'fhir_read', 'cql_validate', 'cql_library_search', 'cql_library_read']) {
     assert.ok(definitions.some(tool => tool.name === expected), `missing ${expected}`);
   }
   const searxng = definitions.find(tool => tool.name === 'searxng_search');

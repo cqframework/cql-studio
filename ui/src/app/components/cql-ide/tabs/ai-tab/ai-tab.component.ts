@@ -397,6 +397,7 @@ export class AiTabComponent implements OnInit, OnDestroy {
         vsacFhirBaseUrl: this.settingsService.getEffectiveVsacFhirBaseUrl(),
         vsacApiUsername: this.settingsService.getEffectiveVsacApiUsername(),
         vsacApiPassword: this.settingsService.getEffectiveVsacApiPassword(),
+        cartosFhirBaseUrl: this.settingsService.getEffectiveCartosFhirBaseUrl(),
         searxngBaseUrl: this.settingsService.getEffectiveSearxngBaseUrl(),
       },
     };

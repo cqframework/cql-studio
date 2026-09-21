@@ -52,4 +52,6 @@ export class MCPToolNames {
   static readonly GET_RATE_LIMIT_STATUS = 'get_rate_limit_status';
   static readonly VSAC_SEARCH = 'vsac_search';
   static readonly VALIDATE_VSAC = 'validate_vsac';
+  static readonly CARTOS_SEARCH = 'cartos_search';
+  static readonly VALIDATE_CARTOS = 'validate_cartos';
 }

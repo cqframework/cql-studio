@@ -7,22 +7,23 @@ import { map } from 'rxjs/operators';
 import { SettingsService } from './settings.service';
 import { Bundle, CapabilityStatement, Parameters, ValueSet } from 'fhir/r4';
 import { isResourceType } from './fhir-resource-type.lib';
+import {
+  appendStandardValueSetSearchParams,
+  fhirPathAndQueryFromBundleLink as mapBundleLinkToProxyPath,
+  StandardValueSetSearchParams,
+} from './remote-fhir-terminology/remote-fhir-terminology.lib';
+
+export {
+  capabilityStatementSupportsValueSetSort,
+  valueSetSortFieldChoicesFromCapability,
+} from './remote-fhir-terminology/remote-fhir-terminology.lib';
 
 const FHIR_JSON = 'application/fhir+json';
 const VSAC_FHIR_BASE_HEADER = 'X-VSAC-FHIR-Base-URL';
+const VSAC_FHIR_ALLOWED_HOSTS = new Set(['cts.nlm.nih.gov', 'uat-cts.nlm.nih.gov']);
 
 /** Parameters for GET ValueSet?… against CTS/VSAC (see server CapabilityStatement). */
-export interface ValueSetSearchParams {
-  /** FHIR `name` with `:contains` (machine-oriented id / label). */
-  nameContains?: string;
-  /** FHIR `title` with `:contains` (maps to VSAC display name per NLM). */
-  titleContains?: string;
-  url?: string;
-  identifier?: string;
-  version?: string;
-  status?: string;
-  publisherContains?: string;
-  descriptionContains?: string;
+export interface ValueSetSearchParams extends StandardValueSetSearchParams {
   /** Expansion / release business identifier (e.g. eCQM or C-CDA release label). */
   expansion?: string;
   /** Composite usage token (e.g. <code>VSAC$covid</code>). */
@@ -36,52 +37,6 @@ export interface ValueSetSearchParams {
   artifact?: string;
   reference?: string;
   valueset?: string;
-  /** FHIR date parameter (supports prefixes such as <code>ge2020</code>). */
-  date?: string;
-  _id?: string;
-  _lastUpdated?: string;
-  /** When the server advertises `_sort` for ValueSet search (see CapabilityStatement). */
-  _sort?: string;
-  _count?: number;
-}
-
-/**
- * True when the CapabilityStatement lists `_sort` for ValueSet search (REST-wide or on the ValueSet type).
- */
-export function capabilityStatementSupportsValueSetSort(cap: CapabilityStatement | null | undefined): boolean {
-  if (!cap?.rest?.length) return false;
-  for (const rest of cap.rest) {
-    for (const sp of rest.searchParam ?? []) {
-      if (sp.name === '_sort') return true;
-    }
-    for (const r of rest.resource ?? []) {
-      if (r.type !== 'ValueSet') continue;
-      for (const sp of r.searchParam ?? []) {
-        if (sp.name === '_sort') return true;
-      }
-    }
-  }
-  return false;
-}
-
-/**
- * ValueSet `searchParam` names suitable as `_sort` keys (no chained/modifier syntax).
- */
-export function valueSetSortFieldChoicesFromCapability(cap: CapabilityStatement | null | undefined): string[] {
-  if (!cap?.rest?.length) return [];
-  const names = new Set<string>();
-  for (const rest of cap.rest) {
-    for (const r of rest.resource ?? []) {
-      if (r.type !== 'ValueSet') continue;
-      for (const sp of r.searchParam ?? []) {
-        const n = sp.name;
-        if (typeof n === 'string' && n.length > 0 && !n.includes(':')) {
-          names.add(n);
-        }
-      }
-    }
-  }
-  return [...names].sort((a, b) => a.localeCompare(b));
 }
 
 @Injectable({
@@ -128,30 +83,11 @@ export class VsacService {
    * Returns null if the link host does not match the configured VSAC FHIR base.
    */
   fhirPathAndQueryFromBundleLink(linkUrl: string): string | null {
-    const baseStr = this.settingsService.getEffectiveVsacFhirBaseUrl().replace(/\/+$/, '');
-    let link: URL;
-    let base: URL;
-    try {
-      link = new URL(linkUrl.trim());
-      base = new URL(baseStr);
-    } catch {
-      return null;
-    }
-    const allowed = new Set(['cts.nlm.nih.gov', 'uat-cts.nlm.nih.gov']);
-    if (!allowed.has(link.hostname) || link.hostname !== base.hostname) {
-      return null;
-    }
-    const basePath = base.pathname.replace(/\/+$/, '') || '/';
-    if (!link.pathname.startsWith(basePath)) {
-      return null;
-    }
-    let rest = link.pathname.slice(basePath.length);
-    if (rest === '') {
-      rest = '/';
-    } else if (!rest.startsWith('/')) {
-      rest = `/${rest}`;
-    }
-    return `${rest}${link.search}`;
+    return mapBundleLinkToProxyPath(
+      linkUrl,
+      this.settingsService.getEffectiveVsacFhirBaseUrl(),
+      VSAC_FHIR_ALLOWED_HOSTS
+    );
   }
 
   /** GET a searchset page using a Bundle.link URL from a prior ValueSet search response. */
@@ -174,23 +110,12 @@ export class VsacService {
 
   searchValueSets(params: ValueSetSearchParams): Observable<Bundle> {
     const q = new URLSearchParams();
+    appendStandardValueSetSearchParams(q, params);
     const t = (s: string | undefined) => (s == null ? '' : String(s).trim());
     const set = (key: string, value: string | undefined) => {
       const v = t(value);
       if (v) q.set(key, v);
     };
-    const nameC = t(params.nameContains);
-    if (nameC) q.set('name:contains', nameC);
-    const titleC = t(params.titleContains);
-    if (titleC) q.set('title:contains', titleC);
-    const pubC = t(params.publisherContains);
-    if (pubC) q.set('publisher:contains', pubC);
-    const descC = t(params.descriptionContains);
-    if (descC) q.set('description:contains', descC);
-    set('url', params.url);
-    set('identifier', params.identifier);
-    set('version', params.version);
-    set('status', params.status);
     set('expansion', params.expansion);
     set('usage', params.usage);
     set('keyword', params.keyword);
@@ -201,12 +126,6 @@ export class VsacService {
     set('artifact', params.artifact);
     set('reference', params.reference);
     set('valueset', params.valueset);
-    set('date', params.date);
-    set('_id', params._id);
-    set('_lastUpdated', params._lastUpdated);
-    set('_sort', params._sort);
-    const count = params._count ?? 50;
-    q.set('_count', String(Math.min(200, Math.max(1, count))));
     const qs = q.toString();
     return this.http.get<Bundle>(this.fhirUrl(`/ValueSet?${qs}`), {
       headers: this.fhirHeaders()

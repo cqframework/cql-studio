@@ -4,30 +4,20 @@ import { MCPToolNames, type MCPTool } from '@cql-studio/core';
 import { WebSearchService } from '../services/web-search/index.js';
 import { SearXNGService } from '../services/searxng.service.js';
 import { logger } from '../logger.js';
+import {
+  normalizeRemoteFhirBaseUrl,
+  RemoteTerminologyConfig,
+  searchRemoteValueSets,
+  validateRemoteValueSet,
+} from './remote-valueset-tools.js';
+import { DEFAULT_CARTOS_FHIR_BASE } from '../cartos/proxy.js';
 
 const DEFAULT_VSAC_FHIR_BASE = 'https://cts.nlm.nih.gov/fhir';
 const ALLOWED_VSAC_HOSTS = new Set(['cts.nlm.nih.gov', 'uat-cts.nlm.nih.gov']);
-const FHIR_JSON = 'application/fhir+json';
+const ALLOWED_CARTOS_HOSTS = new Set(['cartos.healthit.gov']);
 
-interface VsacToolConfig {
-  fhirBaseUrl: string;
-  username: string;
-  password: string;
-}
-
-interface VsacValueSetSummary {
-  resourceType: 'ValueSet';
-  id?: string;
-  url?: string;
-  name?: string;
-  title?: string;
-  version?: string;
-  status?: string;
-  publisher?: string;
-  date?: string;
-  description?: string;
-  expansionTotal?: number;
-}
+const SEARXNG_VSAC_CARTOS_GUARD =
+  'Do NOT use this tool to discover, look up, or validate VSAC or Cartos/ONC ValueSets, OIDs, or canonical URLs; use vsac_search / validate_vsac for NLM VSAC, or cartos_search / validate_cartos for ONC Cartos.';
 
 export type { MCPTool };
 
@@ -80,7 +70,7 @@ export class ToolExecutor {
       },
       {
         name: MCPToolNames.SEARXNG_SEARCH,
-        description: 'Perform an anonymous general web search via a user-configured SearXNG instance (no API key required). Do NOT use this tool to discover, look up, or validate VSAC ValueSets, OIDs, or canonical URLs; use vsac_search for discovery and validate_vsac for an existing reference. Returns an object: { query, resultsCount, results: [{ title, url, snippet }] }. Use for non-VSAC web research when you need structured search results to process or filter. Requires searxng_base_url from the user. Rate limited (30 requests per minute). Optional: categories, language, time_range, safesearch, max_results (1–50).',
+        description: `Perform an anonymous general web search via a user-configured SearXNG instance (no API key required). ${SEARXNG_VSAC_CARTOS_GUARD} Returns an object: { query, resultsCount, results: [{ title, url, snippet }] }. Use for non-terminology web research when you need structured search results to process or filter. Requires searxng_base_url from the user. Rate limited (30 requests per minute). Optional: categories, language, time_range, safesearch, max_results (1–50).`,
         statusMessage: 'Searching web (SearXNG)...',
         allowedInPlanMode: true,
         parameters: {
@@ -129,7 +119,7 @@ export class ToolExecutor {
       },
       {
         name: MCPToolNames.SEARXNG_SEARCH_FORMATTED,
-        description: 'Perform an anonymous general web search via a SearXNG instance and return a single formatted string for LLM context (no API key required). Do NOT use this tool to discover, look up, or validate VSAC ValueSets, OIDs, or canonical URLs; use vsac_search for discovery and validate_vsac for an existing reference. Use for non-VSAC web research when you want to inject search results directly into your response. Return value: a single string with numbered entries (title, URL, description per result). Requires searxng_base_url. Rate limited (30 requests per minute). Same optional parameters as searxng_search (categories, language, time_range, safesearch, max_results 1–50).',
+        description: `Perform an anonymous general web search via a SearXNG instance and return a single formatted string for LLM context (no API key required). ${SEARXNG_VSAC_CARTOS_GUARD} Use for non-terminology web research when you want to inject search results directly into your response. Return value: a single string with numbered entries (title, URL, description per result). Requires searxng_base_url. Rate limited (30 requests per minute). Same optional parameters as searxng_search (categories, language, time_range, safesearch, max_results 1–50).`,
         statusMessage: 'Searching web (SearXNG)...',
         allowedInPlanMode: true,
         parameters: {
@@ -173,7 +163,7 @@ export class ToolExecutor {
       },
       {
         name: MCPToolNames.SEARXNG_SEARCH_THEN_FETCH,
-        description: 'Run a general SearXNG web search and then fetch full page content for the top results in one call. Do NOT use this tool for VSAC ValueSet discovery or validation; use vsac_search or validate_vsac instead. Use for non-VSAC research when you need both search and full text of the first few results. Returns an array of { url, title, snippet, content } (content is formatted body text). Consumes 1 search + N fetch rate limit tokens (N = max_results_to_fetch, default 3, max 5). Requires searxng_base_url and query.',
+        description: `Run a general SearXNG web search and then fetch full page content for the top results in one call. ${SEARXNG_VSAC_CARTOS_GUARD} Use for non-terminology research when you need both search and full text of the first few results. Returns an array of { url, title, snippet, content } (content is formatted body text). Consumes 1 search + N fetch rate limit tokens (N = max_results_to_fetch, default 3, max 5). Requires searxng_base_url and query.`,
         statusMessage: 'Searching and fetching...',
         allowedInPlanMode: true,
         parameters: {
@@ -201,7 +191,7 @@ export class ToolExecutor {
       },
       {
         name: MCPToolNames.SEARXNG_SEARCH_THEN_FETCH_FORMATTED,
-        description: 'Run a general SearXNG web search and fetch full content for the top results, then return a single formatted string for LLM context. Do NOT use this tool for VSAC ValueSet discovery or validation; use vsac_search or validate_vsac instead. Same as searxng_search_then_fetch but returns one string with all results concatenated. Use for non-VSAC "search and read" tasks. max_results_to_fetch default 3, max 5.',
+        description: `Run a general SearXNG web search and fetch full content for the top results, then return a single formatted string for LLM context. ${SEARXNG_VSAC_CARTOS_GUARD} Same as searxng_search_then_fetch but returns one string with all results concatenated. Use for non-terminology "search and read" tasks. max_results_to_fetch default 3, max 5.`,
         statusMessage: 'Searching and fetching...',
         allowedInPlanMode: true,
         parameters: {
@@ -345,7 +335,7 @@ export class ToolExecutor {
       },
       {
         name: MCPToolNames.VSAC_SEARCH,
-        description: 'MANDATORY for VSAC ValueSet discovery. Search the official NLM VSAC FHIR ValueSet endpoint before writing or editing CQL that introduces a ValueSet when the exact canonical URL is not already known in this conversation. Results returned by vsac_search are authoritative and MUST NOT be passed to validate_vsac; choose a candidate and proceed directly to the requested code edit using its exact canonical URL. Never guess a VSAC OID/canonical URL and never use SearXNG as a substitute. Returns verified candidates with id/OID, canonical URL, title/name, version, status, publisher, description, and a CQL declaration. VSAC credentials and base URL are injected by CQL Studio; do not ask the user for them.',
+        description: 'MANDATORY for VSAC ValueSet discovery when UMLS credentials are available and the exact canonical URL is not already known. Search the official NLM VSAC FHIR ValueSet endpoint before writing or editing CQL that introduces a VSAC ValueSet. Results returned by vsac_search are authoritative and MUST NOT be passed to validate_vsac; choose a candidate and proceed directly to the requested code edit using its exact canonical URL. Never guess a VSAC OID/canonical URL and never use SearXNG as a substitute. For ONC Certification/SVAP/US Core sets when VSAC credentials are absent, prefer cartos_search instead. Returns verified candidates with id/OID, canonical URL, title/name, version, status, publisher, description, and a CQL declaration. VSAC credentials and base URL are injected by CQL Studio; do not ask the user for them.',
         statusMessage: 'Searching VSAC...',
         allowedInPlanMode: true,
         parameters: {
@@ -385,7 +375,7 @@ export class ToolExecutor {
       },
       {
         name: MCPToolNames.VALIDATE_VSAC,
-        description: 'Use only for checking an exact VSAC canonical URL or id/OID that came from user input or existing CQL and has not already been established by vsac_search in this conversation. Never call validate_vsac for a candidate returned by vsac_search; search results are already authoritative. Never validate through SearXNG. If only a clinical topic/name is known, call vsac_search instead. After valid=true, proceed directly to the requested code edit using the returned exact canonical URL. VSAC credentials and base URL are injected by CQL Studio; do not ask the user for them.',
+        description: 'Use only for checking an exact VSAC canonical URL or id/OID that came from user input or existing CQL and has not already been established by vsac_search in this conversation. Never call validate_vsac for a candidate returned by vsac_search; search results are already authoritative. Never validate through SearXNG. If only a clinical topic/name is known, call vsac_search instead. For ONC Certification/SVAP/US Core terminology when VSAC credentials are absent, prefer cartos_search / validate_cartos. After valid=true, proceed directly to the requested code edit using the returned exact canonical URL. VSAC credentials and base URL are injected by CQL Studio; do not ask the user for them.',
         statusMessage: 'Validating VSAC value set...',
         allowedInPlanMode: true,
         parameters: {
@@ -398,6 +388,66 @@ export class ToolExecutor {
             id: {
               type: 'string',
               description: 'ValueSet logical id or OID to validate. urn:oid: prefixes are accepted.'
+            }
+          },
+          required: []
+        }
+      },
+      {
+        name: MCPToolNames.CARTOS_SEARCH,
+        description: 'Search ONC Cartos (public FHIR R4 terminology service) for ValueSets tied to ONC Certification, SVAP, and supported implementation guides. Prefer cartos_search when VSAC credentials are absent, or when the user needs US Core / certification / SVAP-bound terminology. Prefer vsac_search for broad NLM VSAC catalog discovery when UMLS credentials are available. Results are authoritative and MUST NOT be passed to validate_cartos; choose a candidate and use its exact canonical URL. Never invent Cartos/VSAC URLs and never use SearXNG as a substitute. No credentials required; optional base URL is injected by CQL Studio.',
+        statusMessage: 'Searching Cartos...',
+        allowedInPlanMode: true,
+        parameters: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description: 'Human search text applied to FHIR title contains.'
+            },
+            title: {
+              type: 'string',
+              description: 'FHIR title contains search.'
+            },
+            name: {
+              type: 'string',
+              description: 'FHIR name contains search.'
+            },
+            url: {
+              type: 'string',
+              description: 'Exact canonical ValueSet URL to search for.'
+            },
+            identifier: {
+              type: 'string',
+              description: 'Identifier or OID to search for.'
+            },
+            status: {
+              type: 'string',
+              description: 'FHIR ValueSet status. Defaults to active.'
+            },
+            count: {
+              type: 'number',
+              description: 'Maximum results to return. Defaults to 10, max 50.'
+            }
+          },
+          required: []
+        }
+      },
+      {
+        name: MCPToolNames.VALIDATE_CARTOS,
+        description: 'Validate an exact Cartos/ONC ValueSet canonical URL or id from user input or existing CQL that has not already been established by cartos_search. Never call validate_cartos for a cartos_search hit. Never validate through SearXNG. Prefer validate_vsac for known VSAC OIDs when UMLS credentials are available. After valid=true, copy the returned canonicalUrl exactly into CQL.',
+        statusMessage: 'Validating Cartos value set...',
+        allowedInPlanMode: true,
+        parameters: {
+          type: 'object',
+          properties: {
+            url: {
+              type: 'string',
+              description: 'Canonical ValueSet URL to validate.'
+            },
+            id: {
+              type: 'string',
+              description: 'ValueSet logical id or OID. urn:oid: prefixes are accepted.'
             }
           },
           required: []
@@ -473,6 +523,10 @@ export class ToolExecutor {
         return await this.executeVsacSearch(params);
       case MCPToolNames.VALIDATE_VSAC:
         return await this.executeValidateVsac(params);
+      case MCPToolNames.CARTOS_SEARCH:
+        return await this.executeCartosSearch(params);
+      case MCPToolNames.VALIDATE_CARTOS:
+        return await this.executeValidateCartos(params);
       default:
         throw new Error(`Unknown tool: ${toolName}`);
     }
@@ -630,15 +684,13 @@ export class ToolExecutor {
     };
   }
 
-  private getVsacConfig(params: any): VsacToolConfig {
-    const fhirBaseRaw =
-      typeof params?.vsac_fhir_base_url === 'string' && params.vsac_fhir_base_url.trim()
-        ? params.vsac_fhir_base_url.trim()
-        : DEFAULT_VSAC_FHIR_BASE;
-    const base = new URL(fhirBaseRaw.replace(/\/+$/, ''));
-    if (base.protocol !== 'https:' || !ALLOWED_VSAC_HOSTS.has(base.hostname)) {
-      throw new Error('Invalid VSAC FHIR base URL. Only NLM CTS hosts are allowed.');
-    }
+  private getVsacRemoteConfig(params: any): RemoteTerminologyConfig {
+    const fhirBaseUrl = normalizeRemoteFhirBaseUrl(
+      params?.vsac_fhir_base_url,
+      DEFAULT_VSAC_FHIR_BASE,
+      ALLOWED_VSAC_HOSTS,
+      'VSAC'
+    );
     const username =
       typeof params?.vsac_api_username === 'string' && params.vsac_api_username.trim()
         ? params.vsac_api_username.trim()
@@ -647,149 +699,65 @@ export class ToolExecutor {
     if (!password) {
       throw new Error('VSAC UMLS API key is required. Configure it in CQL Studio Settings.');
     }
+    const token = Buffer.from(`${username}:${password}`).toString('base64');
     return {
-      fhirBaseUrl: base.toString().replace(/\/+$/, ''),
-      username,
-      password
+      fhirBaseUrl,
+      allowedHosts: ALLOWED_VSAC_HOSTS,
+      authorizationHeader: `Basic ${token}`,
+      label: 'VSAC',
     };
   }
 
-  private vsacHeaders(config: VsacToolConfig): Record<string, string> {
-    const token = Buffer.from(`${config.username}:${config.password}`).toString('base64');
+  private getCartosRemoteConfig(params: any): RemoteTerminologyConfig {
+    const fhirBaseUrl = normalizeRemoteFhirBaseUrl(
+      params?.cartos_fhir_base_url,
+      DEFAULT_CARTOS_FHIR_BASE,
+      ALLOWED_CARTOS_HOSTS,
+      'Cartos'
+    );
     return {
-      Accept: FHIR_JSON,
-      'Content-Type': FHIR_JSON,
-      Authorization: `Basic ${token}`
+      fhirBaseUrl,
+      allowedHosts: ALLOWED_CARTOS_HOSTS,
+      label: 'Cartos',
     };
-  }
-
-  private async fetchVsacJson<T>(config: VsacToolConfig, pathAndQuery: string): Promise<T> {
-    const path = pathAndQuery.startsWith('/') ? pathAndQuery : `/${pathAndQuery}`;
-    const response = await fetch(`${config.fhirBaseUrl}${path}`, {
-      method: 'GET',
-      headers: this.vsacHeaders(config)
-    });
-    if (!response.ok) {
-      let detail = response.statusText;
-      try {
-        const body = await response.text();
-        if (body) detail = body.substring(0, 500);
-      } catch {
-        // Keep status text.
-      }
-      throw new Error(`VSAC request failed (${response.status}): ${detail}`);
-    }
-    return (await response.json()) as T;
-  }
-
-  private async fetchVsacJsonOrNull<T>(config: VsacToolConfig, pathAndQuery: string): Promise<T | null> {
-    try {
-      return await this.fetchVsacJson<T>(config, pathAndQuery);
-    } catch (error) {
-      if (error instanceof Error && error.message.startsWith('VSAC request failed (404):')) {
-        return null;
-      }
-      throw error;
-    }
-  }
-
-  private summarizeValueSet(vs: any): VsacValueSetSummary {
-    return {
-      resourceType: 'ValueSet',
-      id: typeof vs?.id === 'string' ? vs.id : undefined,
-      url: typeof vs?.url === 'string' ? vs.url : undefined,
-      name: typeof vs?.name === 'string' ? vs.name : undefined,
-      title: typeof vs?.title === 'string' ? vs.title : undefined,
-      version: typeof vs?.version === 'string' ? vs.version : undefined,
-      status: typeof vs?.status === 'string' ? vs.status : undefined,
-      publisher: typeof vs?.publisher === 'string' ? vs.publisher : undefined,
-      date: typeof vs?.date === 'string' ? vs.date : undefined,
-      description: typeof vs?.description === 'string' ? vs.description : undefined,
-      expansionTotal: typeof vs?.expansion?.total === 'number' ? vs.expansion.total : undefined
-    };
-  }
-
-  private cqlSnippetForValueSet(vs: any): string | null {
-    if (!vs?.url || typeof vs.url !== 'string') return null;
-    const label = String(vs.title || vs.name || vs.id || 'VSAC ValueSet').replace(/"/g, '\\"');
-    return `valueset "${label}": '${vs.url}'`;
-  }
-
-  private async fetchVsacValueSetByIdOrUrl(config: VsacToolConfig, params: any): Promise<any | null> {
-    const url = typeof params?.url === 'string' ? params.url.trim() : '';
-    const idRaw = typeof params?.id === 'string' ? params.id.trim() : '';
-    if (url) {
-      const q = new URLSearchParams();
-      q.set('url', url);
-      q.set('_count', '1');
-      const bundle = await this.fetchVsacJson<any>(config, `/ValueSet?${q.toString()}`);
-      const first = bundle?.entry?.[0]?.resource;
-      return first?.resourceType === 'ValueSet' ? first : null;
-    }
-    if (idRaw) {
-      const id = idRaw.replace(/^urn:oid:/i, '');
-      return await this.fetchVsacJsonOrNull<any>(config, `/ValueSet/${encodeURIComponent(id)}`);
-    }
-    throw new Error('Either url or id is required.');
   }
 
   private async executeVsacSearch(params: any): Promise<any> {
-    const config = this.getVsacConfig(params);
-    const q = new URLSearchParams();
-    const query = typeof params?.query === 'string' ? params.query.trim() : '';
-    const title = typeof params?.title === 'string' ? params.title.trim() : '';
-    const name = typeof params?.name === 'string' ? params.name.trim() : '';
-    const url = typeof params?.url === 'string' ? params.url.trim() : '';
-    const identifier = typeof params?.identifier === 'string' ? params.identifier.trim() : '';
-    const status = typeof params?.status === 'string' ? params.status.trim() : 'active';
-    const count = Math.min(50, Math.max(1, Number(params?.count) || 10));
-
-    if (!query && !title && !name && !url && !identifier) {
-      throw new Error('vsac_search requires query, title, name, url, or identifier.');
-    }
-
-    if (title || query) q.set('title:contains', title || query);
-    if (name) q.set('name:contains', name);
-    if (url) q.set('url', url);
-    if (identifier) q.set('identifier', identifier);
-    if (status) q.set('status', status);
-    q.set('_count', String(count));
-
-    const bundle = await this.fetchVsacJson<any>(config, `/ValueSet?${q.toString()}`);
-    const valueSets = Array.isArray(bundle?.entry)
-      ? bundle.entry.map((entry: any) => entry?.resource).filter((resource: any) => resource?.resourceType === 'ValueSet')
-      : [];
-    return {
-      query: { query, title, name, url, identifier, status, count },
-      total: typeof bundle?.total === 'number' ? bundle.total : undefined,
-      resultsCount: valueSets.length,
-      results: valueSets.map((vs: any) => ({
-        ...this.summarizeValueSet(vs),
-        canonicalUrl: typeof vs?.url === 'string' ? vs.url : undefined,
-        cqlDeclaration: this.cqlSnippetForValueSet(vs),
-        cqlSnippet: this.cqlSnippetForValueSet(vs)
-      })),
-      codeGenerationInstruction: 'These results are authoritative; do not call validate_vsac. Choose the best match and proceed directly to the code edit, copying its canonicalUrl exactly. Do not construct, shorten, normalize, or guess a different VSAC URL or OID.'
-    };
+    return searchRemoteValueSets(this.getVsacRemoteConfig(params), params, {
+      toolName: 'vsac_search',
+      validateToolName: 'validate_vsac',
+      fallbackLabel: 'VSAC ValueSet',
+      codeGenerationInstruction:
+        'These results are authoritative; do not call validate_vsac. Choose the best match and proceed directly to the code edit, copying its canonicalUrl exactly. Do not construct, shorten, normalize, or guess a different VSAC URL or OID.',
+    });
   }
 
   private async executeValidateVsac(params: any): Promise<any> {
-    const config = this.getVsacConfig(params);
-    const valueSet = await this.fetchVsacValueSetByIdOrUrl(config, params);
-    if (!valueSet) {
-      return {
-        valid: false,
-        message: 'No VSAC ValueSet found for the provided reference.'
-      };
-    }
-    return {
-      valid: true,
-      valueSet: this.summarizeValueSet(valueSet),
-      canonicalUrl: valueSet.url,
-      cqlDeclaration: this.cqlSnippetForValueSet(valueSet),
-      cqlSnippet: this.cqlSnippetForValueSet(valueSet),
-      codeGenerationInstruction: 'Copy canonicalUrl exactly into the CQL declaration. Do not construct, shorten, normalize, or guess a different VSAC URL or OID.'
-    };
+    return validateRemoteValueSet(this.getVsacRemoteConfig(params), params, {
+      notFoundMessage: 'No VSAC ValueSet found for the provided reference.',
+      fallbackLabel: 'VSAC ValueSet',
+      codeGenerationInstruction:
+        'Copy canonicalUrl exactly into the CQL declaration. Do not construct, shorten, normalize, or guess a different VSAC URL or OID.',
+    });
+  }
+
+  private async executeCartosSearch(params: any): Promise<any> {
+    return searchRemoteValueSets(this.getCartosRemoteConfig(params), params, {
+      toolName: 'cartos_search',
+      validateToolName: 'validate_cartos',
+      fallbackLabel: 'Cartos ValueSet',
+      codeGenerationInstruction:
+        'These results are authoritative; do not call validate_cartos. Choose the best match and proceed directly to the code edit, copying its canonicalUrl exactly. Do not construct, shorten, normalize, or guess a different Cartos/VSAC URL or OID.',
+    });
+  }
+
+  private async executeValidateCartos(params: any): Promise<any> {
+    return validateRemoteValueSet(this.getCartosRemoteConfig(params), params, {
+      notFoundMessage: 'No Cartos ValueSet found for the provided reference.',
+      fallbackLabel: 'Cartos ValueSet',
+      codeGenerationInstruction:
+        'Copy canonicalUrl exactly into the CQL declaration. Do not construct, shorten, normalize, or guess a different Cartos/VSAC URL or OID.',
+    });
   }
 
 }

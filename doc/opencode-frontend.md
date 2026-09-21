@@ -100,6 +100,8 @@ Wire-level request and response types live in `@cql-studio/core`. UI-only timeli
 
 The project-local `validate-vsac` OpenCode skill and `/validate-vsac` command audit an exact canonical URL/OID, or all VSAC ValueSet declarations in the active CQL file. The skill uses only read-only MCP tools: authoritative VSAC validation/discovery plus bounded reads and expansion checks against the configured terminology endpoint. It never writes a FHIR resource.
 
+The companion `validate-cartos` skill and `/validate-cartos` command do the same for ONC Cartos (Certification / SVAP / IG terminology) via `cartos_search` / `validate_cartos`. Prefer Cartos when VSAC credentials are absent or the user needs certification-bound sets; prefer VSAC for broad NLM catalog discovery when UMLS credentials are configured.
+
 FHIR writes remain a deliberate CQL Studio action. Library save does not import VSAC ValueSets. From the CQL editor hover/right-click panel on a VSAC ValueSet declaration (or use), choose **Import from VSAC** for that ValueSet or **Import all from VSAC** for every VSAC ValueSet declared in the file. AI **Apply & save** still imports VSAC ValueSets referenced in the applied CQL when needed (labeled **Apply, import terminology & save**), using the same import service: search the configured terminology endpoint by exact canonical URL (preferring an expandable copy when duplicates exist), fetch missing or unusable resources through the authenticated VSAC proxy, and post them to the writable terminology endpoint (at most 50 ValueSets that are not already present/expandable per import). Merely mentioning a VSAC URL in chat never imports it.
 
 ## Remaining production checklist

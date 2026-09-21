@@ -108,7 +108,7 @@ interface RuntimeSession {
 
 const CQL_COMMANDS = new Set([
   'validate', 'review', 'explain', 'dependencies', 'library', 'valueset',
-  'context', 'fhir', 'research', 'terminology', 'validate-vsac',
+  'context', 'fhir', 'research', 'terminology', 'validate-vsac', 'validate-cartos',
 ]);
 
 /**

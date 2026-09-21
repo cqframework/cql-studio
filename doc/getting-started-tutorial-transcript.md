@@ -51,9 +51,11 @@ If you have developer mode enabled, you'll also see a **Danger Zone** section at
 Before we leave the uploader, let's quickly run the HelloWorld example we just loaded. We'll **Authoring ->  CQL IDE**, open the HelloWorld library from the server, search and select one of the bundled sample patients under the "Context" section, and click **Execute**. You should see expression results in the Console, which is enough to confirm the stack is working end to end. We'll come back to the IDE a bit later for a fuller walkthrough of panels, clipboard insert, and AI etc, but for now this is just a smoke check after upload and get you started actually running CQL!
 
 
-## VSAC Browser, Terminology Browser, and Clipboard
+## VSAC Browser, Cartos Browser, Terminology Browser, and Clipboard
 
 U.S. users with a VSAC API key will be able to use the Tools -> VSAC Browser screen. This allows for freetext search, recursive dependency analysis, and full value set expansion from VSAC when allowed by the server. The import buttons provide one-step import into the local server, or the terminology server configured in the active environment profile.
+
+Tools -> Cartos Browser provides similar find-and-import workflows against ONC’s public Cartos FHIR terminology service (Certification / SVAP / IG value sets). No API key is required; Cartos is for design-time discovery and import only, not production runtime lookups.
 
 The terminology browser operates on the terminology system in your enviroment profile. It's not intended to be a full terminology authoring and management sytem, but more of a quick way to locate value sets or codings stored on it and then add their references to the clipboard using this button right here. Items in the app clipboard are then available to the IDE and elsewhere.
 

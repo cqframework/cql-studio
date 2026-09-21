@@ -28,6 +28,7 @@ export interface OpenCodeToolContext {
     vsacFhirBaseUrl?: string;
     vsacApiUsername?: string;
     vsacApiPassword?: string;
+    cartosFhirBaseUrl?: string;
     searxngBaseUrl?: string;
   };
 }
@@ -196,6 +197,9 @@ export class OpenCodeToolExecutor {
             vsac_fhir_base_url: context.toolContext?.vsacFhirBaseUrl,
             vsac_api_username: context.toolContext?.vsacApiUsername,
             vsac_api_password: context.toolContext?.vsacApiPassword,
+          } : {}),
+          ...(name === MCPToolNames.CARTOS_SEARCH || name === MCPToolNames.VALIDATE_CARTOS ? {
+            cartos_fhir_base_url: context.toolContext?.cartosFhirBaseUrl,
           } : {}),
         });
     }

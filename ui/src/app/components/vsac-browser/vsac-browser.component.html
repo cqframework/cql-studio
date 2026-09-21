@@ -89,13 +89,6 @@
   <div class="card">
     <div class="card-body">
       <form id="vsac-search-form" class="row g-3" (ngSubmit)="runSearch()">
-        <p class="col-12 small text-muted mb-0">
-          CTS exposes many <code>ValueSet</code> search parameters (see your server’s <code>/metadata</code>).
-          Per <a id="vsac-search-nlm-name-link"
-            href="https://www.nlm.nih.gov/vsac/support/usingvsac/vsacname-fhirname-fhirtitle.html" target="_blank"
-            rel="noopener noreferrer">NLM</a>, the VSAC display name maps to FHIR <strong>title</strong>;
-          <strong>name</strong> is the machine-oriented id.
-        </p>
         <div class="col-lg-3 col-md-6">
           <div class="form-floating">
             <input id="vsac-search-title" class="form-control" placeholder=" " [ngModel]="searchTitle()"

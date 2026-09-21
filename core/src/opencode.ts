@@ -53,6 +53,7 @@ export interface CreateOpenCodeSessionRequest {
     vsacFhirBaseUrl?: string;
     vsacApiUsername?: string;
     vsacApiPassword?: string;
+    cartosFhirBaseUrl?: string;
     searxngBaseUrl?: string;
   };
   /** Injected by the trusted gateway. Never accepted from the browser verbatim. */

@@ -1,0 +1,441 @@
+<div id="cartos-browser" class="container-fluid py-3">
+  <div class="mb-3">
+    <h1 class="h4 mb-0">Cartos Browser</h1>
+    <p class="text-muted small mb-0">ONC Terminology Service — design-time discovery and import of Certification / SVAP / IG value sets.
+      Not for production runtime lookups.
+      <a href="https://healthit.gov/resources/cartos-oncs-terminology-service/" target="_blank" rel="noopener noreferrer">User guide</a>
+    </p>
+  </div>
+
+  @if (terminologyImportWarning()) {
+  <div class="alert alert-warning" role="alert">
+    Terminology endpoint points at a read-only authority. Configure a writable terminology server in Settings → Environments before importing.
+  </div>
+  }
+
+  @if (error()) {
+  <div class="alert alert-danger" role="alert">{{ error() }}</div>
+  }
+
+  <ul class="nav nav-tabs mb-3" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button id="cartos-tab-search" class="nav-link" [class.active]="activeTab() === 'search'" type="button"
+        (click)="setTab('search')">ValueSet Search</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button id="cartos-tab-valueset" class="nav-link" [class.active]="activeTab() === 'valueset'" type="button"
+        (click)="setTab('valueset')">Value Set Expansion</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button id="cartos-tab-codesystem" class="nav-link" [class.active]="activeTab() === 'codesystem'" type="button"
+        (click)="setTab('codesystem')">Code Systems</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button id="cartos-tab-status" class="nav-link" [class.active]="activeTab() === 'status'" type="button"
+        (click)="setTab('status')">Status</button>
+    </li>
+  </ul>
+
+  @if (activeTab() === 'status') {
+  <div id="cartos-status-panel">
+    <form id="cartos-status-form" class="mb-3" (ngSubmit)="refreshStatus()">
+      <button id="cartos-refresh-status" type="submit" class="btn btn-primary btn-md" [disabled]="loading()">Test
+        Connection</button>
+    </form>
+    @if (loading()) {
+    <div class="alert alert-secondary d-flex align-items-center mb-0" role="status">
+      <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+      <span>Loading capability statement…</span>
+    </div>
+    } @else if (capability()) {
+    <div class="alert alert-success mb-0" role="status">
+      <h2 class="alert-heading h6">FHIR endpoint reachable</h2>
+      <p class="small text-muted mb-2">FHIR base: <code>{{ settingsService.getEffectiveCartosFhirBaseUrl() }}</code></p>
+      <dl class="row small mb-0">
+        <dt class="col-sm-3 col-md-2">FHIR version</dt>
+        <dd class="col-sm-9 col-md-10 mb-2">{{ capability()!.fhirVersion || '—' }}</dd>
+        <dt class="col-sm-3 col-md-2">Software</dt>
+        <dd class="col-sm-9 col-md-10 mb-0">{{ capability()!.software?.name || '—' }}
+          @if (capability()!.software?.version) {
+          <span class="text-muted">{{ capability()!.software?.version }}</span>
+          }
+        </dd>
+      </dl>
+      <hr class="my-2">
+      <p class="small mb-0 text-muted">Cartos is public and read-only. Use it to find and import value sets into your writable terminology server. See the
+        <a href="https://healthit.gov/resources/cartos-oncs-terminology-service/" target="_blank" rel="noopener noreferrer">ONC Cartos user guide</a>
+        for scope, licensing, and fair-use expectations.</p>
+    </div>
+    } @else {
+    <div class="alert alert-light border mb-0" role="status">
+      Click Test Connection to load the Cartos CapabilityStatement via CQL Studio Server
+      (<code>{{ settingsService.getEffectiveServerBaseUrl() }}</code>).
+    </div>
+    }
+  </div>
+  }
+
+  @if (activeTab() === 'search') {
+  <div id="cartos-search-panel">
+    <form class="row g-2 mb-3" (ngSubmit)="runSearch()">
+      <div class="col-md-4">
+        <label class="form-label small" for="cartos-search-title">Title contains</label>
+        <input id="cartos-search-title" class="form-control form-control-sm" [ngModel]="searchTitle()"
+          (ngModelChange)="searchTitle.set($event)" name="searchTitle" [ngModelOptions]="{standalone: true}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small" for="cartos-search-name">Name contains</label>
+        <input id="cartos-search-name" class="form-control form-control-sm" [ngModel]="searchName()"
+          (ngModelChange)="searchName.set($event)" name="searchName" [ngModelOptions]="{standalone: true}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small" for="cartos-search-url">URL</label>
+        <input id="cartos-search-url" class="form-control form-control-sm" [ngModel]="searchUrl()"
+          (ngModelChange)="searchUrl.set($event)" name="searchUrl" [ngModelOptions]="{standalone: true}">
+      </div>
+      <div class="col-md-3">
+        <label class="form-label small" for="cartos-search-identifier">Identifier</label>
+        <input id="cartos-search-identifier" class="form-control form-control-sm" [ngModel]="searchIdentifier()"
+          (ngModelChange)="searchIdentifier.set($event)" name="searchIdentifier" [ngModelOptions]="{standalone: true}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small" for="cartos-search-version">Version</label>
+        <input id="cartos-search-version" class="form-control form-control-sm" [ngModel]="searchVersion()"
+          (ngModelChange)="searchVersion.set($event)" name="searchVersion" [ngModelOptions]="{standalone: true}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small" for="cartos-search-status">Status</label>
+        <input id="cartos-search-status" class="form-control form-control-sm" [ngModel]="searchStatus()"
+          (ngModelChange)="searchStatus.set($event)" name="searchStatus" [ngModelOptions]="{standalone: true}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small" for="cartos-search-count">Count</label>
+        <input id="cartos-search-count" type="number" class="form-control form-control-sm" [ngModel]="searchCount()"
+          (ngModelChange)="searchCount.set(+$event || 50)" name="searchCount" [ngModelOptions]="{standalone: true}">
+      </div>
+      @if (valueSetSearchSupportsSort()) {
+      <div class="col-md-2">
+        <label class="form-label small" for="cartos-search-sort">Sort</label>
+        <select id="cartos-search-sort" class="form-select form-select-sm" [ngModel]="searchSortField()"
+          (ngModelChange)="searchSortField.set($event)" name="searchSortField" [ngModelOptions]="{standalone: true}">
+          <option value="">—</option>
+          @for (f of valueSetSortFieldOptions(); track f) {
+          <option [value]="f">{{ f }}</option>
+          }
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small" for="cartos-search-sort-order">Order</label>
+        <select id="cartos-search-sort-order" class="form-select form-select-sm" [ngModel]="searchSortOrder()"
+          (ngModelChange)="setSearchSortOrder($event)" name="searchSortOrder" [ngModelOptions]="{standalone: true}">
+          <option value="asc">asc</option>
+          <option value="desc">desc</option>
+        </select>
+      </div>
+      }
+      <div class="col-12">
+        <button id="cartos-run-search" type="submit" class="btn btn-primary btn-sm" [disabled]="loading()">Search</button>
+      </div>
+    </form>
+
+    @if (searchPagination().showNav) {
+    <div class="btn-group btn-group-sm mb-2" role="group">
+      <button type="button" class="btn btn-outline-secondary" [disabled]="loading() || !searchPagination().first"
+        (click)="goSearchPage('first')">First</button>
+      <button type="button" class="btn btn-outline-secondary" [disabled]="loading() || !searchPagination().previous"
+        (click)="goSearchPage('previous')">Prev</button>
+      <button type="button" class="btn btn-outline-secondary" [disabled]="loading() || !searchPagination().next"
+        (click)="goSearchPage('next')">Next</button>
+      <button type="button" class="btn btn-outline-secondary" [disabled]="loading() || !searchPagination().last"
+        (click)="goSearchPage('last')">Last</button>
+    </div>
+    }
+
+    @if (searchResults().length) {
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>URL</th>
+            <th>Version</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (vs of searchResults(); track vs.id || vs.url) {
+          <tr>
+            <td>{{ vs.title || vs.name || '—' }}</td>
+            <td class="small text-break"><code>{{ vs.url || '—' }}</code></td>
+            <td>{{ vs.version || '—' }}</td>
+            <td class="text-nowrap">
+              <button type="button" class="btn btn-outline-primary btn-sm me-1" (click)="selectSearchResult(vs)"
+                [disabled]="loading()">Open</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm me-1" (click)="copyCqlDeclaration(vs)">CQL</button>
+              <button type="button" class="btn btn-outline-success btn-sm" (click)="importSearchValueSetToTerminology(vs)"
+                [disabled]="loading() || terminologyImportWarning()">Import</button>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    } @else if (!loading()) {
+    <p class="small text-muted mb-0">No results yet. Search Cartos ValueSets by title, name, or canonical URL.</p>
+    }
+  </div>
+  }
+
+  @if (activeTab() === 'valueset') {
+  <div id="cartos-valueset-panel" class="row g-3">
+    <div class="col-lg-5">
+      <div class="card h-100">
+        <div class="card-header">Load</div>
+        <div class="card-body">
+          <form id="cartos-load-valueset-form" (ngSubmit)="loadValueSetByOid()">
+            <div class="input-group mb-2">
+              <div class="form-floating flex-grow-1">
+                <input id="cartos-oid" class="form-control" placeholder=" " [ngModel]="oidInput()"
+                  (ngModelChange)="oidInput.set($event)" [ngModelOptions]="{standalone: true}" />
+                <label for="cartos-oid">OID or ValueSet id</label>
+              </div>
+              <button id="cartos-load-valueset" type="submit" class="btn btn-primary align-self-stretch"
+                [disabled]="loading()">Load</button>
+            </div>
+          </form>
+          <p class="form-text small text-muted mb-2">Example: <code>2.16.840.1.113883.3.464.1003.101.12.1001</code></p>
+          <div class="btn-group btn-group-sm flex-wrap">
+            <button type="button" class="btn btn-secondary" (click)="copyOid()"
+              [disabled]="!loadedValueSet() && !oidInput().trim()">Copy OID</button>
+            <button type="button" class="btn btn-secondary" (click)="copyCanonicalUrl()"
+              [disabled]="!loadedValueSet()?.url">Copy URL</button>
+            <button type="button" class="btn btn-secondary" (click)="copyCqlSnippet()"
+              [disabled]="!loadedValueSet()?.url">Copy CQL valueset</button>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-3 align-items-center">
+            @if (hasComposeValueSetReferences()) {
+            <button type="button" id="cartos-recurse-dependencies" class="btn btn-secondary btn-sm"
+              (click)="recurseDependenciesForLoadedValueSet()" [disabled]="loading() || dependencyBusy() || !loadedValueSet()">
+              Rerun Dependency Analysis
+            </button>
+            }
+            <button type="button" id="cartos-import-vs-terminology" class="btn btn-success btn-sm"
+              (click)="importLoadedValueSetToTerminology()"
+              [disabled]="loading() || terminologyImportWarning() || !loadedValueSet()">
+              Import Only This Value Set
+            </button>
+            @if (dependencyTree()) {
+            <button type="button" id="cartos-import-vs-terminology-with-dependencies" class="btn btn-success btn-sm"
+              (click)="importLoadedValueSetWithDependenciesToTerminology()"
+              [disabled]="loading() || dependencyBusy() || terminologyImportWarning() || dependencyImportNodes().length === 0">
+              Import Value Set and All Dependencies
+            </button>
+            }
+            <button type="button" id="cartos-add-vs-clipboard" class="btn btn-outline-primary btn-sm"
+              (click)="addLoadedValueSetToAppClipboard()" [disabled]="loading() || !loadedValueSet()"
+              title="Add this ValueSet resource to the app clipboard">
+              <i class="bi bi-clipboard-plus me-1" aria-hidden="true"></i>Add to Studio Clipboard
+            </button>
+          </div>
+          @if (dependencyStatusMessage()) {
+          <p id="cartos-dependency-status" class="form-text small mt-2 mb-0">{{ dependencyStatusMessage() }}</p>
+          }
+          <app-value-set-dependency-tree [tree]="dependencyTree()" [importableCount]="dependencyImportNodes().length"></app-value-set-dependency-tree>
+          <p class="form-text small text-muted mb-0 mt-2">Manage saved FHIR items under <a routerLink="/clipboard">Clipboard</a>.</p>
+          @if (loadedValueSet()) {
+          <div class="cartos-code-panel border rounded mt-3">
+            <div
+              class="cartos-code-panel-toolbar d-flex align-items-center justify-content-between px-2 py-1 border-bottom bg-body-tertiary">
+              <span class="small text-muted">ValueSet (JSON)</span>
+              <button type="button" id="cartos-copy-loaded-json" class="btn btn-sm btn-link text-body-secondary p-1"
+                (click)="copyLoadedValueSetJson()" title="Copy to clipboard">
+                <i class="bi bi-clipboard" aria-hidden="true"></i><span class="visually-hidden">Copy</span>
+              </button>
+            </div>
+            <div class="cartos-code-panel-body">
+              <app-syntax-highlighter [code]="loadedValueSetJson()" [language]="'json'"
+                [showLineNumbers]="false"></app-syntax-highlighter>
+            </div>
+          </div>
+          }
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-7">
+      <div class="card mb-3">
+        <div class="card-header">$expand</div>
+        <form id="cartos-expand-form" (ngSubmit)="expandLoaded()">
+          <div class="card-body row g-2">
+            <div class="col-md-4">
+              <div class="form-floating">
+                <input id="cartos-ex-filter" class="form-control form-control-sm" placeholder=" "
+                  [ngModel]="expandFilter()" (ngModelChange)="expandFilter.set($event)"
+                  [ngModelOptions]="{standalone: true}" />
+                <label for="cartos-ex-filter">Filter</label>
+              </div>
+            </div>
+            <div class="col-md-2">
+              <div class="form-floating">
+                <input id="cartos-ex-count" type="number" class="form-control form-control-sm" placeholder=" "
+                  [ngModel]="expandCount()" (ngModelChange)="expandCount.set(+$event || 0)"
+                  [ngModelOptions]="{standalone: true}" min="1" />
+                <label for="cartos-ex-count">Count</label>
+              </div>
+            </div>
+            <div class="col-md-2">
+              <div class="form-floating">
+                <input id="cartos-ex-offset" type="number" class="form-control form-control-sm" placeholder=" "
+                  [ngModel]="expandOffset()" (ngModelChange)="expandOffset.set(+$event || 0)"
+                  [ngModelOptions]="{standalone: true}" min="0" />
+                <label for="cartos-ex-offset">Offset</label>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <div class="form-floating">
+                <input id="cartos-ex-profile" class="form-control form-control-sm" placeholder=" "
+                  [ngModel]="expandProfile()" (ngModelChange)="expandProfile.set($event)"
+                  [ngModelOptions]="{standalone: true}" />
+                <label for="cartos-ex-profile">Profile (optional)</label>
+              </div>
+            </div>
+            <div class="col-12">
+              <button id="cartos-expand-run" type="submit" class="btn btn-primary btn-sm" [disabled]="loading()">Run
+                $expand</button>
+            </div>
+          </div>
+        </form>
+      </div>
+      @if (expandedValueSet()) {
+      <ng-template #cartosExpandPagination let-prevId="prevId" let-nextId="nextId">
+        <span class="small text-muted">Paging uses <strong>Count</strong> and <strong>Offset</strong> above with Run $expand, or use the buttons.</span>
+        <div class="btn-group btn-group-sm" role="group" aria-label="Expansion pages">
+          <button type="button" class="btn btn-secondary" [id]="prevId"
+            [disabled]="loading() || !expansionPageInfo().canPrev" (click)="expandGoPrevPage()">Previous page</button>
+          <button type="button" class="btn btn-secondary" [id]="nextId"
+            [disabled]="loading() || !expansionPageInfo().canNext" (click)="expandGoNextPage()">Next page</button>
+        </div>
+      </ng-template>
+      <div class="card">
+        <div class="card-header">
+          <span id="cartos-expand-summary">
+            @if (expansionPageInfo().summary) {
+            {{ expansionPageInfo().summary }}
+            } @else {
+            Expansion ({{ expansionRows().length }} codes this page)
+            }
+          </span>
+        </div>
+        @if (expandedValueSet()?.expansion) {
+        <div
+          class="border-bottom d-flex flex-wrap align-items-center justify-content-between gap-2 py-2 px-3 bg-body-tertiary">
+          <ng-container
+            [ngTemplateOutlet]="cartosExpandPagination"
+            [ngTemplateOutletContext]="{
+              prevId: 'cartos-expand-page-prev-top',
+              nextId: 'cartos-expand-page-next-top'
+            }" />
+        </div>
+        }
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-striped mb-0">
+              <thead class="bg-body">
+                <tr>
+                  <th>System</th>
+                  <th>Code</th>
+                  <th>Display</th>
+                  <th class="text-end">Clipboard</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (row of expansionRows(); track $index) {
+                <tr>
+                  <td class="small text-break">{{ row.system }}</td>
+                  <td><code>{{ row.code }}</code></td>
+                  <td>{{ row.display }}</td>
+                  <td class="text-end text-nowrap">
+                    <button type="button" class="btn btn-sm btn-outline-primary"
+                      [id]="'cartos-expand-add-clipboard-' + $index"
+                      (click)="addExpansionCodingToAppClipboard(row)" [disabled]="loading() || !row.system || !row.code"
+                      title="Add coding to app clipboard">
+                      <i class="bi bi-clipboard-plus" aria-hidden="true"></i><span class="visually-hidden">Add to app clipboard</span>
+                    </button>
+                  </td>
+                </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+        @if (expandedValueSet()?.expansion) {
+        <div class="card-footer d-flex flex-wrap align-items-center justify-content-between gap-2 py-2">
+          <ng-container
+            [ngTemplateOutlet]="cartosExpandPagination"
+            [ngTemplateOutletContext]="{
+              prevId: 'cartos-expand-page-prev',
+              nextId: 'cartos-expand-page-next'
+            }" />
+        </div>
+        }
+      </div>
+      }
+    </div>
+  </div>
+  }
+
+  @if (activeTab() === 'codesystem') {
+  <div id="cartos-codesystem-panel">
+    <form class="row g-2 mb-3" (ngSubmit)="runCodeSystemSearch()">
+      <div class="col-md-4">
+        <label class="form-label small" for="cartos-cs-name">Name contains</label>
+        <input id="cartos-cs-name" class="form-control form-control-sm" [ngModel]="csSearchName()"
+          (ngModelChange)="csSearchName.set($event)" name="csSearchName" [ngModelOptions]="{standalone: true}">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label small" for="cartos-cs-url">URL</label>
+        <input id="cartos-cs-url" class="form-control form-control-sm" [ngModel]="csSearchUrl()"
+          (ngModelChange)="csSearchUrl.set($event)" name="csSearchUrl" [ngModelOptions]="{standalone: true}">
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small" for="cartos-cs-count">Count</label>
+        <input id="cartos-cs-count" type="number" class="form-control form-control-sm" [ngModel]="csSearchCount()"
+          (ngModelChange)="csSearchCount.set(+$event || 50)" name="csSearchCount" [ngModelOptions]="{standalone: true}">
+      </div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button type="submit" class="btn btn-primary btn-sm" [disabled]="loading()">Search</button>
+      </div>
+    </form>
+
+    @if (codeSystemResults().length) {
+    <div class="table-responsive mb-3">
+      <table class="table table-sm table-hover">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>URL</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (cs of codeSystemResults(); track cs.id || cs.url) {
+          <tr>
+            <td>{{ cs.title || cs.name || '—' }}</td>
+            <td class="small text-break"><code>{{ cs.url || '—' }}</code></td>
+            <td>
+              <button type="button" class="btn btn-outline-primary btn-sm" (click)="selectCodeSystem(cs)"
+                [disabled]="loading() || !cs.id">Open</button>
+            </td>
+          </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+    }
+
+    @if (loadedCodeSystem()) {
+    <h2 class="h6">CodeSystem JSON</h2>
+    <app-syntax-highlighter [code]="loadedCodeSystemJson()" language="json"></app-syntax-highlighter>
+    }
+  </div>
+  }
+</div>

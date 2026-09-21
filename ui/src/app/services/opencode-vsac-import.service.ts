@@ -3,6 +3,7 @@
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import type { Bundle, Resource, ValueSet } from 'fhir/r4';
+import { isReadOnlyTerminologyEndpointUrl, isReadOnlyTerminologyAuthorityHost } from '@cql-studio/core';
 import { SettingsService } from './settings.service';
 import { TerminologyService } from './terminology.service';
 import { VsacService } from './vsac.service';
@@ -250,8 +251,8 @@ export class OpenCodeVsacImportService {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error('The configured terminology endpoint must use HTTP or HTTPS.');
     }
-    if (VSAC_HOSTS.has(parsed.hostname.toLowerCase()) || parsed.hostname.toLowerCase().endsWith('.nlm.nih.gov')) {
-      throw new Error('The configured terminology endpoint is VSAC/NLM and is read-only. Select a writable terminology server.');
+    if (isReadOnlyTerminologyAuthorityHost(parsed.hostname) || isReadOnlyTerminologyEndpointUrl(target)) {
+      throw new Error('The configured terminology endpoint is a read-only authority (VSAC/NLM or Cartos). Select a writable terminology server.');
     }
   }
 }

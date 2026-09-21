@@ -212,18 +212,20 @@ test('vsac_search MCP tool requires a search criterion', async () => {
   );
 });
 
-test('MCP metadata directs VSAC work away from general web search', async () => {
+test('MCP metadata directs VSAC and Cartos work away from general web search', async () => {
   const tools = await new ToolExecutor().getAvailableTools();
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
-  assert.match(byName.get('vsac_search')?.description ?? '', /MANDATORY for VSAC ValueSet discovery/);
-  assert.match(byName.get('validate_vsac')?.description ?? '', /Use only for checking an exact VSAC canonical URL/);
+  assert.match(byName.get('vsac_search')?.description ?? '', /VSAC ValueSet discovery/);
+  assert.match(byName.get('validate_vsac')?.description ?? '', /exact VSAC canonical URL/);
+  assert.match(byName.get('cartos_search')?.description ?? '', /Cartos/);
+  assert.match(byName.get('validate_cartos')?.description ?? '', /validate_cartos/);
   for (const name of [
     'searxng_search',
     'searxng_search_formatted',
     'searxng_search_then_fetch',
     'searxng_search_then_fetch_formatted'
   ]) {
-    assert.match(byName.get(name)?.description ?? '', /Do NOT use this tool .*VSAC/i);
+    assert.match(byName.get(name)?.description ?? '', /Do NOT use this tool .*VSAC or Cartos/i);
   }
 });

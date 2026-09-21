@@ -10,3 +10,4 @@ export * from './opencode.js';
 export * from './opencode-errors.js';
 export * from './opencode-session-history.js';
 export * from './cql-locator.js';
+export * from './terminology.js';

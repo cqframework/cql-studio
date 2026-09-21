@@ -1,11 +1,14 @@
 // Author: Preston Lee
 
 import { Component, computed, input } from '@angular/core';
-import { ValueSetDependencyNode, ValueSetDependencyStatus, ValueSetDependencyTreeRow } from './value-set-dependency.model';
+import {
+  ValueSetDependencyNode,
+  ValueSetDependencyStatus,
+  ValueSetDependencyTreeRow
+} from '../../../services/remote-fhir-terminology/value-set-dependency.lib';
 
 @Component({
   selector: 'app-value-set-dependency-tree',
-
   templateUrl: './value-set-dependency-tree.component.html'
 })
 export class ValueSetDependencyTreeComponent {

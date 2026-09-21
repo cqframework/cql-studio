@@ -353,6 +353,14 @@ export class SettingsService {
     return this.getEffectiveVsacApiPassword().length > 0;
   }
 
+  getDefaultCartosFhirBaseUrl(): string {
+    return readDeployConfig(DeployConfigKeys.CARTOS_FHIR_BASE_URL);
+  }
+
+  getEffectiveCartosFhirBaseUrl(): string {
+    return this.getDefaultCartosFhirBaseUrl().replace(/\/+$/, '');
+  }
+
   updateSettings(updates: Partial<Settings>): void {
     this.patchSettings(updates);
     void this.persistSettingsPatch(updates);
