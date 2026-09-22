@@ -2,20 +2,6 @@
   <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
     <div>
       <h1 class="h3 mb-1" id="data-models-title">Data Models</h1>
-      <p class="text-muted mb-0 small">
-        CQL ModelInfo Libraries (<code>type=model-definition</code>) on the active environment
-        <strong>content</strong> endpoint.
-      </p>
-    </div>
-    <div class="text-end small">
-      <div class="text-muted">Content endpoint</div>
-      @if (contentEndpointUrl()) {
-        <a id="data-models-content-endpoint-link" class="text-break" routerLink="/settings/environments">
-          {{ contentEndpointUrl() }}
-        </a>
-      } @else {
-        <a routerLink="/settings/environments">Configure content endpoint</a>
-      }
     </div>
   </div>
 
