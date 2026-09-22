@@ -140,6 +140,10 @@ export class FhirUploaderComponent implements AfterViewInit {
     return this.settingsService.getEffectiveEvaluationServerUrl();
   }
 
+  getEffectiveContentEndpointAddress(): string {
+    return this.settingsService.getEffectiveContentEndpointAddress();
+  }
+
   navigateToSettings(event: Event): void {
     event.preventDefault();
     this.router.navigate(['/settings/environments']);
@@ -681,8 +685,13 @@ export class FhirUploaderComponent implements AfterViewInit {
     }
 
     const effectiveFhirBaseUrl = this.settingsService.getEffectiveEvaluationServerUrl();
-    if (!effectiveFhirBaseUrl.trim()) {
-      alert('Please configure a FHIR Base URL in Application Settings.');
+    const contentBaseUrl = this.settingsService.getEffectiveContentEndpointAddress();
+    if (enabledFiles.length > 0 && !effectiveFhirBaseUrl.trim()) {
+      alert('Please configure an evaluation server URL in Application Settings for Bundle uploads.');
+      return;
+    }
+    if (enabledCqlFiles.length > 0 && !contentBaseUrl.trim()) {
+      alert('Please configure a content endpoint in Application Settings for CQL Library uploads.');
       return;
     }
 
@@ -848,13 +857,21 @@ export class FhirUploaderComponent implements AfterViewInit {
       throw new Error('CQL file has not been processed into a FHIR Library resource');
     }
 
-    const effectiveFhirBaseUrl = this.settingsService.getEffectiveEvaluationServerUrl();
+    const ctx = this.settingsService.getEndpointHttpContext('content', {
+      'Content-Type': 'application/fhir+json',
+      Accept: 'application/fhir+json'
+    });
+    const contentBaseUrl = ctx.address.replace(/\/+$/, '');
+    if (!contentBaseUrl) {
+      throw new Error('Content endpoint is not configured for the active environment');
+    }
     const libraryId = cqlFile.fhirLibrary.id;
-    const response = await fetch(`${effectiveFhirBaseUrl}/Library/${libraryId}`, {
+    const response = await fetch(`${contentBaseUrl}/Library/${libraryId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/fhir+json',
-        'Accept': 'application/fhir+json'
+        Accept: 'application/fhir+json',
+        ...ctx.headers
       },
       body: JSON.stringify(cqlFile.fhirLibrary)
     });

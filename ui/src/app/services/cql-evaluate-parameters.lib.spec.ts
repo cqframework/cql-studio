@@ -37,4 +37,23 @@ describe('cql-evaluate-parameters.lib', () => {
 
     expect(parameters.parameter).toEqual([]);
   });
+
+  it('omits a configured role when inclusion is false', () => {
+    const parameters: Parameters = { resourceType: 'Parameters', parameter: [] };
+    appendEvaluateEndpointParameters(parameters, {
+      id: BUILT_IN_ENVIRONMENT_ID,
+      name: 'Test',
+      evaluationServer: { address: 'http://localhost:8080/fhir' },
+      dataEndpoint: { address: 'http://localhost:8080/data' },
+      terminologyEndpoint: { address: 'http://localhost:8080/term' },
+      contentEndpoint: { address: 'http://localhost:8080/content' }
+    }, {
+      data: false,
+      terminology: true,
+      content: false
+    });
+
+    const names = (parameters.parameter ?? []).map(p => p.name);
+    expect(names).toEqual(['terminologyEndpoint']);
+  });
 });

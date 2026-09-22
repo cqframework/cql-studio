@@ -40,22 +40,30 @@ function buildEndpointForRole(
   return buildFhirEndpoint(config, { name: `${environment.name} ${role}` });
 }
 
+/** Which configured endpoints to include. A missing map sends every configured role. `false` omits that role. */
+export interface EvaluateEndpointInclusion {
+  data?: boolean;
+  terminology?: boolean;
+  content?: boolean;
+}
+
 /** Append data/terminology/content Endpoint parameters when addresses are configured. */
 export function appendEvaluateEndpointParameters(
   parameters: Parameters,
-  environment: CqlEnvironment
+  environment: CqlEnvironment,
+  inclusion?: EvaluateEndpointInclusion
 ): void {
   if (!parameters.parameter) {
     parameters.parameter = [];
   }
   const resolved = resolveEnvironmentEndpoints(environment);
-  if (resolved.dataEndpoint) {
+  if (resolved.dataEndpoint && inclusion?.data !== false) {
     parameters.parameter.push({ name: 'dataEndpoint', resource: resolved.dataEndpoint });
   }
-  if (resolved.terminologyEndpoint) {
+  if (resolved.terminologyEndpoint && inclusion?.terminology !== false) {
     parameters.parameter.push({ name: 'terminologyEndpoint', resource: resolved.terminologyEndpoint });
   }
-  if (resolved.contentEndpoint) {
+  if (resolved.contentEndpoint && inclusion?.content !== false) {
     parameters.parameter.push({ name: 'contentEndpoint', resource: resolved.contentEndpoint });
   }
 }

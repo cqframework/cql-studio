@@ -239,7 +239,8 @@ export class ExportComponent implements OnInit {
     return {
       name: env.name,
       data: this.environmentService.getEffectiveAddressForRoleOnEnvironment(env, 'data'),
-      terminology: this.environmentService.getEffectiveAddressForRoleOnEnvironment(env, 'terminology')
+      terminology: this.environmentService.getEffectiveAddressForRoleOnEnvironment(env, 'terminology'),
+      content: this.environmentService.getEffectiveAddressForRoleOnEnvironment(env, 'content')
     };
   });
 
@@ -361,7 +362,8 @@ export class ExportComponent implements OnInit {
         return false;
       }
       const preview = this.selectedPublishTargetPreview();
-      if (!preview?.data && !preview?.terminology) {
+      // Selected libraries always publish to the content channel.
+      if (!preview?.content) {
         return false;
       }
     }
@@ -916,6 +918,11 @@ export class ExportComponent implements OnInit {
       terminology: this.environmentService.getEndpointHttpContextForEnvironment(
         env,
         'terminology',
+        fhirHeaders
+      ),
+      content: this.environmentService.getEndpointHttpContextForEnvironment(
+        env,
+        'content',
         fhirHeaders
       )
     };

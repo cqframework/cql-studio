@@ -10,7 +10,7 @@ import { Parameters, Library } from 'fhir/r4';
 import { LibraryResource } from '../components/cql-ide/shared/ide-types';
 import { IdeExecutionSubject } from '../models/ide-context.model';
 import { buildHttpHeaders } from './endpoint-config.lib';
-import { appendEvaluateEndpointParameters } from './cql-evaluate-parameters.lib';
+import { appendEvaluateEndpointParameters, EvaluateEndpointInclusion } from './cql-evaluate-parameters.lib';
 
 export type CqlOperationType = '$evaluate' | '$cql';
 
@@ -44,6 +44,8 @@ export interface CqlExecutionOptions {
   libraryUrl?: string;
   libraryDescription?: string;
   library?: Library;
+  /** When set, `false` omits that endpoint from `$evaluate` even if the profile has an address. */
+  endpointInclusion?: EvaluateEndpointInclusion;
 }
 
 @Injectable({
@@ -80,7 +82,7 @@ export class CqlExecutionService extends BaseService {
   }
 
   private executeLibraryWithoutSubject(libraryId: string, options?: CqlExecutionOptions): Observable<CqlExecutionResult[]> {
-    const parameters = this.createBaseParameters();
+    const parameters = this.createBaseParameters(options);
     this.addEvaluateExpressionParameters(parameters, options?.expressions);
     return this.executeHttpRequest(
       this.getLibraryEvaluateUrl(libraryId),
@@ -95,7 +97,7 @@ export class CqlExecutionService extends BaseService {
     const executions = subjects
       .filter(subject => subject.reference?.trim())
       .map(subject => {
-        const parameters = this.createBaseParameters();
+        const parameters = this.createBaseParameters(options);
         this.addSubjectParameter(parameters, subject.reference);
         this.addEvaluateExpressionParameters(parameters, options?.expressions);
         return this.executeHttpRequest(
@@ -109,7 +111,7 @@ export class CqlExecutionService extends BaseService {
   }
 
   private executeCqlWithoutSubject(libraryId: string, options?: CqlExecutionOptions): Observable<CqlExecutionResult[]> {
-    const parameters = this.createBaseParameters();
+    const parameters = this.createBaseParameters(options);
     this.addLibraryParameter(parameters, libraryId);
     this.addExpressionParameter(parameters, options);
     return this.executeHttpRequest(
@@ -125,7 +127,7 @@ export class CqlExecutionService extends BaseService {
     const executions = subjects
       .filter(subject => subject.reference?.trim())
       .map(subject => {
-        const parameters = this.createBaseParameters();
+        const parameters = this.createBaseParameters(options);
         this.addLibraryParameter(parameters, libraryId);
         this.addSubjectParameter(parameters, subject.reference);
         this.addExpressionParameter(parameters, options);
@@ -189,12 +191,16 @@ export class CqlExecutionService extends BaseService {
     );
   }
 
-  private createBaseParameters(): Parameters {
+  private createBaseParameters(options?: CqlExecutionOptions): Parameters {
     const parameters: Parameters = {
       resourceType: 'Parameters',
       parameter: []
     };
-    appendEvaluateEndpointParameters(parameters, this.settingsService.getActiveEnvironment());
+    appendEvaluateEndpointParameters(
+      parameters,
+      this.settingsService.getActiveEnvironment(),
+      options?.endpointInclusion
+    );
     return parameters;
   }
 

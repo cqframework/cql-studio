@@ -485,8 +485,9 @@
           </div>
           @if (selectedPublishTargetPreview(); as preview) {
             <p class="form-text text-muted mb-0 mt-2" id="export-publish-target-preview">
-              Data: <code>{{ preview.data || '—' }}</code>
+              Content: <code>{{ preview.content || '—' }}</code>
               · Terminology: <code>{{ preview.terminology || '—' }}</code>
+              · Data: <code>{{ preview.data || '—' }}</code>
             </p>
           }
           @if (publishTargetIsActiveEnvironment()) {

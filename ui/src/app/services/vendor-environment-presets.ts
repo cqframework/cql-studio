@@ -32,21 +32,23 @@ export const VENDOR_ENVIRONMENT_PRESETS: readonly VendorEnvironmentPreset[] = [
       'This preset uses a **single base URL** for evaluation, content, terminology, and data, and should work with CQL Studio without additional configuration.',
     ].join('\n'),
   },
-  {
-    id: 'firely-public-development',
-    name: 'Firely Public Development',
-    evaluationServerUrl: 'https://server.fire.ly/R4',
-    contentEndpointUrl: 'https://server.fire.ly/administration',
-    terminologyEndpointUrl: 'https://server.fire.ly/administration',
-    notes: [
-      'Firely public development server for FHIR R4, operated and maintained by Fire.ly. All issues related to this environment should be reported to Fire.ly.',
-      '',
-      'Note that instances of Fire.ly have different base URLs for FHIR Library and terminology-related resources. Certain aspects of CQL Studio may not work as expected, depending on context.',
-    ].join('\n'),
-  },
+  // {
+  //   id: 'firely-public-development',
+  //   name: 'Firely Public Development',
+  //   evaluationServerUrl: 'https://server.fire.ly',
+  //   contentEndpointUrl: 'https://server.fire.ly/administration',
+  //   terminologyEndpointUrl: 'https://server.fire.ly/administration',
+  //   notes: [
+  //     'Firely public development server for FHIR R4, operated and maintained by Fire.ly. All issues related to this environment should be reported to Fire.ly.',
+  //     '',
+  //     'Note that instances of Fire.ly have different base URLs for FHIR Library and terminology-related resources. Certain aspects of CQL Studio may not work as expected, depending on context.',
+  //     '',
+  //     'Firely `$evaluate` does not accept terminology, content, or data endpoint parameters. Before Execute, open the Execute/Debug menu and turn off Terminology, Content, and Data under **Send Environment URL for**.',
+  //   ].join('\n'),
+  // },
   {
     id: 'hl7-quality-r4',
-    name: 'HL7 Quality R4',
+    name: 'HL7 Quality Accelerator R4',
     evaluationServerUrl: 'https://r4.quality.hl7.org/fhir',
     notes: [
       'Public, shared **HAPI FHIR** server for quality-measure work, operated by HL7. Issues with FHIR-related behavior of the server should be reported to the HAPI project, largely maintained by Smile Digital Health.',

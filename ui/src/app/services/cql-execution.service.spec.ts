@@ -5,6 +5,7 @@ import { of } from 'rxjs';
 import { Parameters } from 'fhir/r4';
 import { CqlExecutionService } from './cql-execution.service';
 import { IdeExecutionSubject } from '../models/ide-context.model';
+import { CqlEnvironment } from '../models/environment.model';
 import { testEnvironment } from '../../testing/spec-helpers';
 
 function postBody(httpPost: ReturnType<typeof vi.fn>, index = 0) {
@@ -13,14 +14,14 @@ function postBody(httpPost: ReturnType<typeof vi.fn>, index = 0) {
   return call![1];
 }
 
-function createCqlExecutionService() {
+function createCqlExecutionService(environment: CqlEnvironment = testEnvironment()) {
   const httpPost = vi.fn(() => of({ resourceType: 'Parameters', parameter: [] } as Parameters));
   const service = Object.create(CqlExecutionService.prototype) as CqlExecutionService;
   Object.assign(service as object, {
     settingsService: {
       getEffectiveEvaluationServerUrl: () => 'http://localhost/fhir',
       getEndpointHttpContext: () => ({ address: 'http://localhost/fhir', headers: {} }),
-      getActiveEnvironment: () => testEnvironment(),
+      getActiveEnvironment: () => environment,
     },
     http: { post: httpPost },
   });
@@ -103,5 +104,19 @@ describe('CqlExecutionService', () => {
       .map(p => p.valueString);
     expect(expressionValues).toEqual(['Foo']);
     expect(body.parameter.some((p: { name: string }) => p.name === 'subject')).toBe(false);
+  });
+
+  it('omits endpoint parameters the caller turns off', () => {
+    const { service, httpPost } = createCqlExecutionService(testEnvironment({
+      dataEndpoint: { address: 'http://localhost/data' },
+      terminologyEndpoint: { address: 'http://localhost/term' },
+      contentEndpoint: { address: 'http://localhost/content' },
+    }));
+    service.executeLibrary('lib1', undefined, {
+      endpointInclusion: { data: false, terminology: false, content: true }
+    }).subscribe();
+    const body = postBody(httpPost);
+    const names = body.parameter.map((p: { name: string }) => p.name);
+    expect(names).toEqual(['contentEndpoint']);
   });
 });

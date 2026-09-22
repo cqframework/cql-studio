@@ -24,8 +24,10 @@ describe('VENDOR_ENVIRONMENT_PRESETS', () => {
     expect(firely!.contentEndpointUrl).toBe('https://server.fire.ly/administration');
     expect(firely!.terminologyEndpointUrl).toBe('https://server.fire.ly/administration');
     expect(firely!.dataEndpointUrl).toBeUndefined();
-    expect(firely!.notes).toContain('Different base URLs');
-    expect(firely!.notes).toContain('administration');
+    expect(firely!.notes).toContain('different base URLs');
+    expect(firely!.notes).toContain('Send Environment');
+    expect(firely!.notes).toContain('Terminology, Content, and Data');
+    expect(firely!.notes).toMatch(/before Execute/i);
   });
 
   it('documents HL7 Quality R4 as a shared HAPI server with a single base URL', () => {

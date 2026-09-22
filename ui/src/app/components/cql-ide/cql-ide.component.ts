@@ -15,6 +15,7 @@ import { IdeContextService } from '../../services/ide-context.service';
 import { TranslationService } from '../../services/translation.service';
 import { LibraryTranslationContextBuilder } from '../../services/library-translation-context.lib';
 import { CqlExecutionService } from '../../services/cql-execution.service';
+import { EvaluateEndpointSendService } from '../../services/evaluate-endpoint-send.service';
 import { IdeEnvironmentSessionService } from '../../services/ide-environment-session.service';
 import { CqlDebugService } from '../../services/cql-debug/cql-debug.service';
 import { OpenCodeLibraryWorkspaceService } from '../../services/opencode-library-workspace.service';
@@ -80,6 +81,7 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
   private translationService = inject(TranslationService);
   private libraryTranslationContextBuilder = inject(LibraryTranslationContextBuilder);
   private cqlExecutionService = inject(CqlExecutionService);
+  private readonly endpointSend = inject(EvaluateEndpointSendService);
   private readonly ideEnvironmentSession = inject(IdeEnvironmentSessionService);
   private readonly cqlDebugService = inject(CqlDebugService);
   private readonly openCodeLibraryWorkspace = inject(OpenCodeLibraryWorkspaceService);
@@ -604,7 +606,9 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
     
     try {
       const results = await firstValueFrom(
-        this.cqlExecutionService.executeAllLibraries(librariesToExecute, subjects)
+        this.cqlExecutionService.executeAllLibraries(librariesToExecute, subjects, {
+          endpointInclusion: this.endpointSend.inclusion()
+        })
       );
       if (this.editorSessionStale(session)) {
         return;
@@ -923,7 +927,8 @@ export class CqlIdeComponent implements OnInit, OnDestroy {
             cqlContent: currentCqlContent,
             elmXml: translationResult.elmXml || undefined,
             libraryResource: activeLibrary,
-            expressions
+            expressions,
+            endpointInclusion: this.endpointSend.inclusion()
           }
         )
       );

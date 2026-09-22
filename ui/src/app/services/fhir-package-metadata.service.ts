@@ -256,7 +256,8 @@ export class FhirPackageMetadataService {
     if (TERMINOLOGY_TYPES.has(resourceType)) {
       return 'terminology';
     }
-    if (isModelDefinition) {
+    // Libraries (logic-library, model-definition, asset-collection, etc.) write to content.
+    if (resourceType === 'Library' || isModelDefinition) {
       return 'content';
     }
     return 'data';
@@ -322,6 +323,9 @@ export class FhirPackageMetadataService {
     }
     if (target === 'terminology') {
       return 'Typical terminology server artifact (expand/validate).';
+    }
+    if (resourceType === 'Library') {
+      return 'FHIR Library; imported to the content endpoint (CQL libraries, dependencies, ModelInfo).';
     }
     if (target === 'content') {
       return 'Knowledge artifact for the content endpoint (library dependencies / ModelInfo).';

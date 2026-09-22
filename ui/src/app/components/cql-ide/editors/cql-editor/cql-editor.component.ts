@@ -30,6 +30,10 @@ import {
 } from '../../../../services/elm-locator.lib';
 import { CqlIdeLibraryOpenerService } from '../../../../services/cql-ide-library-opener.service';
 import { SettingsService } from '../../../../services/settings.service';
+import {
+  EvaluateEndpointSendRole,
+  EvaluateEndpointSendService
+} from '../../../../services/evaluate-endpoint-send.service';
 import { CqlDebugService } from '../../../../services/cql-debug/cql-debug.service';
 import {
   breakpointToggleEffect,
@@ -212,6 +216,13 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
 
   protected readonly ideStateService = inject(IdeStateService);
   private settingsService = inject(SettingsService);
+  private readonly endpointSend = inject(EvaluateEndpointSendService);
+  protected readonly sendTerminology = this.endpointSend.sendTerminology;
+  protected readonly sendContent = this.endpointSend.sendContent;
+  protected readonly sendData = this.endpointSend.sendData;
+  protected readonly terminologyConfigured = this.endpointSend.terminologyConfigured;
+  protected readonly contentConfigured = this.endpointSend.contentConfigured;
+  protected readonly dataConfigured = this.endpointSend.dataConfigured;
   protected readonly debugService = inject(CqlDebugService);
   protected readonly isDebugging = computed(() => this.debugService.isDebugging());
   protected readonly canDebug = computed(() => {
@@ -2013,6 +2024,11 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
     return this.sortedExpressions()
       .filter(expression => selected.has(expression.name))
       .map(expression => expression.name);
+  }
+
+  protected onSendEndpointChange(role: EvaluateEndpointSendRole, event: Event): void {
+    const input = event.target as HTMLInputElement | null;
+    this.endpointSend.setSend(role, !!input?.checked);
   }
 
   protected setExecutionScope(scope: 'all' | 'custom'): void {
