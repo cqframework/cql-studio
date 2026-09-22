@@ -1,0 +1,504 @@
+<div class="container-fluid py-3" id="crmi-page">
+  <div class="mb-3">
+    <h1 class="h3 mb-1" id="crmi-title">CRMI</h1>
+  </div>
+
+  <div class="alert alert-secondary" id="crmi-environment" role="status">
+    Active environment: <strong>{{ environmentName() }}</strong>
+    @if (!persisted()) {
+      <div class="mt-1">
+        This profile is not stored on the server. Choose a saved personal or workspace environment before running an operation.
+      </div>
+    }
+  </div>
+
+  @if (errorMessage()) {
+    <div class="alert alert-danger" id="crmi-error" role="alert">{{ errorMessage() }}</div>
+  }
+  @if (statusMessage()) {
+    <div class="alert alert-success" id="crmi-status" role="status">{{ statusMessage() }}</div>
+  }
+
+  <div class="card mb-3">
+    <div class="card-header">Artifacts</div>
+    <div class="card-body">
+      <div class="row g-2 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label" for="crmi-resource-type">Type</label>
+          <select
+            id="crmi-resource-type"
+            class="form-select"
+            [ngModel]="resourceType()"
+            (ngModelChange)="resourceType.set($event)"
+            [ngModelOptions]="{standalone: true}">
+            @for (type of resourceTypes; track type) {
+              <option [value]="type">{{ type }}</option>
+            }
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="crmi-search">Title contains</label>
+          <input
+            id="crmi-search"
+            class="form-control"
+            [ngModel]="query()"
+            (ngModelChange)="query.set($event)"
+            [ngModelOptions]="{standalone: true}"
+            (keyup.enter)="search()" />
+        </div>
+        <div class="col-md-3">
+          <button id="crmi-search-button" type="button" class="btn btn-primary" [disabled]="searching()" (click)="search()">
+            {{ searching() ? 'Searching…' : 'Search' }}
+          </button>
+        </div>
+      </div>
+      @if (searchError()) {
+        <div class="alert alert-warning mt-3 mb-0" id="crmi-search-error" role="alert">{{ searchError() }}</div>
+      }
+      @if (results().length) {
+        <div class="list-group mt-3" id="crmi-results">
+          @for (row of results(); track row.key) {
+            <label class="list-group-item d-flex gap-2">
+              <input
+                class="form-check-input mt-1"
+                type="checkbox"
+                [id]="'crmi-artifact-' + row.key"
+                [checked]="selectedKeys().has(row.key)"
+                (change)="toggle(row.key, $event)" />
+              <span>
+                <span class="fw-semibold">{{ row.label }}</span>
+                <span class="d-block small text-muted">{{ row.detail }}</span>
+              </span>
+            </label>
+          }
+        </div>
+      }
+    </div>
+  </div>
+
+  <ul class="nav nav-tabs mb-3" id="crmi-tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button id="crmi-tab-package" class="nav-link" [class.active]="activeTab() === 'package'" type="button" (click)="setTab('package')">Package</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button id="crmi-tab-ownership" class="nav-link" [class.active]="activeTab() === 'ownership'" type="button" (click)="setTab('ownership')">Ownership</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button id="crmi-tab-lifecycle" class="nav-link" [class.active]="activeTab() === 'lifecycle'" type="button" (click)="setTab('lifecycle')">Lifecycle</button>
+    </li>
+  </ul>
+
+  @if (activeTab() === 'package') {
+    <div id="crmi-package-panel">
+      <div class="card mb-3">
+        <div class="card-header">Package</div>
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-3">
+              <label class="form-label" for="crmi-capability">Capability</label>
+              <select
+                id="crmi-capability"
+                class="form-select"
+                [ngModel]="capability()"
+                (ngModelChange)="capability.set($event)"
+                [ngModelOptions]="{standalone: true}">
+                <option value="computable">computable</option>
+                <option value="executable">executable</option>
+                <option value="publishable">publishable</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="crmi-bundle-type">Bundle type</label>
+              <select
+                id="crmi-bundle-type"
+                class="form-select"
+                [ngModel]="bundleType()"
+                (ngModelChange)="bundleType.set($event)"
+                [ngModelOptions]="{standalone: true}">
+                <option value="transaction">transaction</option>
+                <option value="collection">collection</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="crmi-error-behavior">Error behavior</label>
+              <select
+                id="crmi-error-behavior"
+                class="form-select"
+                [ngModel]="errorBehavior()"
+                (ngModelChange)="errorBehavior.set($event)"
+                [ngModelOptions]="{standalone: true}">
+                <option value="loose">loose</option>
+                <option value="strict">strict</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="crmi-include">Include</label>
+              <select
+                id="crmi-include"
+                class="form-select"
+                [ngModel]="include()"
+                (ngModelChange)="include.set($event)"
+                [ngModelOptions]="{standalone: true}">
+                <option value="all">all</option>
+                <option value="knowledge">knowledge</option>
+                <option value="terminology">terminology</option>
+                <option value="conformance">conformance</option>
+                <option value="artifact">artifact</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label" for="crmi-exclude">Exclude</label>
+              <select
+                id="crmi-exclude"
+                class="form-select"
+                [ngModel]="exclude()"
+                (ngModelChange)="exclude.set($event)"
+                [ngModelOptions]="{standalone: true}">
+                <option value="">(none)</option>
+                <option value="knowledge">knowledge</option>
+                <option value="terminology">terminology</option>
+                <option value="conformance">conformance</option>
+                <option value="artifact">artifact</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label" for="crmi-manifest">Version manifest (canonical)</label>
+              <input
+                id="crmi-manifest"
+                class="form-control"
+                placeholder="http://example.org/Library/Manifest|1.0.0"
+                [ngModel]="manifest()"
+                (ngModelChange)="manifest.set($event)"
+                [ngModelOptions]="{standalone: true}" />
+            </div>
+          </div>
+          <div class="form-check mt-3">
+            <input
+              id="crmi-package-only"
+              class="form-check-input"
+              type="checkbox"
+              [ngModel]="packageOnly()"
+              (ngModelChange)="packageOnly.set($event)"
+              [ngModelOptions]="{standalone: true}" />
+            <label class="form-check-label" for="crmi-package-only">Package only resources from the same canonical package</label>
+          </div>
+
+          <div class="border-top mt-3 pt-3" id="crmi-publish-guide">
+            <div class="row g-2 align-items-end">
+              <div class="col-md-4">
+                <label class="form-label" for="crmi-publish-guide-mode">Publish ImplementationGuide</label>
+                <select
+                  id="crmi-publish-guide-mode"
+                  class="form-select"
+                  [ngModel]="publishGuideMode()"
+                  (ngModelChange)="setPublishGuideMode($event)"
+                  [ngModelOptions]="{standalone: true}">
+                  <option value="minimal">Minimal ImplementationGuide</option>
+                  <option value="existing">Existing ImplementationGuide</option>
+                </select>
+              </div>
+              @if (publishGuideMode() === 'existing') {
+                <div class="col-md-5">
+                  <label class="form-label" for="crmi-publish-guide-select">Guide</label>
+                  <select
+                    id="crmi-publish-guide-select"
+                    class="form-select"
+                    [ngModel]="selectedGuideKey()"
+                    (ngModelChange)="selectedGuideKey.set($event)"
+                    [ngModelOptions]="{standalone: true}">
+                    @for (guide of guides(); track guide.key) {
+                      <option [value]="guide.key">{{ guide.label }}</option>
+                    }
+                  </select>
+                </div>
+                <div class="col-md-3">
+                  <button id="crmi-refresh-guides" type="button" class="btn btn-outline-secondary" [disabled]="guidesLoading()" (click)="loadGuides()">
+                    {{ guidesLoading() ? 'Loading…' : 'Refresh guides' }}
+                  </button>
+                </div>
+              }
+            </div>
+            @if (guidesError()) {
+              <div class="alert alert-warning mt-3 mb-0" id="crmi-guides-error" role="alert">{{ guidesError() }}</div>
+            }
+            <p class="small text-muted mb-0 mt-2">
+              Publish places an ImplementationGuide first in the transaction bundle.
+              Create or edit one under <a id="crmi-ig-editor-link" routerLink="/implementation-guides">Authoring → Implementation Guide</a>.
+            </p>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            <button id="crmi-package-button" type="button" class="btn btn-primary" [disabled]="busy()" (click)="package()">Package</button>
+            <button id="crmi-download-button" type="button" class="btn btn-outline-primary" [disabled]="!packageBundle()" (click)="downloadPackage()">Download Bundle</button>
+            <button id="crmi-requirements-button" type="button" class="btn btn-outline-secondary" [disabled]="busy()" (click)="dataRequirements()">Data requirements</button>
+            <button id="crmi-license-button" type="button" class="btn btn-outline-secondary" [disabled]="busy()" (click)="licenseRequirements()">License</button>
+            <button id="crmi-publish-button" type="button" class="btn btn-outline-primary" [disabled]="busy() || !packageBundle()" (click)="publish()">Publish</button>
+          </div>
+          @if (packageIssues().length) {
+            <ul class="mt-3 mb-0" id="crmi-package-issues">
+              @for (issue of packageIssues(); track $index) {
+                <li><span class="badge text-bg-warning">{{ issue.severity }}</span> {{ issue.text }}</li>
+              }
+            </ul>
+          }
+          @if (requirements(); as library) {
+            <p class="mt-3 mb-0" id="crmi-requirements-summary">
+              Data requirements: {{ library.relatedArtifact?.length ?? 0 }} dependencies.
+            </p>
+          }
+          @if (licenseGroups().length) {
+            <ul class="mt-3 mb-0" id="crmi-license-summary">
+              @for (group of licenseGroups(); track $index) {
+                <li>
+                  <span class="fw-semibold">{{ group.name }}</span>
+                  <span class="d-block small text-muted">{{ group.lines.join(' · ') }}</span>
+                </li>
+              }
+            </ul>
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (activeTab() === 'ownership') {
+    <div id="crmi-ownership-panel">
+      @if (selected().length !== 1) {
+        <div class="alert alert-secondary" id="crmi-ownership-empty" role="status">
+          Select one artifact above to view or edit its owned components.
+        </div>
+      } @else {
+        <div class="card mb-3">
+          <div class="card-header">Owned components</div>
+          <div class="card-body">
+            <p class="text-muted">
+              Ownership is a <span class="font-monospace">composed-of</span> link with
+              <span class="font-monospace">artifact-isOwned</span>.
+              Saving writes only the parent artifact. CRMI allows an artifact to be owned by only one parent; this page does not scan the repository for other owners.
+            </p>
+            @if (familyError()) {
+              <div class="alert alert-warning" id="crmi-family-error" role="alert">{{ familyError() }}</div>
+            }
+            @if (!ownedLinks().length) {
+              <p class="mb-3" id="crmi-owned-empty">This artifact has no owned components.</p>
+            } @else {
+              <ul class="list-group mb-3" id="crmi-owned-links">
+                @for (link of ownedLinks(); track link.index) {
+                  <li class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                    <span>
+                      <span class="fw-semibold">{{ link.display }}</span>
+                      <span class="d-block small text-muted">{{ link.canonical }}</span>
+                    </span>
+                    <button type="button" class="btn btn-outline-danger btn-sm" [id]="'crmi-detach-' + link.index" [disabled]="busy()" (click)="detachOwned(link.index)">Remove</button>
+                  </li>
+                }
+              </ul>
+            }
+            <h2 class="h6">Resolved family</h2>
+            @if (familyLoading()) {
+              <p class="text-muted" id="crmi-family-loading">Resolving owned components…</p>
+            }
+            @if (ownedFamily().length) {
+              <ul class="list-unstyled mb-3" id="crmi-owned-family">
+                @for (node of ownedFamily(); track $index) {
+                  <li [style.padding-left.rem]="node.depth">
+                    <span class="fw-semibold">{{ node.label }}</span>
+                    @if (!node.resolved) {
+                      <span class="badge text-bg-warning ms-2">unresolved</span>
+                    }
+                    <span class="d-block small text-muted">{{ node.detail }}</span>
+                  </li>
+                }
+              </ul>
+            }
+            <button id="crmi-save-ownership" type="button" class="btn btn-primary" [disabled]="busy()" (click)="saveOwnership()">Save owned components</button>
+          </div>
+        </div>
+
+        <div class="card mb-3">
+          <div class="card-header">Attach owned artifact</div>
+          <div class="card-body">
+            <div class="row g-2 align-items-end">
+              <div class="col-md-3">
+                <label class="form-label" for="crmi-attach-type">Type</label>
+                <select
+                  id="crmi-attach-type"
+                  class="form-select"
+                  [ngModel]="attachType()"
+                  (ngModelChange)="attachType.set($event)"
+                  [ngModelOptions]="{standalone: true}">
+                  @for (type of resourceTypes; track type) {
+                    <option [value]="type">{{ type }}</option>
+                  }
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="crmi-attach-search">Title contains</label>
+                <input
+                  id="crmi-attach-search"
+                  class="form-control"
+                  [ngModel]="attachQuery()"
+                  (ngModelChange)="attachQuery.set($event)"
+                  [ngModelOptions]="{standalone: true}"
+                  (keyup.enter)="searchAttach()" />
+              </div>
+              <div class="col-md-3">
+                <button id="crmi-attach-search-button" type="button" class="btn btn-outline-primary" [disabled]="attachSearching()" (click)="searchAttach()">
+                  {{ attachSearching() ? 'Searching…' : 'Search' }}
+                </button>
+              </div>
+            </div>
+            @if (attachError()) {
+              <div class="alert alert-warning mt-3 mb-0" id="crmi-attach-error" role="alert">{{ attachError() }}</div>
+            }
+            @if (attachResults().length) {
+              <div class="list-group mt-3" id="crmi-attach-results">
+                @for (row of attachResults(); track row.key) {
+                  <div class="list-group-item d-flex justify-content-between align-items-center gap-2">
+                    <span>
+                      <span class="fw-semibold">{{ row.label }}</span>
+                      <span class="d-block small text-muted">{{ row.detail }}</span>
+                    </span>
+                    <button type="button" class="btn btn-outline-primary btn-sm" [id]="'crmi-attach-' + row.key" (click)="attachOwned(row)">Attach</button>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+  @if (activeTab() === 'lifecycle') {
+    <div id="crmi-lifecycle-panel">
+      @if (selected().length !== 1) {
+        <div class="alert alert-secondary" id="crmi-lifecycle-empty" role="status">
+          Select one artifact above. Lifecycle operations write that artifact and its owned children to the content endpoint.
+        </div>
+      } @else {
+        <div class="card mb-3">
+          <div class="card-header">Authoring</div>
+          <div class="card-body">
+            <p class="text-muted mb-2">These operations write to the content endpoint and apply to the selected artifact and its owned children.</p>
+            <p class="mb-3" id="crmi-family-summary">
+              Owned family: {{ ownedFamily().length }} resource{{ ownedFamily().length === 1 ? '' : 's' }}.
+              @if (familyLoading()) {
+                <span class="text-muted">Resolving…</span>
+              }
+            </p>
+            @if (familyError()) {
+              <div class="alert alert-warning" id="crmi-lifecycle-family-error" role="alert">{{ familyError() }}</div>
+            }
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label" for="crmi-draft-version">Draft version</label>
+                <input
+                  id="crmi-draft-version"
+                  class="form-control"
+                  [ngModel]="draftVersion()"
+                  (ngModelChange)="draftVersion.set($event)"
+                  [ngModelOptions]="{standalone: true}" />
+                <button id="crmi-draft-button" type="button" class="btn btn-outline-primary mt-2" [disabled]="busy()" (click)="draft()">Draft</button>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="crmi-clone-url">Clone canonical URL</label>
+                <input
+                  id="crmi-clone-url"
+                  class="form-control"
+                  [ngModel]="cloneUrl()"
+                  (ngModelChange)="cloneUrl.set($event)"
+                  [ngModelOptions]="{standalone: true}" />
+                <label class="form-label mt-2" for="crmi-clone-version">Clone version</label>
+                <input
+                  id="crmi-clone-version"
+                  class="form-control"
+                  [ngModel]="cloneVersion()"
+                  (ngModelChange)="cloneVersion.set($event)"
+                  [ngModelOptions]="{standalone: true}" />
+                <button id="crmi-clone-button" type="button" class="btn btn-outline-primary mt-2" [disabled]="busy()" (click)="clone()">Clone</button>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="crmi-release-version">Release version</label>
+                <input
+                  id="crmi-release-version"
+                  class="form-control"
+                  [ngModel]="releaseVersion()"
+                  (ngModelChange)="releaseVersion.set($event)"
+                  [ngModelOptions]="{standalone: true}" />
+                <label class="form-label mt-2" for="crmi-version-behavior">Version behavior</label>
+                <select
+                  id="crmi-version-behavior"
+                  class="form-select"
+                  [ngModel]="versionBehavior()"
+                  (ngModelChange)="versionBehavior.set($event)"
+                  [ngModelOptions]="{standalone: true}">
+                  <option value="default">default</option>
+                  <option value="check">check</option>
+                  <option value="force">force</option>
+                </select>
+                <label class="form-label mt-2" for="crmi-release-date">Release date</label>
+                <input
+                  id="crmi-release-date"
+                  class="form-control"
+                  type="datetime-local"
+                  [ngModel]="releaseDate()"
+                  (ngModelChange)="releaseDate.set($event)"
+                  [ngModelOptions]="{standalone: true}" />
+                <div class="form-check mt-2">
+                  <input
+                    id="crmi-require-version"
+                    class="form-check-input"
+                    type="checkbox"
+                    [ngModel]="requireVersionSpecific()"
+                    (ngModelChange)="requireVersionSpecific.set($event)"
+                    [ngModelOptions]="{standalone: true}" />
+                  <label class="form-check-label" for="crmi-require-version">Require version-specific references</label>
+                </div>
+                <div class="form-check">
+                  <input
+                    id="crmi-require-active"
+                    class="form-check-input"
+                    type="checkbox"
+                    [ngModel]="requireActive()"
+                    (ngModelChange)="requireActive.set($event)"
+                    [ngModelOptions]="{standalone: true}" />
+                  <label class="form-check-label" for="crmi-require-active">Require active dependencies</label>
+                </div>
+                <button id="crmi-release-button" type="button" class="btn btn-outline-primary mt-2" [disabled]="busy()" (click)="release()">Release</button>
+              </div>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+              <button id="crmi-review-button" type="button" class="btn btn-outline-secondary" [disabled]="busy()" (click)="review()">Review</button>
+              <button id="crmi-approve-button" type="button" class="btn btn-outline-secondary" [disabled]="busy()" (click)="approve()">Approve</button>
+            </div>
+            @if (authoringRows().length) {
+              <div class="table-responsive mt-3">
+                <table class="table table-sm align-middle mb-0" id="crmi-authoring-results">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Id</th>
+                      <th>URL</th>
+                      <th>Version</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of authoringRows(); track $index) {
+                      <tr>
+                        <td>{{ row.resourceType }}</td>
+                        <td>{{ row.id }}</td>
+                        <td class="small">{{ row.url }}</td>
+                        <td>{{ row.version }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

@@ -31,7 +31,7 @@ import {
   EnvironmentService,
   ExportPublishTargetOption
 } from '../../services/environment.service';
-import { downloadBytes, downloadJson } from '../../services/download-blob.lib';
+import { downloadBytes } from '../../services/download-blob.lib';
 import { buildTransactionBundle } from '../../services/fhir-bundle-transaction.lib';
 import { resourceTypeOf, isResourceType } from '../../services/fhir-resource-type.lib';
 import { ExportDestination, ExportWizardStep } from './export.types';
@@ -50,7 +50,6 @@ import {
 } from '../../services/implementation-guide.lib';
 import {
   applyIgSanitizeIfConfigured,
-  hasNonLibraryClinicalData,
   igSyncEnabled,
   mergeExportResources,
   primaryIgForManifestSync,
@@ -113,13 +112,6 @@ const EXPORT_DESTINATIONS: readonly ExportDestinationMeta[] = [
     label: 'Copy to target environment',
     icon: 'bi-cloud-upload',
     help: 'Replicate selected Library and other FHIR resources to another configured environment profile.'
-  },
-  {
-    id: 'crmi',
-    label: 'CRMI artifact package',
-    icon: 'bi-diagram-3',
-    help: 'Coming soon — build a CRMI artifact Bundle for download, or copy the packaged resources to another environment.',
-    disabled: true
   }
 ];
 
@@ -134,7 +126,7 @@ export class ExportComponent implements OnInit {
   private readonly toastService = inject(ToastService);
   private readonly dependencyGraphService = inject(ExportDependencyGraphService);
   private readonly archiveService = inject(FhirPackageArchiveService);
-  private readonly crmiPackageService = inject(CrmiArtifactPackageService);
+  private readonly artifactPackageService = inject(CrmiArtifactPackageService);
   private readonly publishService = inject(ExportPublishService);
   private readonly dataSearchService = inject(ExportDataSearchService);
   private readonly environmentService = inject(EnvironmentService);
@@ -169,8 +161,6 @@ export class ExportComponent implements OnInit {
   readonly includeCompleteBundle = signal(true);
   readonly terminologyCapability = signal<'computable' | 'expanded'>('computable');
   readonly conditionalCreate = signal(true);
-  readonly crmiBundleType = signal<'transaction' | 'collection'>('transaction');
-  readonly crmiAction = signal<'download-bundle' | 'download-tgz' | 'publish'>('download-bundle');
   /** Selected personal/workspace environment key for copy destinations. */
   readonly publishTargetKey = signal<string>('');
 
@@ -201,7 +191,7 @@ export class ExportComponent implements OnInit {
 
   readonly requiresPublishTarget = computed(() => {
     const dest = this.destination();
-    return dest === 'fhir-server' || (dest === 'crmi' && this.crmiAction() === 'publish');
+    return dest === 'fhir-server';
   });
 
   readonly publishTargetOptions = computed(() => this.environmentService.listExportPublishTargetOptions());
@@ -323,10 +313,7 @@ export class ExportComponent implements OnInit {
   });
 
   readonly packageValidation = computed(() => {
-    if (
-      this.destination() !== 'fhir-package' &&
-      !(this.destination() === 'crmi' && this.crmiAction() === 'download-tgz')
-    ) {
+    if (this.destination() !== 'fhir-package') {
       return { valid: true, errors: [] as string[] };
     }
     return validateFhirPackageManifestInput(this.manifestInput());
@@ -334,11 +321,6 @@ export class ExportComponent implements OnInit {
 
   readonly dataSelectionSummaryText = computed(() =>
     dataSelectionSummary(this.selectedDataResources())
-  );
-
-  readonly showCrmiDataWarning = computed(
-    () =>
-      this.destination() === 'crmi' && hasNonLibraryClinicalData(this.selectedDataResources())
   );
 
   readonly canProceed = computed(() => {
@@ -383,7 +365,7 @@ export class ExportComponent implements OnInit {
         return false;
       }
     }
-    if (dest === 'fhir-package' || (dest === 'crmi' && this.crmiAction() === 'download-tgz')) {
+    if (dest === 'fhir-package') {
       return this.packageValidation().valid;
     }
     return true;
@@ -400,22 +382,13 @@ export class ExportComponent implements OnInit {
       return;
     }
     this.destination.set(dest);
-    if (dest === 'crmi') {
-      this.conditionalCreate.set(true);
-    } else if (dest === 'fhir-server') {
+    if (dest === 'fhir-server') {
       this.conditionalCreate.set(false);
     }
-    if (dest !== 'fhir-server' && dest !== 'crmi') {
+    if (dest !== 'fhir-server') {
       this.publishTargetKey.set('');
     }
     this.activeStep.set('libraries');
-  }
-
-  onCrmiActionChange(action: 'download-bundle' | 'download-tgz' | 'publish'): void {
-    this.crmiAction.set(action);
-    if (action !== 'publish') {
-      this.publishTargetKey.set('');
-    }
   }
 
   isLibrarySelected(lib: Library): boolean {
@@ -671,9 +644,6 @@ export class ExportComponent implements OnInit {
         case 'fhir-server':
           await this.executeFhirServer(graph);
           break;
-        case 'crmi':
-          await this.executeCrmi(graph);
-          break;
       }
     } catch (err) {
       const message = describeFhirHttpFailure(err);
@@ -909,7 +879,7 @@ export class ExportComponent implements OnInit {
         }
         return !rootKeys.has(libraryIdentityKey(r as Library));
       });
-      const bundle = this.crmiPackageService.buildArtifactBundle(roots, deps, {
+      const bundle = this.artifactPackageService.buildArtifactBundle(roots, deps, {
         bundleType: 'transaction',
         conditionalCreate: true,
         packageName: this.packageName(),
@@ -928,57 +898,6 @@ export class ExportComponent implements OnInit {
     this.toastService.show({
       type: ok ? 'success' : 'error',
       message: ok ? 'Copy completed.' : 'Copy completed with errors.'
-    });
-  }
-
-  private async executeCrmi(graph: ExportDependencyGraph): Promise<void> {
-    const resources = this.selectedResources(graph);
-    const roots = this.selectedPrimaryLibraries(graph);
-    if (roots.length === 0) {
-      throw new Error(
-        'Select at least one root library in the dependency table for CRMI packaging.'
-      );
-    }
-    const rootKeys = new Set(roots.map((l) => libraryIdentityKey(l)));
-    const deps = resources.filter((r) => {
-      if (resourceTypeOf(r) !== 'Library') {
-        return true;
-      }
-      return !rootKeys.has(libraryIdentityKey(r as Library));
-    });
-
-    const action = this.crmiAction();
-    const bundleType = action === 'publish' ? 'transaction' : this.crmiBundleType();
-    const conditionalCreate = action === 'download-bundle' ? false : this.conditionalCreate();
-
-    const bundle = this.crmiPackageService.buildArtifactBundle(roots, deps, {
-      bundleType,
-      conditionalCreate,
-      packageName: this.packageName(),
-      packageVersion: this.packageVersion()
-    });
-
-    if (action === 'download-bundle') {
-      downloadJson(bundle, 'crmi-artifact-bundle.json');
-      this.toastService.show({ type: 'success', message: 'Downloaded CRMI artifact Bundle.' });
-      this.lastOutcomes.set([`Bundle type ${bundle.type} with ${bundle.entry?.length ?? 0} entries.`]);
-      return;
-    }
-    if (action === 'download-tgz') {
-      this.executeFhirPackage(graph);
-      return;
-    }
-
-    this.progressMessage.set('Copying CRMI package to target environment…');
-    const target = this.resolvePublishTarget();
-    const outcomes = await this.publishService.publishBundle(bundle, target, (m) =>
-      this.progressMessage.set(m)
-    );
-    this.lastOutcomes.set(outcomes.map((o) => o.message));
-    const ok = outcomes.every((o) => o.success);
-    this.toastService.show({
-      type: ok ? 'success' : 'error',
-      message: ok ? 'CRMI copy completed.' : 'CRMI copy completed with errors.'
     });
   }
 

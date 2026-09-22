@@ -1,8 +1,9 @@
 // Author: Preston Lee
 
-import { Component, ChangeDetectionStrategy, input, output, viewChild, ElementRef, inject, computed } from '@angular/core';
+import { Component, ChangeDetectionStrategy, input, output, viewChild, ElementRef, inject, computed, signal } from '@angular/core';
 import { CdkDropList, CdkDrag, CdkDragDrop } from '@angular/cdk/drag-drop';
 import { firstValueFrom } from 'rxjs';
+import { Library } from 'fhir/r4';
 import { IdePanel, IdePanelTab } from './ide-panel-tab.interface';
 import { IdeStateService, TabDataScope } from '../../../services/ide-state.service';
 
@@ -13,6 +14,7 @@ export interface PanelTabListData {
 import { LibraryService } from '../../../services/library.service';
 import { TranslationService } from '../../../services/translation.service';
 import { LibraryTranslationContextBuilder } from '../../../services/library-translation-context.lib';
+import { describeFhirHttpFailure } from '../../../services/fhir-http-error.lib';
 import { ToastService } from '../../../services/toast.service';
 
 // Import all tab components
@@ -53,6 +55,7 @@ import { OpenCodeLibraryChange } from '../../../models/opencode.model';
   host: {
     '(window:mousemove)': 'onMouseMove($event)',
     '(window:mouseup)': 'onMouseUp($event)',
+    '(document:keydown.escape)': 'onDeleteModalEscape()',
   },
 })
 export class IdePanelComponent {
@@ -89,6 +92,9 @@ export class IdePanelComponent {
   private translationService = inject(TranslationService);
   private libraryTranslationContextBuilder = inject(LibraryTranslationContextBuilder);
   private toastService = inject(ToastService);
+
+  readonly deleteConfirm = signal<{ libraryId: string; library: Library; label: string } | null>(null);
+  readonly deleteBusy = signal(false);
 
   private isResizing: boolean = false;
   private resizeType: string = '';
@@ -169,25 +175,61 @@ export class IdePanelComponent {
     this.ideStateService.setPreserveLogs(value);
   }
 
-  async onDeleteLibraryFromServer(): Promise<void> {
+  onDeleteLibraryFromServer(): void {
     const activeLibraryId = this.ideStateService.activeLibraryId();
-    if (activeLibraryId) {
-      // Get the active library resource
-      const activeLibrary = this.ideStateService.getActiveLibraryResource();
-      if (activeLibrary && activeLibrary.library) {
-        try {
-          await firstValueFrom(this.libraryService.delete(activeLibrary.library));
-          this.ideStateService.removeLibraryResource(activeLibraryId);
-          this.ideStateService.selectLibraryResource('');
-          this.ideStateService.invalidateTabData(TabDataScope.LibraryList);
-          if (this.navigationTab()) {
-            this.navigationTab()!.loadLibraries();
-          }
-        } catch (error) {
-          console.error('Error deleting library from server:', error);
-          // You might want to show an error message to the user here
-        }
+    if (!activeLibraryId) {
+      return;
+    }
+    const activeLibrary = this.ideStateService.getActiveLibraryResource();
+    const library = activeLibrary?.library;
+    if (!library) {
+      return;
+    }
+    const label = library.name || library.id || activeLibraryId;
+    this.deleteConfirm.set({ libraryId: activeLibraryId, library, label });
+  }
+
+  cancelDeleteLibraryFromServer(): void {
+    if (this.deleteBusy()) {
+      return;
+    }
+    this.deleteConfirm.set(null);
+  }
+
+  onDeleteModalEscape(): void {
+    if (!this.deleteConfirm()) {
+      return;
+    }
+    this.cancelDeleteLibraryFromServer();
+  }
+
+  onDeleteModalShellClick(event: MouseEvent): void {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    this.cancelDeleteLibraryFromServer();
+  }
+
+  async confirmDeleteLibraryFromServer(): Promise<void> {
+    const pending = this.deleteConfirm();
+    if (!pending || this.deleteBusy()) {
+      return;
+    }
+    this.deleteBusy.set(true);
+    try {
+      await firstValueFrom(this.libraryService.delete(pending.library));
+      this.ideStateService.removeLibraryResource(pending.libraryId);
+      this.ideStateService.selectLibraryResource('');
+      this.ideStateService.invalidateTabData(TabDataScope.LibraryList);
+      if (this.navigationTab()) {
+        this.navigationTab()!.loadLibraries();
       }
+      this.toastService.showSuccess(`Deleted ${pending.label}.`, 'Delete Library');
+      this.deleteConfirm.set(null);
+    } catch (error) {
+      this.toastService.showError(describeFhirHttpFailure(error), 'Delete Library');
+    } finally {
+      this.deleteBusy.set(false);
     }
   }
 

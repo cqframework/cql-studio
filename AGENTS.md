@@ -61,6 +61,7 @@
   - Avoid duplicating hardcoded color values (use constants and reuse them).
   - Don't patch over specific visual problems when you can fix the underlying issue instead.
 - **Testing & IDs**: Add `id` attributes to core UI and navigational controls to make tests less brittle.
+- Use Bootstrap modal dialogs instead of native browser alerts. The ESC key and clicking outside the modal should function as canceling/closing the dialog's action.
 
 ### AI Architecture & MCP Tools
 - Generally mimic the application architecture of the Cline extension for VS Code.

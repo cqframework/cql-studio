@@ -3,7 +3,7 @@
     <div>
       <h1 class="h3 mb-1" id="export-title">Export</h1>
       <!-- <p class="text-muted mb-0">
-        Export CQL libraries and dependencies as zip archives, FHIR packages, or CRMI artifact bundles.
+        Export CQL libraries and dependencies as zip archives or FHIR packages.
       </p> -->
     </div>
   </div>
@@ -374,13 +374,7 @@
         }
       </dl>
 
-      @if (showCrmiDataWarning()) {
-        <div class="alert alert-warning" id="export-crmi-data-warning" role="alert">
-          This CRMI artifact bundle includes non-library clinical or IG data. That is supported but non-standard for CRMI packages.
-        </div>
-      }
-
-      @if (destination() === 'fhir-package' || destination() === 'crmi') {
+      @if (destination() === 'fhir-package') {
         <div class="row g-3 mb-3">
           <div class="col-md-6">
             <div class="form-floating">
@@ -458,47 +452,13 @@
         </div>
       }
 
-      @if (destination() === 'fhir-server' || destination() === 'crmi') {
+      @if (destination() === 'fhir-server') {
         <div class="mb-3">
           <div class="form-check">
             <input class="form-check-input" type="checkbox" id="export-conditional-create" [ngModel]="conditionalCreate()" (ngModelChange)="conditionalCreate.set($event)" />
             <label class="form-check-label" for="export-conditional-create">
               CRMI conditional create (<code>ifNoneExist</code> on url+version)
             </label>
-          </div>
-        </div>
-      }
-
-      @if (destination() === 'crmi') {
-        <div class="row g-3 mb-3">
-          <div class="col-md-6">
-            <div class="form-floating">
-              <select
-                id="export-crmi-bundle-type"
-                class="form-select"
-                [ngModel]="crmiBundleType()"
-                (ngModelChange)="crmiBundleType.set($event)"
-                aria-label="Bundle type">
-                <option value="transaction">transaction</option>
-                <option value="collection">collection</option>
-              </select>
-              <label for="export-crmi-bundle-type">Bundle type</label>
-            </div>
-          </div>
-          <div class="col-md-6">
-            <div class="form-floating">
-              <select
-                id="export-crmi-action"
-                class="form-select"
-                [ngModel]="crmiAction()"
-                (ngModelChange)="onCrmiActionChange($event)"
-                aria-label="Action">
-                <option value="download-bundle">Download Bundle JSON</option>
-                <option value="download-tgz">Download FHIR package (.tgz)</option>
-                <option value="publish">Copy to target environment</option>
-              </select>
-              <label for="export-crmi-action">Action</label>
-            </div>
           </div>
         </div>
       }

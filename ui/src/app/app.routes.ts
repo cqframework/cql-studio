@@ -275,6 +275,18 @@ export const routes: Routes = [
           import('./components/export/export.component').then((m) => m.ExportComponent),
       },
       {
+        path: 'crmi',
+        loadComponent: () =>
+          import('./components/crmi/crmi.component').then((m) => m.CrmiComponent),
+      },
+      {
+        path: 'implementation-guides',
+        loadComponent: () =>
+          import('./components/implementation-guide/implementation-guide.component').then(
+            (m) => m.ImplementationGuideComponent
+          ),
+      },
+      {
         path: 'guidelines',
         loadComponent: () =>
           import('./components/guidelines/guidelines.component').then((m) => m.GuidelinesComponent),

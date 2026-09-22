@@ -22,6 +22,7 @@ import { createOpenCodeGateway } from './opencode/gateway.js';
 import { OpenCodeError } from '@cql-studio/core';
 import { configureOpenCodeLogger } from './opencode/logger.js';
 import { createUserSettingsRouter } from './user/routes.js';
+import { createCrmiRouter } from './crmi/router.js';
 
 // Package-local values take precedence when .env exists. Variables omitted by
 // the file remain available from the parent shell environment.
@@ -51,6 +52,7 @@ async function main(): Promise<void> {
       createOpenCodeGateway(env)
     );
   }
+  app.use('/api/fhir', createCrmiRouter(env));
   app.use(express.json({ limit: '2mb' }));
 
   app.get('/health', (_req, res) => {

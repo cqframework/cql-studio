@@ -99,7 +99,7 @@ export class ExportDataStepComponent implements OnInit {
 
   readonly showIgSyncToggle = computed(() => {
     const dest = this.destination();
-    return dest === 'fhir-package' || dest === 'crmi';
+    return dest === 'fhir-package';
   });
 
   readonly igEntries = computed(() => {
