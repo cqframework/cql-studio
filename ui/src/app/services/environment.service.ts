@@ -22,6 +22,7 @@ import {
   normalizeEndpointConfiguration
 } from './endpoint-config.lib';
 import { DeployConfigKeys, readDeployConfig } from './deploy-config.lib';
+import type { VendorEnvironmentPreset } from './vendor-environment-presets';
 
 export interface LegacyEnvironmentFields {
   fhirBaseUrl?: string;
@@ -249,6 +250,20 @@ export class EnvironmentService {
     copy.builtIn = false;
     this._environments.update(envs => [...envs, copy]);
     return copy;
+  }
+
+  createFromVendorPreset(preset: VendorEnvironmentPreset): CqlEnvironment {
+    const created: CqlEnvironment = {
+      id: crypto.randomUUID(),
+      name: this.uniqueEnvironmentName(preset.name),
+      builtIn: false,
+      evaluationServer: normalizeEndpointConfiguration({ address: preset.evaluationServerUrl }),
+      dataEndpoint: emptyEndpointConfiguration(),
+      terminologyEndpoint: emptyEndpointConfiguration(),
+      contentEndpoint: emptyEndpointConfiguration(),
+    };
+    this._environments.update(envs => [...envs, created]);
+    return created;
   }
 
   deleteEnvironment(id: string): boolean {
@@ -522,6 +537,18 @@ export class EnvironmentService {
         address: contentDefault
       })
     };
+  }
+
+  private uniqueEnvironmentName(baseName: string): string {
+    const existing = new Set(this._environments().map(env => env.name));
+    if (!existing.has(baseName)) {
+      return baseName;
+    }
+    let n = 2;
+    while (existing.has(`${baseName} (${n})`)) {
+      n += 1;
+    }
+    return `${baseName} (${n})`;
   }
 
   private resolveActiveEnvironmentId(id: string, environments: CqlEnvironment[]): string {

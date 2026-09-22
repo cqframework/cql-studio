@@ -24,8 +24,26 @@
       <button type="button" class="btn btn-outline-primary w-100" id="settings-environment-duplicate"
         (click)="duplicateSelected()" [disabled]="!selectedEnvironment() || busy() || hasUnsavedChanges()">
         <span class="bi bi-copy me-1" aria-hidden="true"></span>
-        {{ selectedEnvironment()?.builtIn ? 'Create editable copy' : 'Duplicate environment' }}
+        {{ selectedEnvironment()?.builtIn ? 'New' : 'Duplicate' }}
       </button>
+      <div class="dropdown mt-2">
+        <button type="button" class="btn btn-outline-secondary w-100 dropdown-toggle"
+          id="settings-environment-vendor-preset" data-bs-toggle="dropdown" aria-expanded="false"
+          [disabled]="busy() || hasUnsavedChanges()">
+          Add Vendor Preset
+        </button>
+        <ul class="dropdown-menu w-100" aria-labelledby="settings-environment-vendor-preset">
+          @for (preset of vendorPresets; track preset.id) {
+            <li>
+              <button type="button" class="dropdown-item text-wrap"
+                [id]="'settings-environment-vendor-preset-' + preset.id"
+                (click)="addVendorPreset(preset)">
+                {{ preset.name }}
+              </button>
+            </li>
+          }
+        </ul>
+      </div>
     </div>
 
     <div class="col-12 col-xl-9">

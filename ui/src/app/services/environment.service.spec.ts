@@ -47,6 +47,36 @@ describe('EnvironmentService', () => {
     expect(service.environments().length).toBe(2);
   });
 
+  it('creates vendor preset with evaluation URL and blank secondary endpoints', () => {
+    const created = service.createFromVendorPreset({
+      id: 'firely-public-development',
+      name: 'Firely Public Development',
+      evaluationServerUrl: 'https://server.fire.ly/R4',
+    });
+    expect(created.builtIn).toBe(false);
+    expect(created.id).not.toBe(BUILT_IN_ENVIRONMENT_ID);
+    expect(created.name).toBe('Firely Public Development');
+    expect(created.evaluationServer.address).toBe('https://server.fire.ly/R4');
+    expect(created.dataEndpoint.address).toBe('');
+    expect(created.terminologyEndpoint.address).toBe('');
+    expect(created.contentEndpoint.address).toBe('');
+    expect(service.environments().some(env => env.id === created.id)).toBe(true);
+  });
+
+  it('disambiguates vendor preset names when already present', () => {
+    service.createFromVendorPreset({
+      id: 'hl7-quality-r4',
+      name: 'HL7 Quality R4',
+      evaluationServerUrl: 'https://r4.quality.hl7.org/fhir',
+    });
+    const second = service.createFromVendorPreset({
+      id: 'hl7-quality-r4',
+      name: 'HL7 Quality R4',
+      evaluationServerUrl: 'https://r4.quality.hl7.org/fhir',
+    });
+    expect(second.name).toBe('HL7 Quality R4 (2)');
+  });
+
   it('cannot delete built-in environment', () => {
     expect(service.deleteEnvironment(BUILT_IN_ENVIRONMENT_ID)).toBe(false);
   });

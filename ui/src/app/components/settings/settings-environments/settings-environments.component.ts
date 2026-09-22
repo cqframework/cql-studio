@@ -9,6 +9,10 @@ import { CqlEnvironment, EndpointConfiguration } from '../../../models/environme
 import { cloneEndpointConfiguration } from '../../../services/endpoint-config.lib';
 import { SettingsEndpointEditorComponent } from '../settings-endpoint-editor/settings-endpoint-editor.component';
 import { ToastService } from '../../../services/toast.service';
+import {
+  VENDOR_ENVIRONMENT_PRESETS,
+  VendorEnvironmentPreset,
+} from '../../../services/vendor-environment-presets';
 
 @Component({
   selector: 'app-settings-environments',
@@ -28,6 +32,7 @@ export class SettingsEnvironmentsComponent {
   private readonly drafts = signal<Record<string, CqlEnvironment>>({});
   readonly busy = signal(false);
   readonly saveError = signal<string | null>(null);
+  readonly vendorPresets = VENDOR_ENVIRONMENT_PRESETS;
   readonly endpointSections = [
     { field: 'evaluationServer', id: 'settings-evaluation-server', sectionId: 'settings-environment-evaluation-section', title: 'Evaluation server', description: 'FHIR libraries, CQL evaluation, and measure operations.' },
     { field: 'dataEndpoint', id: 'settings-data-endpoint', sectionId: 'settings-environment-data-section', title: 'Data endpoint', description: 'Patient data, searches, and AI FHIR tools.' },
@@ -117,6 +122,28 @@ export class SettingsEnvironmentsComponent {
       this.selectedEnvironmentId.set(saved.id);
     } catch (err) {
       this.environmentService.deleteEnvironment(copy.id);
+      this.toastService.showError(
+        err instanceof Error ? err.message : 'Failed to save environment',
+        'Environment'
+      );
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
+  async addVendorPreset(preset: VendorEnvironmentPreset): Promise<void> {
+    if (this.busy() || this.hasUnsavedChanges()) {
+      return;
+    }
+    const created = this.environmentService.createFromVendorPreset(preset);
+    this.busy.set(true);
+    this.saveError.set(null);
+    try {
+      const saved = await this.settingsService.persistEnvironment(created);
+      this.selectedEnvironmentId.set(saved.id);
+      this.toastService.showSuccess(`Added ${saved.name}.`, 'Environment');
+    } catch (err) {
+      this.environmentService.deleteEnvironment(created.id);
       this.toastService.showError(
         err instanceof Error ? err.message : 'Failed to save environment',
         'Environment'
