@@ -37,7 +37,7 @@
             <li>
               <button type="button" class="dropdown-item text-wrap"
                 [id]="'settings-environment-vendor-preset-' + preset.id"
-                (click)="addVendorPreset(preset)">
+                (click)="requestAddVendorPreset(preset)">
                 {{ preset.name }}
               </button>
             </li>
@@ -117,4 +117,57 @@
       }
     </div>
   </div>
+
+  @if (pendingVendorPreset(); as preset) {
+    <div
+      class="modal-backdrop fade show"
+      id="settings-environment-vendor-preset-backdrop"
+      (click)="cancelVendorPreset()"></div>
+    <div
+      class="modal fade show d-block"
+      tabindex="-1"
+      role="dialog"
+      id="settings-environment-vendor-preset-modal"
+      aria-modal="true"
+      aria-labelledby="settings-environment-vendor-preset-modal-title"
+      (click)="onVendorPresetModalShellClick($event)">
+      <div class="modal-dialog modal-dialog-centered" role="document" (click)="$event.stopPropagation()">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="settings-environment-vendor-preset-modal-title">
+              Add {{ preset.name }}?
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              id="settings-environment-vendor-preset-modal-close"
+              aria-label="Close"
+              [disabled]="busy()"
+              (click)="cancelVendorPreset()"></button>
+          </div>
+          <div class="modal-body" id="settings-environment-vendor-preset-modal-body">
+            <markdown [data]="preset.notes"></markdown>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="settings-environment-vendor-preset-modal-cancel"
+              [disabled]="busy()"
+              (click)="cancelVendorPreset()">
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              id="settings-environment-vendor-preset-modal-confirm"
+              [disabled]="busy()"
+              (click)="confirmAddVendorPreset()">
+              {{ busy() ? 'Adding…' : 'Add environment' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
 </div>

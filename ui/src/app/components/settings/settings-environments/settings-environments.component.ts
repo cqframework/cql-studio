@@ -2,6 +2,7 @@
 
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { MarkdownComponent } from 'ngx-markdown';
 import { EnvironmentService } from '../../../services/environment.service';
 import { EnvironmentSwitchService } from '../../../services/environment-switch.service';
 import { SettingsService } from '../../../services/settings.service';
@@ -16,8 +17,11 @@ import {
 
 @Component({
   selector: 'app-settings-environments',
-  imports: [FormsModule, SettingsEndpointEditorComponent],
-  templateUrl: './settings-environments.component.html'
+  imports: [FormsModule, MarkdownComponent, SettingsEndpointEditorComponent],
+  templateUrl: './settings-environments.component.html',
+  host: {
+    '(document:keydown.escape)': 'onVendorPresetModalEscape()',
+  },
 })
 export class SettingsEnvironmentsComponent {
   private readonly environmentSwitchService = inject(EnvironmentSwitchService);
@@ -33,6 +37,7 @@ export class SettingsEnvironmentsComponent {
   readonly busy = signal(false);
   readonly saveError = signal<string | null>(null);
   readonly vendorPresets = VENDOR_ENVIRONMENT_PRESETS;
+  readonly pendingVendorPreset = signal<VendorEnvironmentPreset | null>(null);
   readonly endpointSections = [
     { field: 'evaluationServer', id: 'settings-evaluation-server', sectionId: 'settings-environment-evaluation-section', title: 'Evaluation server', description: 'FHIR libraries, CQL evaluation, and measure operations.' },
     { field: 'dataEndpoint', id: 'settings-data-endpoint', sectionId: 'settings-environment-data-section', title: 'Data endpoint', description: 'Patient data, searches, and AI FHIR tools.' },
@@ -131,8 +136,35 @@ export class SettingsEnvironmentsComponent {
     }
   }
 
-  async addVendorPreset(preset: VendorEnvironmentPreset): Promise<void> {
+  requestAddVendorPreset(preset: VendorEnvironmentPreset): void {
     if (this.busy() || this.hasUnsavedChanges()) {
+      return;
+    }
+    this.pendingVendorPreset.set(preset);
+  }
+
+  cancelVendorPreset(): void {
+    if (this.busy()) {
+      return;
+    }
+    this.pendingVendorPreset.set(null);
+  }
+
+  onVendorPresetModalEscape(): void {
+    if (this.pendingVendorPreset() && !this.busy()) {
+      this.cancelVendorPreset();
+    }
+  }
+
+  onVendorPresetModalShellClick(event: MouseEvent): void {
+    if (event.target === event.currentTarget && !this.busy()) {
+      this.cancelVendorPreset();
+    }
+  }
+
+  async confirmAddVendorPreset(): Promise<void> {
+    const preset = this.pendingVendorPreset();
+    if (!preset || this.busy() || this.hasUnsavedChanges()) {
       return;
     }
     const created = this.environmentService.createFromVendorPreset(preset);
@@ -140,6 +172,7 @@ export class SettingsEnvironmentsComponent {
     this.saveError.set(null);
     try {
       const saved = await this.settingsService.persistEnvironment(created);
+      this.pendingVendorPreset.set(null);
       this.selectedEnvironmentId.set(saved.id);
       this.toastService.showSuccess(`Added ${saved.name}.`, 'Environment');
     } catch (err) {

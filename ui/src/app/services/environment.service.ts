@@ -262,14 +262,18 @@ export class EnvironmentService {
   }
 
   createFromVendorPreset(preset: VendorEnvironmentPreset): CqlEnvironment {
+    const endpointOrEmpty = (address: string | undefined): EndpointConfiguration =>
+      address
+        ? normalizeEndpointConfiguration({ address })
+        : emptyEndpointConfiguration();
     const created: CqlEnvironment = {
       id: crypto.randomUUID(),
       name: this.uniqueEnvironmentName(preset.name),
       builtIn: false,
       evaluationServer: normalizeEndpointConfiguration({ address: preset.evaluationServerUrl }),
-      dataEndpoint: emptyEndpointConfiguration(),
-      terminologyEndpoint: emptyEndpointConfiguration(),
-      contentEndpoint: emptyEndpointConfiguration(),
+      dataEndpoint: endpointOrEmpty(preset.dataEndpointUrl),
+      terminologyEndpoint: endpointOrEmpty(preset.terminologyEndpointUrl),
+      contentEndpoint: endpointOrEmpty(preset.contentEndpointUrl),
     };
     this._environments.update(envs => [...envs, created]);
     return created;

@@ -49,18 +49,34 @@ describe('EnvironmentService', () => {
 
   it('creates vendor preset with evaluation URL and blank secondary endpoints', () => {
     const created = service.createFromVendorPreset({
-      id: 'firely-public-development',
-      name: 'Firely Public Development',
-      evaluationServerUrl: 'https://server.fire.ly/R4',
+      id: 'hl7-quality-r4',
+      name: 'HL7 Quality R4',
+      evaluationServerUrl: 'https://r4.quality.hl7.org/fhir',
+      notes: 'Public shared HAPI FHIR server.',
     });
     expect(created.builtIn).toBe(false);
     expect(created.id).not.toBe(BUILT_IN_ENVIRONMENT_ID);
-    expect(created.name).toBe('Firely Public Development');
-    expect(created.evaluationServer.address).toBe('https://server.fire.ly/R4');
+    expect(created.name).toBe('HL7 Quality R4');
+    expect(created.evaluationServer.address).toBe('https://r4.quality.hl7.org/fhir');
     expect(created.dataEndpoint.address).toBe('');
     expect(created.terminologyEndpoint.address).toBe('');
     expect(created.contentEndpoint.address).toBe('');
     expect(service.environments().some(env => env.id === created.id)).toBe(true);
+  });
+
+  it('creates Firely vendor preset with administration content and terminology endpoints', () => {
+    const created = service.createFromVendorPreset({
+      id: 'firely-public-development',
+      name: 'Firely Public Development',
+      evaluationServerUrl: 'https://server.fire.ly/R4',
+      contentEndpointUrl: 'https://server.fire.ly/administration',
+      terminologyEndpointUrl: 'https://server.fire.ly/administration',
+      notes: 'Different base URLs for Library and terminology.',
+    });
+    expect(created.evaluationServer.address).toBe('https://server.fire.ly/R4');
+    expect(created.dataEndpoint.address).toBe('');
+    expect(created.contentEndpoint.address).toBe('https://server.fire.ly/administration');
+    expect(created.terminologyEndpoint.address).toBe('https://server.fire.ly/administration');
   });
 
   it('disambiguates vendor preset names when already present', () => {
@@ -68,11 +84,13 @@ describe('EnvironmentService', () => {
       id: 'hl7-quality-r4',
       name: 'HL7 Quality R4',
       evaluationServerUrl: 'https://r4.quality.hl7.org/fhir',
+      notes: 'Public shared HAPI FHIR server.',
     });
     const second = service.createFromVendorPreset({
       id: 'hl7-quality-r4',
       name: 'HL7 Quality R4',
       evaluationServerUrl: 'https://r4.quality.hl7.org/fhir',
+      notes: 'Public shared HAPI FHIR server.',
     });
     expect(second.name).toBe('HL7 Quality R4 (2)');
   });
