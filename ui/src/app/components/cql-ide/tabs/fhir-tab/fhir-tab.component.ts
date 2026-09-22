@@ -310,15 +310,22 @@ export class FhirTabComponent {
     }
     
     const combinedJson = resources.join('\n\n');
-    
+    const session = this.ideStateService.currentEditorSession();
+
     // Copy to clipboard
     navigator.clipboard.writeText(combinedJson).then(() => {
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       this.ideStateService.addTextOutput(
         'Resource Copied', 
         `Successfully copied ${resources.length} FHIR resource(s) to clipboard`, 
         'success'
       );
     }).catch((error) => {
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       this.ideStateService.addTextOutput(
         'Copy Failed', 
         `Failed to copy to clipboard: ${error.message}`, 

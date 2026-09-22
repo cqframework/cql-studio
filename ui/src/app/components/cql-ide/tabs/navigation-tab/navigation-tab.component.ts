@@ -108,6 +108,7 @@ export class NavigationTabComponent implements OnInit {
   }
 
   async loadPaginatedLibraries(): Promise<void> {
+    const session = this.ideStateService.currentEditorSession();
     this.isLoadingLibraries.set(true);
     try {
       const bundle = await firstValueFrom(
@@ -118,6 +119,9 @@ export class NavigationTabComponent implements OnInit {
           this.librarySortOrder()
         )
       );
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       this.isLoadingLibraries.set(false);
       const libraries = bundle.entry
         ? bundle.entry
@@ -139,6 +143,9 @@ export class NavigationTabComponent implements OnInit {
         this.totalPages.set(this.currentPage());
       }
     } catch (error: unknown) {
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       this.isLoadingLibraries.set(false);
       this.ideStateService.addErrorOutput(
         'Library List Error',
@@ -210,6 +217,7 @@ export class NavigationTabComponent implements OnInit {
   }
 
   async loadSearchedLibraries(): Promise<void> {
+    const session = this.ideStateService.currentEditorSession();
     this.isLoadingLibraries.set(true);
     try {
       const bundle = await firstValueFrom(
@@ -221,6 +229,9 @@ export class NavigationTabComponent implements OnInit {
           this.librarySortOrder()
         )
       );
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       this.isLoadingLibraries.set(false);
       const libraries = bundle.entry
         ? bundle.entry
@@ -242,6 +253,9 @@ export class NavigationTabComponent implements OnInit {
         this.totalPages.set(this.currentPage());
       }
     } catch (error: unknown) {
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       this.isLoadingLibraries.set(false);
       this.ideStateService.addErrorOutput(
         'Library List Error',

@@ -1516,6 +1516,7 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
       this.toastService.showWarning('No VSAC ValueSet URLs to import.', 'VSAC Import');
       return;
     }
+    const session = this.ideStateService.currentEditorSession();
     this.ideStateService.setExecutionStatus(
       unique.length === 1
         ? `Importing VSAC ValueSet (${label})...`
@@ -1523,6 +1524,9 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
     );
     try {
       const summary = await this.vsacImport.importCanonicalUrls(unique);
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       for (const url of unique) {
         this.terminologyExistence.invalidate('ValueSet', url);
         void this.terminologyExistence.resolve('ValueSet', url);
@@ -1536,6 +1540,9 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
       );
       this.ideStateService.setExecutionStatus('VSAC import complete');
     } catch (error) {
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       const message = describeFhirHttpFailure(error);
       this.toastService.showError(message, 'VSAC Import');
       this.ideStateService.addTextOutput(

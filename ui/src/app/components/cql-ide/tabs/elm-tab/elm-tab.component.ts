@@ -108,17 +108,24 @@ export class ElmTabComponent {
     const activeLibrary = this.ideStateService.getActiveLibraryResource();
     const libraryName = activeLibrary?.name || activeLibrary?.id || 'Library';
 
+    const session = this.ideStateService.currentEditorSession();
     try {
       if (!navigator.clipboard?.writeText) {
         throw new Error('Clipboard API is not available');
       }
       await navigator.clipboard.writeText(xml);
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       this.ideStateService.addTextOutput(
         `ELM XML Copied: ${libraryName}`,
         `Copied ELM XML to clipboard.\n\nCharacters: ${xml.length}`,
         'success'
       );
     } catch (e) {
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       const errorMessage = e instanceof Error ? e.message : String(e);
       this.ideStateService.addTextOutput(
         `ELM XML Copy Failed: ${libraryName}`,

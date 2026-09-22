@@ -216,8 +216,12 @@ export class IdePanelComponent {
       return;
     }
     this.deleteBusy.set(true);
+    const session = this.ideStateService.currentEditorSession();
     try {
       await firstValueFrom(this.libraryService.delete(pending.library));
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       this.ideStateService.removeLibraryResource(pending.libraryId);
       this.ideStateService.selectLibraryResource('');
       this.ideStateService.invalidateTabData(TabDataScope.LibraryList);
@@ -227,6 +231,9 @@ export class IdePanelComponent {
       this.toastService.showSuccess(`Deleted ${pending.label}.`, 'Delete Library');
       this.deleteConfirm.set(null);
     } catch (error) {
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       this.toastService.showError(describeFhirHttpFailure(error), 'Delete Library');
     } finally {
       this.deleteBusy.set(false);
@@ -363,12 +370,16 @@ export class IdePanelComponent {
       return;
     }
 
+    const session = this.ideStateService.currentEditorSession();
     this.ideStateService.setTranslating(true);
     try {
       const translationResult = await this.translationService.translateCqlToElmAsync(
         cqlContent,
         this.libraryTranslationContextBuilder.fromLibraryResource(this.ideStateService.getActiveLibraryResource())
       );
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
 
       // Update translation state with errors/warnings
       this.ideStateService.setTranslationErrors(translationResult.errors);
@@ -408,6 +419,9 @@ export class IdePanelComponent {
         });
       }
     } catch (error) {
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return;
+      }
       console.error('ELM translation threw:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       this.ideStateService.setTranslationErrors([errorMessage]);
@@ -423,7 +437,9 @@ export class IdePanelComponent {
         timestamp: new Date()
       });
     } finally {
-      this.ideStateService.setTranslating(false);
+      if (this.ideStateService.isCurrentEditorSession(session)) {
+        this.ideStateService.setTranslating(false);
+      }
     }
   }
 
