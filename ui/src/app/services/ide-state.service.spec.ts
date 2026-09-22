@@ -131,3 +131,35 @@ describe('IdeStateService removeLibraryResources', () => {
     expect(service.libraryResources()).toHaveLength(1);
   });
 });
+
+describe('IdeStateService resetEditorSession', () => {
+  it('clears libraries, console output, and translation state from the previous environment', () => {
+    const service = new IdeStateService();
+    service.addLibraryResource({
+      id: 'lib',
+      name: 'Lib',
+      description: '',
+      cqlContent: 'library Lib',
+      originalContent: 'library Lib',
+      isActive: true,
+      isDirty: true,
+      library: null,
+    });
+    service.selectLibraryResource('lib');
+    service.addTextOutput('Run', 'old environment', 'success');
+    service.setElmTranslationResults('<library/>');
+    service.setExecuting(true);
+    const session = service.currentEditorSession();
+
+    service.resetEditorSession();
+
+    expect(service.libraryResources()).toEqual([]);
+    expect(service.activeLibraryId()).toBeNull();
+    expect(service.outputSections()).toEqual([]);
+    expect(service.elmTranslationResults()).toBeNull();
+    expect(service.isExecuting()).toBe(false);
+    expect(service.editorState().syntaxErrors).toEqual([]);
+    expect(service.isCurrentEditorSession(session)).toBe(false);
+    expect(service.currentEditorSession()).toBe(session + 1);
+  });
+});

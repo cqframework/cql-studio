@@ -1,5 +1,6 @@
 
-<div class="ide-container" [attr.data-ui-revision]="ideStateService.uiRevision()">
+@for (environmentView of [environmentViewKey()]; track environmentView) {
+<div class="ide-container" [attr.data-ui-revision]="ideStateService.uiRevision()" [attr.data-environment-view]="environmentView">
   <!-- Main Layout -->
   <div #ideLayout class="ide-layout" id="ide-layout">
     <!-- Left Panel -->
@@ -146,3 +147,4 @@
     [isLoadingLibraries]="false">
   </app-ide-status-bar>
 </div>
+}

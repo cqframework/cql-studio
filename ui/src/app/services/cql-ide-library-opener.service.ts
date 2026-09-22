@@ -70,9 +70,10 @@ export class CqlIdeLibraryOpenerService {
 
   async openLibraryFromServer(
     library: Library,
-    workspaceOrigin?: WorkspaceLibraryOrigin
+    workspaceOrigin?: WorkspaceLibraryOrigin,
+    session = this.ideStateService.currentEditorSession()
   ): Promise<string | null> {
-    if (!library.id) {
+    if (!library.id || !this.ideStateService.isCurrentEditorSession(session)) {
       return null;
     }
 
@@ -86,11 +87,14 @@ export class CqlIdeLibraryOpenerService {
       // Dirty tabs keep local edits; clean tabs refresh so Navigation version/CQL stay in sync.
       const existing = this.ideStateService.libraryResources().find(lib => lib.id === existingId);
       if (!existing?.isDirty && !existing?.contentLoading) {
-        await this.refreshOpenLibraryFromServer(existingId);
+        await this.refreshOpenLibraryFromServer(existingId, session);
+      }
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return null;
       }
 
       await this.waitForLibraryReady(existingId);
-      return existingId;
+      return this.ideStateService.isCurrentEditorSession(session) ? existingId : null;
     }
 
     let freshLibrary: Library;
@@ -98,10 +102,10 @@ export class CqlIdeLibraryOpenerService {
       freshLibrary = await firstValueFrom(this.libraryService.get(library.id));
     } catch (error) {
       console.error('Error fetching library from server:', error);
-      return this.openLibraryFromCachedData(library, workspaceOrigin);
+      return this.openLibraryFromCachedData(library, workspaceOrigin, session);
     }
 
-    if (!freshLibrary.id) {
+    if (!freshLibrary.id || !this.ideStateService.isCurrentEditorSession(session)) {
       return null;
     }
 
@@ -127,6 +131,12 @@ export class CqlIdeLibraryOpenerService {
 
     try {
       const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(freshLibrary));
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        if (fromUrl && freshLibrary.id) {
+          this.ideStateService.removeLibraryResource(freshLibrary.id);
+        }
+        return null;
+      }
       if (fromUrl) {
         this.ideStateService.updateLibraryResource(freshLibrary.id!, {
           ...this.ideFieldsFromFhirLibrary(freshLibrary),
@@ -154,8 +164,11 @@ export class CqlIdeLibraryOpenerService {
         this.ideStateService.selectLibraryResource(freshLibrary.id!);
       }
       await this.waitForLibraryReady(freshLibrary.id!);
-      return freshLibrary.id!;
+      return this.ideStateService.isCurrentEditorSession(session) ? freshLibrary.id! : null;
     } catch (err) {
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return null;
+      }
       const message = err instanceof Error ? err.message : String(err);
       if (fromUrl) {
         const errorMessage = `Could not load CQL from URL for library "${freshLibrary.name || freshLibrary.id}". ${message}`;
@@ -173,13 +186,19 @@ export class CqlIdeLibraryOpenerService {
    * Re-fetch Library + CQL from the server into an already-open IDE tab.
    * Syncs FHIR metadata fields (including version) used by the FHIR tab.
    */
-  async refreshOpenLibraryFromServer(libraryId: string): Promise<boolean> {
+  async refreshOpenLibraryFromServer(
+    libraryId: string,
+    session = this.ideStateService.currentEditorSession()
+  ): Promise<boolean> {
     try {
       const freshLibrary = await firstValueFrom(this.libraryService.get(libraryId));
-      if (!freshLibrary.id) {
+      if (!freshLibrary.id || !this.ideStateService.isCurrentEditorSession(session)) {
         return false;
       }
       const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(freshLibrary));
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        return false;
+      }
       const cqlAttachment = freshLibrary.content?.find(c => c.contentType === 'text/cql');
       const fromUrl = !!(cqlAttachment?.url && !cqlAttachment?.data);
       this.ideStateService.updateLibraryResource(libraryId, {
@@ -216,11 +235,12 @@ export class CqlIdeLibraryOpenerService {
   }
 
   async openIncludedLibrary(ref: ElmIncludeRef): Promise<string | null> {
+    const session = this.ideStateService.currentEditorSession();
     const existingTabId = this.findOpenTabByIncludeRef(ref);
     if (existingTabId) {
       this.ideStateService.selectLibraryResource(existingTabId);
       await this.waitForLibraryReady(existingTabId);
-      return existingTabId;
+      return this.ideStateService.isCurrentEditorSession(session) ? existingTabId : null;
     }
 
     let library: Library | null;
@@ -232,19 +252,20 @@ export class CqlIdeLibraryOpenerService {
       return null;
     }
 
-    if (!library) {
+    if (!library || !this.ideStateService.isCurrentEditorSession(session)) {
       return null;
     }
 
-    return this.openLibraryFromServer(library);
+    return this.openLibraryFromServer(library, undefined, session);
   }
 
   private async openLibraryFromCachedData(
     library: Library,
-    workspaceOrigin?: WorkspaceLibraryOrigin
+    workspaceOrigin?: WorkspaceLibraryOrigin,
+    session = this.ideStateService.currentEditorSession()
   ): Promise<string | null> {
     const id = library.id;
-    if (!id) {
+    if (!id || !this.ideStateService.isCurrentEditorSession(session)) {
       return null;
     }
 
@@ -255,7 +276,7 @@ export class CqlIdeLibraryOpenerService {
       }
       this.ideStateService.selectLibraryResource(existingId);
       await this.waitForLibraryReady(existingId);
-      return existingId;
+      return this.ideStateService.isCurrentEditorSession(session) ? existingId : null;
     }
 
     const cqlAttachment = library.content?.find(c => c.contentType === 'text/cql');
@@ -280,6 +301,12 @@ export class CqlIdeLibraryOpenerService {
 
     try {
       const { cqlContent } = await firstValueFrom(this.libraryService.getCqlContent(library));
+      if (!this.ideStateService.isCurrentEditorSession(session)) {
+        if (fromUrl) {
+          this.ideStateService.removeLibraryResource(id);
+        }
+        return null;
+      }
       if (fromUrl) {
         this.ideStateService.updateLibraryResource(id, {
           ...this.ideFieldsFromFhirLibrary(library),
@@ -307,7 +334,7 @@ export class CqlIdeLibraryOpenerService {
         this.ideStateService.selectLibraryResource(id);
       }
       await this.waitForLibraryReady(id);
-      return id;
+      return this.ideStateService.isCurrentEditorSession(session) ? id : null;
     } catch {
       return null;
     }

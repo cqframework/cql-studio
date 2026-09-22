@@ -89,6 +89,8 @@ export class CqlDebugService {
   private worker: Worker | null = null;
   private sab: SharedArrayBuffer | null = null;
   private expressionNames: string[] = [];
+  private runGeneration = 0;
+  private activeRunGeneration = 0;
 
   canStartDebug(): boolean {
     return (
@@ -235,10 +237,37 @@ export class CqlDebugService {
     }
   }
 
+  resetForEnvironmentChange(): void {
+    this.runGeneration += 1;
+    if (this._isDebugging()) {
+      this.stop();
+    }
+    this._breakpoints.set([]);
+    this._results.set([]);
+    this._warnings.set([]);
+    this._error.set(null);
+    this._executableLines.set(null);
+    this._declarationLines.set(null);
+    this._breakpointPlacementMessage.set(null);
+    this._focusBreakpointId.set(null);
+    this._prefetchResourceCounts.set([]);
+    this._pausedFrame.set(null);
+    this._pausedLine.set(null);
+    this._variables.set([]);
+    this._callStack.set([]);
+    this._selectedStackIndex.set(0);
+    this._lastValue.set(null);
+    this._progressDetail.set(null);
+    this._progressElapsedMs.set(0);
+    this._status.set('idle');
+    this._isDebugging.set(false);
+  }
+
   async startDebug(expressionNames?: string[]): Promise<void> {
     if (!this.canStartDebug()) {
       return;
     }
+    const generation = this.runGeneration;
     const library = this.ideStateService.getActiveLibraryResource();
     if (!library?.cqlContent?.trim()) {
       return;
@@ -273,6 +302,9 @@ export class CqlDebugService {
         library.cqlContent,
         this.libraryTranslationContextBuilder.fromLibraryResource(library)
       );
+      if (generation !== this.runGeneration) {
+        return;
+      }
 
       this._progressDetail.set('Prefetching patient data and ValueSets…');
       this.ideStateService.setExecutionStatus('Prefetching debug snapshot...');
@@ -296,6 +328,9 @@ export class CqlDebugService {
         breakpoints: this._breakpoints(),
         elmXml: translation.elmXml,
       });
+      if (generation !== this.runGeneration) {
+        return;
+      }
 
       const typeCounts = countResourcesByType(payload.bundle);
       this._prefetchResourceCounts.set(
@@ -331,6 +366,7 @@ export class CqlDebugService {
       writeDebugBreakpointsToSab(this.sab, this._breakpoints());
       this._status.set('running');
       this._progressDetail.set('Starting in-browser engine…');
+      this.activeRunGeneration = generation;
       this.ideStateService.setExecutionStatus('Debugging (in-browser engine)...');
       this.postToWorker({
         type: 'start',
@@ -339,6 +375,9 @@ export class CqlDebugService {
         payload,
       });
     } catch (error) {
+      if (generation !== this.runGeneration) {
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this._error.set(message);
       this._status.set('error');
@@ -448,6 +487,9 @@ export class CqlDebugService {
   }
 
   private handleWorkerMessage(message: CqlDebugWorkerOutboundMessage): void {
+    if (this.activeRunGeneration !== this.runGeneration) {
+      return;
+    }
     switch (message.type) {
       case 'progress': {
         this._progressElapsedMs.set(message.elapsedMs);

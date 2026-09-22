@@ -127,11 +127,7 @@ export class EnvironmentSwitchService {
   }
 
   private selectionKey(): string {
-    if (this.environmentService.activeEnvironmentSource() === 'workspace') {
-      const ref = this.environmentService.activeWorkspaceEnvironment();
-      return ref ? `workspace:${ref.workspaceId}:${ref.environmentId}` : 'workspace:missing';
-    }
-    return `personal:${this.environmentService.getActiveEnvironmentIdSnapshot()}`;
+    return this.environmentService.activeSelectionKey();
   }
 
   private afterActivation(

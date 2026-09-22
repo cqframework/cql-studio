@@ -166,6 +166,51 @@ describe('EnvironmentService', () => {
     expect(service.isPersonalEnvironmentSelected(BUILT_IN_ENVIRONMENT_ID)).toBe(false);
     expect(service.activeEnvironment().evaluationServer.address).toBe('http://shared/fhir');
     expect(service.activeEnvironment().name).toContain('Shared HAPI');
+    expect(service.activeSelectionKey()).toBe('workspace:ws-1:env-1');
+  });
+
+  it('changes activeSelectionKey when switching between workspace environments', () => {
+    service.setWorkspaceCatalog([
+      {
+        workspaceId: 'ws-1',
+        workspaceName: 'Team Alpha',
+        environments: [
+          {
+            id: 'env-1',
+            workspaceId: 'ws-1',
+            name: 'Shared HAPI',
+            config: {
+              evaluationServer: { address: 'http://shared/fhir' },
+              dataEndpoint: { address: '' },
+              terminologyEndpoint: { address: '' },
+              contentEndpoint: { address: '' },
+            },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+          {
+            id: 'env-2',
+            workspaceId: 'ws-1',
+            name: 'Shared QA',
+            config: {
+              evaluationServer: { address: 'http://qa/fhir' },
+              dataEndpoint: { address: '' },
+              terminologyEndpoint: { address: '' },
+              contentEndpoint: { address: '' },
+            },
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      },
+    ]);
+    expect(service.activeSelectionKey()).toBe(`personal:${BUILT_IN_ENVIRONMENT_ID}`);
+    service.setActiveWorkspaceEnvironment('ws-1', 'env-1');
+    expect(service.activeSelectionKey()).toBe('workspace:ws-1:env-1');
+    service.setActiveWorkspaceEnvironment('ws-1', 'env-2');
+    expect(service.activeSelectionKey()).toBe('workspace:ws-1:env-2');
+    service.setActiveEnvironment(BUILT_IN_ENVIRONMENT_ID);
+    expect(service.activeSelectionKey()).toBe(`personal:${BUILT_IN_ENVIRONMENT_ID}`);
   });
 
   it('falls back to personal when active workspace environment disappears', () => {

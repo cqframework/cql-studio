@@ -27,6 +27,13 @@ export class OpenCodeEditorBridgeService {
   } | null>(null);
   private inlineSequence = 0;
 
+  clear(): void {
+    this.documents.set(new Map());
+    this.document.set(null);
+    this.selection.set(null);
+    this.inlineRequest.set(null);
+  }
+
   recordDocument(libraryId: string, content: string, userRevision: number): void {
     this.documents.update(documents => new Map(documents).set(libraryId, { libraryId, content, userRevision }));
     this.document.set({ libraryId, content, userRevision });

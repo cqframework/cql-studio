@@ -154,6 +154,9 @@ export class IdeStateService {
   /** Per-scope invalidation counts. Tabs use effect(() => this.tabDataInvalidation()[scope]) and refresh when their scope's count increases. */
   private _tabDataInvalidation = signal<Record<string, number>>({});
 
+  /** Bumped by {@link resetEditorSession} so in-flight work can drop results from the previous environment. */
+  private editorSession = 0;
+
   // Public computed signals
   public panelState = computed(() => this._panelState());
   public editorState = computed(() => this._editorState());
@@ -525,6 +528,54 @@ export class IdeStateService {
     this._translationErrors.set([]);
     this._translationWarnings.set([]);
     this._translationMessages.set([]);
+  }
+
+  currentEditorSession(): number {
+    return this.editorSession;
+  }
+
+  isCurrentEditorSession(session: number): boolean {
+    return session === this.editorSession;
+  }
+
+  /**
+   * Drop editor, execution, and translation state that belongs to the previously selected environment.
+   * Panel layout and open tabs stay in place.
+   */
+  resetEditorSession(): void {
+    this.editorSession += 1;
+    this._libraryResources.set([]);
+    this._activeLibraryId.set(null);
+    this._reloadTrigger.set(null);
+    this._editorFiles.set([]);
+    this._activeFileId.set(null);
+    this._editorState.set({
+      cursorPosition: undefined,
+      wordCount: undefined,
+      syntaxErrors: [],
+      isValidSyntax: true
+    });
+    this._isExecuting.set(false);
+    this._isEvaluating.set(false);
+    this._isTranslating.set(false);
+    this._executionResults.set(null);
+    this._outputSections.set([]);
+    this._executionProgress.set(0);
+    this._executionStatus.set('');
+    this._selectedPatients.set([]);
+    this._library.set(null);
+    this._evaluationResults.set(null);
+    this.clearElmTranslationResults();
+    this._findReferencesResult.set(null);
+    this._valuesetPeekResult.set(null);
+    this._renameSymbolRequest.set(null);
+    this._pendingEditorNavigation.set(null);
+    this._navigateToLineRequest.set(null);
+    this._formatCodeRequest.set(false);
+    this._draggedTab.set(null);
+    this._dragOverPanel.set(null);
+    this.invalidateTabData(TabDataScope.LibraryList);
+    this.bumpUiRevision();
   }
 
   // Drag and drop management

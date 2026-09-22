@@ -88,6 +88,15 @@ export class EnvironmentService {
 
   readonly isPersonalEnvironmentActive = computed(() => this._activeEnvironmentSource() === 'personal');
 
+  /** Identity of the selected personal or workspace environment. Changes only when the selection changes. */
+  readonly activeSelectionKey = computed(() => {
+    if (this._activeEnvironmentSource() === 'workspace') {
+      const ref = this._activeWorkspaceEnvironment();
+      return ref ? `workspace:${ref.workspaceId}:${ref.environmentId}` : 'workspace:missing';
+    }
+    return `personal:${this._activeEnvironmentId()}`;
+  });
+
   /** Replace personal env list while always keeping virtual Default Environment first. Does not change active selection except to repair invalid ids. */
   syncPersonalEnvironments(personalEnvironments: CqlEnvironment[]): void {
     const personal = (personalEnvironments ?? [])

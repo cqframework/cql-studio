@@ -860,10 +860,11 @@ export class AiTabComponent implements OnInit, OnDestroy {
     if (!this.isAvailable()) return;
     const active = this.activeLibrary();
     try {
-      const sessions = await this.openCodeService.listSessions();
+      const sessions = (await this.openCodeService.listSessions())
+        .filter(session => this.openCodeService.isSessionEnvironmentCurrent(session));
       this.resumeSessions.set(sessions.filter(item => item.availability === 'archived' && (!active || item.activeLibraryId === active.id)));
       // The IDE's open-library state is not persisted across a full browser reload.
-      // Reattach the newest owned session in that case so the conversation and diff
+      // Reattach the newest session for the active environment so the conversation and diff
       // remain recoverable while the user reopens the matching Library.
       const matching = active ? sessions.find(session => session.activeLibraryId === active.id) : sessions[0];
       if (matching) await this.attachSession(matching);

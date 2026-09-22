@@ -131,8 +131,6 @@ export class CrmiComponent {
   readonly attachError = signal<string | null>(null);
   readonly attachResults = signal<ArtifactRow[]>([]);
 
-  readonly environmentName = computed(() => this.api.environmentName());
-  readonly persisted = computed(() => this.api.base() != null);
   readonly selected = computed(() => this.results().filter((row) => this.selectedKeys().has(row.key)));
   readonly ownedLinks = computed(() => ownedLinksOf(this.parentDraft()));
   readonly authoringRows = computed(() => authoringRowsOf(this.authoringBundle()));
