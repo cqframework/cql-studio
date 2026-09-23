@@ -15,7 +15,7 @@ import {
 } from '@cqframework/cql/cql-to-elm';
 import { CqlLocatorUtilsService } from './cql-locator-utils.service';
 import { CqlLibrarySourceService, LibraryTranslationContext } from './cql-library-source.service';
-import { ElmIncludeParser } from './elm-include.lib';
+import { ElmIncludeParser, splitQualifiedLibraryName, unqualifyCqlLibraryIncludes } from './elm-include.lib';
 import { CqlModelInfoService } from './cql-model-info.service';
 import {
   extractCqlUsingDeclarations,
@@ -184,14 +184,26 @@ export class TranslationService {
 
     libraryManager.librarySourceLoader.registerProvider(
       createLibrarySourceProvider((id, system, version) => {
-        const cachedCql = this.librarySourceService.getCachedCql(id, system, version);
+        const split = splitQualifiedLibraryName(id);
+        const localId = split.path;
+        const lookupSystem = system || split.system;
+        const cachedCql =
+          this.librarySourceService.getCachedCql(localId, lookupSystem, version)
+          ?? (lookupSystem
+            ? this.librarySourceService.getCachedCql(localId, null, version)
+            : null);
         if (cachedCql) {
           return stringAsSource(
-            this.alignFhirHelpersCqlIfNeeded(id, version, cachedCql, fhirModelVersion)
+            this.alignFhirHelpersCqlIfNeeded(
+              localId,
+              version,
+              unqualifyCqlLibraryIncludes(cachedCql),
+              fhirModelVersion,
+            )
           );
         }
 
-        if (id === 'FHIRHelpers' && !system) {
+        if (localId === 'FHIRHelpers') {
           const requested = version?.trim() || this.FHIR_VERSION;
           const bundled = this.librarySourceCache.get(`/cql/FHIRHelpers-${this.FHIR_VERSION}.cql`);
           if (!bundled) {
@@ -203,7 +215,12 @@ export class TranslationService {
             );
           }
           return stringAsSource(
-            this.alignFhirHelpersCqlIfNeeded(id, requested, bundled, fhirModelVersion)
+            this.alignFhirHelpersCqlIfNeeded(
+              localId,
+              requested,
+              unqualifyCqlLibraryIncludes(bundled),
+              fhirModelVersion,
+            )
           );
         }
 
@@ -495,7 +512,7 @@ export class TranslationService {
 
   private translateCqlToElmWithEngine(cql: string, engine: TranslationEngine): TranslationResult {
     try {
-      const translator = CqlTranslator.fromText(cql, engine.libraryManager);
+      const translator = CqlTranslator.fromText(unqualifyCqlLibraryIncludes(cql), engine.libraryManager);
 
       const errors = [...(translator.errors?.asJsReadonlyArrayView() ?? [])];
       const warnings = [...(translator.warnings?.asJsReadonlyArrayView() ?? [])];
@@ -587,7 +604,7 @@ export class TranslationService {
     engine: TranslationEngine
   ): RawTranslationResult {
     try {
-      const translator = CqlTranslator.fromText(cql, engine.libraryManager);
+      const translator = CqlTranslator.fromText(unqualifyCqlLibraryIncludes(cql), engine.libraryManager);
 
       const errors = [...(translator.errors?.asJsReadonlyArrayView() ?? [])];
       const warnings = [...(translator.warnings?.asJsReadonlyArrayView() ?? [])];

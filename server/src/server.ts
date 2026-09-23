@@ -23,6 +23,7 @@ import { OpenCodeError } from '@cql-studio/core';
 import { configureOpenCodeLogger } from './opencode/logger.js';
 import { createUserSettingsRouter } from './user/routes.js';
 import { createCrmiRouter } from './crmi/router.js';
+import { createCmsContentProxyRouter } from './cms-content/proxy.js';
 
 // Package-local values take precedence when .env exists. Variables omitted by
 // the file remain available from the parent shell environment.
@@ -69,6 +70,7 @@ async function main(): Promise<void> {
   app.use('/api/vsac/fhir', vsacFhirProxyRouter);
   app.use('/api/vsac/site', vsacSiteProxyRouter);
   app.use('/api/cartos/fhir', cartosFhirProxyRouter);
+  app.use('/api/cms-content', createCmsContentProxyRouter(env.githubToken));
   app.use('/api/auth', createAuthRouter(env));
   app.use('/api/teams', createTeamRouter(env));
   app.use('/api/workspaces', createWorkspaceRouter(env));

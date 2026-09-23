@@ -2,6 +2,8 @@
 
 import { Component, input, signal, inject, computed, viewChild, ElementRef, afterNextRender, Injector, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { Subject } from 'rxjs';
 import { debounceTime, filter, switchMap, catchError } from 'rxjs/operators';
@@ -13,6 +15,7 @@ import { PatientService } from '../../../services/patient.service';
 import { SettingsService } from '../../../services/settings.service';
 import { ToastService } from '../../../services/toast.service';
 import { MeasureReportViewComponent } from '../measure-report-view/measure-report-view.component';
+import { describeFhirHttpFailure } from '../../../services/fhir-http-error.lib';
 
 export interface SubjectOption {
   reference: string;
@@ -21,7 +24,7 @@ export interface SubjectOption {
 
 @Component({
   selector: 'app-measure-run-tab',
-  imports: [FormsModule, MeasureReportViewComponent],
+  imports: [FormsModule, RouterLink, MeasureReportViewComponent],
   templateUrl: './measure-run-tab.component.html',
 
   styleUrl: './measure-run-tab.component.scss',
@@ -38,6 +41,7 @@ export class MeasureRunTabComponent {
   protected readonly subject = signal('');
   protected readonly running = signal(false);
   protected readonly result = signal<MeasureReport | null>(null);
+  protected readonly savedReportId = signal<string | null>(null);
   protected readonly runError = signal<string | null>(null);
 
   protected readonly subjectSearchQuery = signal('');
@@ -206,14 +210,23 @@ export class MeasureRunTabComponent {
     this.running.set(true);
     this.runError.set(null);
     this.result.set(null);
+    this.savedReportId.set(null);
     try {
-      const report = await firstValueFrom(this.measureService.evaluateMeasure(m.id, {
+      let report = await firstValueFrom(this.measureService.evaluateMeasure(m.id, {
         periodStart: start,
         periodEnd: end,
         reportType: this.reportType(),
         subject: this.subject().trim() || undefined
       }));
+      if (report) {
+        const stored = await this.persistReportIfMissing(report, m);
+        report = stored.report;
+        if (stored.warning) {
+          this.runError.set(stored.warning);
+        }
+      }
       this.result.set(report);
+      this.savedReportId.set(report?.id?.trim() || null);
       if (report) {
         this.toastService.showSuccess('Measure evaluation completed.', 'Run');
       }
@@ -224,6 +237,49 @@ export class MeasureRunTabComponent {
     } finally {
       this.running.set(false);
     }
+  }
+
+  /**
+   * `$evaluate-measure` may return an id that was never written. Store a copy when GET misses.
+   */
+  private async persistReportIfMissing(
+    report: MeasureReport,
+    measure: Measure,
+  ): Promise<{ report: MeasureReport; warning: string | null }> {
+    const existingId = report.id?.trim() ?? '';
+    if (existingId) {
+      try {
+        const found = await firstValueFrom(this.measureService.getMeasureReport(existingId));
+        if (found?.resourceType === 'MeasureReport') {
+          return { report: found, warning: null };
+        }
+      } catch (err: unknown) {
+        if (!(err instanceof HttpErrorResponse) || err.status !== 404) {
+          return {
+            report,
+            warning: `Evaluation succeeded, but the report was not stored. ${describeFhirHttpFailure(err)}`,
+          };
+        }
+      }
+    }
+    const measureRef = report.measure?.trim() || measure.url?.trim() || `Measure/${measure.id}`;
+    const { id: _ignored, ...withoutId } = report;
+    try {
+      const stored = await firstValueFrom(this.measureService.createMeasureReport({
+        ...withoutId,
+        resourceType: 'MeasureReport',
+        measure: measureRef,
+      }));
+      if (stored?.resourceType === 'MeasureReport') {
+        return { report: stored, warning: null };
+      }
+    } catch (err: unknown) {
+      return {
+        report,
+        warning: `Evaluation succeeded, but the report was not stored. ${describeFhirHttpFailure(err)}`,
+      };
+    }
+    return { report, warning: null };
   }
 
   protected setDefaultPeriod(): void {

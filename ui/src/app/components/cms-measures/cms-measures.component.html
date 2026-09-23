@@ -1,0 +1,194 @@
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+    <div>
+      <h4 class="mb-1">CMS Measures</h4>
+      <p class="text-body-secondary small mb-0">
+        Measure import installs ModelInfo files, companion logic libraries,
+        VSAC value set expansions, and translated ELM on the active environment's evaluation server.
+      </p>
+    </div>
+    @if (showCatalog()) {
+    <button type="button" class="btn btn-primary" id="cms-measures-import"
+      [disabled]="importing() || loading() || selectedCount() === 0 || !evaluationConfigured() || !vsacConfigured()"
+      (click)="importSelected()">
+      @if (importing()) {
+      <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+      }
+      <i class="bi bi-download me-1"></i>Import selected
+    </button>
+    }
+  </div>
+
+  @if (importing()) {
+  <div class="card mb-3" id="cms-measures-import-status" role="status" aria-live="polite">
+    <div class="card-body py-2 px-3">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        <span class="fw-semibold">Import in progress</span>
+        @if (importStatus(); as status) {
+        @if (status.index != null && status.total > 1) {
+        <span class="badge text-bg-secondary">{{ status.index }} of {{ status.total }}</span>
+        }
+        }
+      </div>
+      @if (importStatus(); as status) {
+      <dl class="row small mb-0">
+        <dt class="col-4 col-sm-2">Measure</dt>
+        <dd class="col-8 col-sm-10 mb-1" id="cms-measures-import-measure">{{ status.measure }}</dd>
+        <dt class="col-4 col-sm-2">Stage</dt>
+        <dd class="col-8 col-sm-10 mb-1" id="cms-measures-import-stage">{{ status.stage }}</dd>
+        <dt class="col-4 col-sm-2">Now</dt>
+        <dd class="col-8 col-sm-10 mb-0 text-break" id="cms-measures-import-detail">{{ status.detail }}</dd>
+      </dl>
+      }
+    </div>
+  </div>
+  }
+
+  @if (!evaluationConfigured()) {
+  <div class="alert alert-warning small py-2" id="cms-measures-fhir-warning" role="alert">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    Configure the evaluation FHIR server URL in Settings before importing.
+  </div>
+  }
+
+  @if (!showCatalog()) {
+  <div class="alert alert-warning small py-2" id="cms-measures-vsac-warning" role="alert">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    CMS import expands value sets from VSAC.
+    <a id="cms-measures-vsac-settings" routerLink="/settings/vsac">Add VSAC API credentials in Settings</a>
+    before importing.
+  </div>
+  } @else {
+  <div class="row g-2 mb-3 align-items-end">
+    <div class="col-md-6 col-lg-4">
+      <label class="form-label small mb-1" for="cms-measures-source">Source</label>
+      <select class="form-select form-select-sm" id="cms-measures-source" [value]="sourceId()"
+        (change)="onSourceChange($any($event.target).value)">
+        @for (source of sources; track source.id) {
+        <option [value]="source.id">{{ source.label }} — {{ source.model }}</option>
+        }
+      </select>
+    </div>
+    <div class="col-auto">
+      <button type="button" class="btn btn-outline-primary btn-sm" id="cms-measures-load-index"
+        [disabled]="loading() || importing()" (click)="loadIndex()">
+        @if (loading()) {
+        <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+        }
+        Load Index
+      </button>
+    </div>
+  </div>
+
+  @if (loading()) {
+  <div class="d-flex align-items-center gap-2 text-body-secondary small mb-3" id="cms-measures-loading">
+    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+    {{ progress() || 'Loading measures…' }}
+  </div>
+  }
+
+  @if (error()) {
+  <div class="alert alert-danger small py-2" id="cms-measures-error" role="alert">{{ error() }}</div>
+  }
+
+  @if (indexLoaded()) {
+  <div class="row g-2 mb-3">
+    <div class="col-md-8">
+      <label class="form-label small mb-1" for="cms-measures-search">Search</label>
+      <input class="form-control form-control-sm" id="cms-measures-search" type="search"
+        placeholder="Title, CMS id, or description" [value]="searchText()"
+        (input)="onSearchInput($any($event.target).value)">
+    </div>
+    <div class="col-md-4">
+      <label class="form-label small mb-1" for="cms-measures-status">Status</label>
+      <select class="form-select form-select-sm" id="cms-measures-status" [value]="statusFilter()"
+        (change)="onStatusChange($any($event.target).value)">
+        <option value="">Any status</option>
+        @for (status of statuses(); track status) {
+        <option [value]="status">{{ status }}</option>
+        }
+      </select>
+    </div>
+  </div>
+
+  @if (!loading() && visible().length === 0 && !error()) {
+  <div class="alert alert-secondary small py-2" id="cms-measures-empty" role="status">
+    No measures match this filter.
+  </div>
+  }
+
+  @if (visible().length > 0) {
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead>
+        <tr>
+          <th style="width: 2.5rem">
+            <input class="form-check-input" type="checkbox" id="cms-measures-select-all"
+              [checked]="allVisibleSelected()" (change)="toggleVisible($any($event.target).checked)"
+              aria-label="Select all visible measures">
+          </th>
+          <th>Title</th>
+          <th>CMS id</th>
+          <th>Version</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of visible(); track rowKey(row)) {
+        <tr [class.table-info]="isCurrentImport(row)">
+          <td>
+            <input class="form-check-input" type="checkbox" [id]="'cms-measures-select-' + row.sourceId + '-' + row.id"
+              [checked]="isSelected(row)" (change)="toggleRow(row, $any($event.target).checked)"
+              [attr.aria-label]="'Select ' + row.title">
+          </td>
+          <td>
+            <div>{{ row.title }}</div>
+            @if (row.description) {
+            <div class="text-body-secondary small text-truncate" style="max-width: 36rem" [title]="row.description">
+              {{ row.description }}
+            </div>
+            }
+          </td>
+          <td>{{ row.cmsId }}</td>
+          <td>{{ row.version }}</td>
+          <td>{{ row.status }}</td>
+        </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <p class="small text-body-secondary">{{ selectedCount() }} selected · {{ visible().length }} shown</p>
+  }
+  }
+  }
+
+  @if (unresolved().length > 0) {
+  <div class="alert alert-warning small py-2" id="cms-measures-unresolved" role="status">
+    These library references are not in the same repository and were not imported:
+    {{ unresolved().join(', ') }}
+  </div>
+  }
+
+  @if (results().length > 0) {
+  <div id="cms-measures-results">
+    <h5 class="h6">Import results</h5>
+    <ul class="list-group list-group-flush">
+      @for (result of results(); track result.resourceType + result.id + result.label) {
+      <li class="list-group-item d-flex justify-content-between align-items-start gap-3 px-0">
+        <div>
+          <span class="badge me-2" [class.text-bg-success]="result.ok" [class.text-bg-danger]="!result.ok">
+            {{ result.ok ? 'OK' : 'Failed' }}
+          </span>
+          <span>{{ result.resourceType }}/{{ result.id || result.label }}</span>
+          <span class="text-body-secondary small ms-2">{{ result.message }}</span>
+          @if (result.ok && result.resourceType === 'Measure' && result.id) {
+          <a class="ms-2" [routerLink]="['/measures', result.id]">Open in Measure Editor</a>
+          }
+        </div>
+      </li>
+      }
+    </ul>
+  </div>
+  }
+</div>

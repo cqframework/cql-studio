@@ -236,4 +236,79 @@ describe('OpenCode VSAC terminology import', () => {
       /Import requires 51 VSAC ValueSets.*at most 50/,
     );
   });
+
+  it('batches more than 50 ValueSets and records a per-URL expansion failure', async () => {
+    const urls = Array.from({ length: 51 }, (_, i) => `http://cts.nlm.nih.gov/fhir/ValueSet/missing.${i}`);
+    const failing = urls[3];
+    const terminologyPost = vi.fn(() => of({ resourceType: 'Bundle', type: 'transaction-response' } as Bundle));
+    const service = serviceWith({
+      terminologySearch: vi.fn(() => of({ resourceType: 'Bundle', type: 'searchset' } as Bundle)),
+      terminologyPost,
+      vsacFetch: vi.fn((url: string) => of({
+        resourceType: 'ValueSet',
+        id: url.endsWith('missing.3') ? 'bad' : `id-${url.split('.').pop()}`,
+        url,
+      } as ValueSet)),
+      vsacExpand: vi.fn((id: string) => {
+        if (id === 'bad') {
+          return throwError(() => new Error('expand failed'));
+        }
+        return of({
+          resourceType: 'ValueSet',
+          id,
+          expansion: { timestamp: '2026-09-22T00:00:00Z', total: 1, contains: [{ code: '1' }] },
+        } as ValueSet);
+      }),
+    });
+
+    const phases = new Set<string>();
+    const result = await service.importCanonicalUrlsBatched(urls, (progress) => {
+      phases.add(progress.phase);
+      if (progress.phase === 'expand') {
+        expect(progress.canonicalUrl).toContain('/ValueSet/');
+        expect(progress.index).toBeGreaterThan(0);
+        expect(progress.total).toBe(51);
+      }
+    });
+
+    expect([...phases].sort()).toEqual(['check', 'expand', 'post']);
+    expect(result.imported).toBe(50);
+    expect(result.failures).toEqual([
+      expect.objectContaining({ canonicalUrl: failing, message: expect.stringContaining('expand failed') }),
+    ]);
+    expect(terminologyPost).toHaveBeenCalledTimes(2);
+    const sizes = terminologyPost.mock.calls.map((call) => (call[0] as Bundle).entry?.length);
+    expect(sizes).toEqual([49, 1]);
+  });
+
+  it('pages a VSAC expansion that returns fewer concepts than its total', async () => {
+    const terminologyPost = vi.fn(() => of({ resourceType: 'Bundle', type: 'transaction-response' } as Bundle));
+    const definition: ValueSet = { resourceType: 'ValueSet', id: '2.16.840.1.113883.3.1', url: canonical, title: 'Paged' };
+    const vsacExpand = vi.fn((_id: string, query: { offset?: number }) => {
+      const offset = query.offset ?? 0;
+      const page = offset === 0
+        ? [{ code: 'a' }, { code: 'b' }]
+        : [{ code: 'c' }];
+      return of({
+        resourceType: 'ValueSet',
+        id: definition.id,
+        expansion: { timestamp: '2026-09-22T00:00:00Z', total: 3, offset, contains: page },
+      } as ValueSet);
+    });
+    const service = serviceWith({
+      terminologySearch: vi.fn(() => of({ resourceType: 'Bundle', type: 'searchset' } as Bundle)),
+      terminologyPost,
+      vsacFetch: vi.fn(() => of(definition)),
+      vsacExpand,
+    });
+
+    const result = await service.importCanonicalUrls([canonical]);
+
+    expect(result.imported).toBe(1);
+    expect(result.items[0]?.conceptCount).toBe(3);
+    expect(vsacExpand).toHaveBeenCalledTimes(2);
+    const posted = terminologyPost.mock.calls[0]?.[0] as Bundle;
+    const resource = posted.entry?.[0]?.resource as ValueSet;
+    expect(resource.expansion?.contains?.map(item => item.code)).toEqual(['a', 'b', 'c']);
+  });
 });

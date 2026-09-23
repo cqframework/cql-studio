@@ -291,4 +291,42 @@ include HelloMid version '1.0.0' called HelloMid`;
     expect(service.getCachedCql('HelloMid', null, '1.0.0')).toBe(helloMidCql);
     expect(service.getCachedCql('HelloLeaf', null, '1.0.0')).toBe(helloLeafCql);
   });
+
+  it('looks up a qualified include by local name', async () => {
+    const cql = `library FHIRCommon version '2.0.0'`;
+    const lib = libraryWithContent('FHIRCommon', 'FHIRCommon', '2.0.0', cql, helloLeafElm);
+    libraryService.findByNameAndVersion.mockImplementation((name: string) =>
+      of(name === 'FHIRCommon' ? lib : null)
+    );
+    libraryService.getCqlContent.mockReturnValue(of({ cqlContent: cql, fromUrl: false }));
+    libraryService.getElmXml.mockReturnValue(of(''));
+
+    const fetched = await service.prefetchIncludesFromCql(
+      `include hl7.fhir.uv.cql.FHIRCommon version '2.0.0'`
+    );
+
+    expect(fetched).toBe(true);
+    expect(libraryService.findByNameAndVersion).toHaveBeenCalledWith(
+      'FHIRCommon',
+      '2.0.0',
+      true,
+      'logic-library'
+    );
+    const names = libraryService.findByNameAndVersion.mock.calls.map((call) => call[0] as string);
+    expect(names.every((name) => name === 'FHIRCommon')).toBe(true);
+    expect(service.getCachedCql('FHIRCommon', 'hl7.fhir.uv.cql', '2.0.0')).toBe(cql);
+    expect(service.getCachedCql('FHIRCommon', null, '2.0.0')).toBe(cql);
+  });
+
+  it('reuses an unscoped CQL cache entry for a qualified include', async () => {
+    const cql = `library FHIRCommon version '2.0.0'`;
+    service.setCachedCql('FHIRCommon', null, '2.0.0', cql);
+    libraryService.findByNameAndVersion.mockReturnValue(of(null));
+
+    await service.prefetchIncludesFromCql(`include hl7.fhir.uv.cql.FHIRCommon version '2.0.0'`);
+
+    expect(service.getCachedCql('FHIRCommon', 'hl7.fhir.uv.cql', '2.0.0')).toBe(cql);
+    const names = libraryService.findByNameAndVersion.mock.calls.map((call) => call[0] as string);
+    expect(names.some((name) => name.includes('.'))).toBe(false);
+  });
 });

@@ -86,6 +86,11 @@
   }
   @if (result()) {
   <h6 class="small fw-semibold mb-2">Result</h6>
+  @if (savedReportId()) {
+  <p class="small mb-2">
+    <a id="measure-run-report-link" [routerLink]="['/measure-reports', savedReportId()]">Open in report viewer</a>
+  </p>
+  }
   <app-measure-report-view [report]="result()" />
   }
   } @else {

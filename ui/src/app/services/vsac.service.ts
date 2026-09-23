@@ -22,6 +22,29 @@ const FHIR_JSON = 'application/fhir+json';
 const VSAC_FHIR_BASE_HEADER = 'X-VSAC-FHIR-Base-URL';
 const VSAC_FHIR_ALLOWED_HOSTS = new Set(['cts.nlm.nih.gov', 'uat-cts.nlm.nih.gov']);
 
+/**
+ * CTS serves a ValueSet at `/ValueSet/{oid}` and publishes that same OID in the canonical URL.
+ * `ValueSet?url=` against CTS does not return in a usable time, so callers must read by id.
+ */
+export function vsacValueSetIdFromCanonical(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return null;
+    }
+    if (!VSAC_FHIR_ALLOWED_HOSTS.has(url.hostname.toLowerCase())) {
+      return null;
+    }
+    const match = url.pathname.match(/^\/fhir\/ValueSet\/([A-Za-z0-9.%-]+)\/?$/i);
+    if (!match) {
+      return null;
+    }
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
 /** Parameters for GET ValueSet?… against CTS/VSAC (see server CapabilityStatement). */
 export interface ValueSetSearchParams extends StandardValueSetSearchParams {
   /** Expansion / release business identifier (e.g. eCQM or C-CDA release label). */
@@ -143,10 +166,15 @@ export class VsacService {
   }
 
   /**
-   * Read by logical id / OID, or resolve by canonical `url` when the input is an absolute http(s) URL.
+   * Read by logical id / OID. A CTS canonical URL is read by the OID in its path.
+   * Other absolute URLs are resolved with `ValueSet?url=`.
    */
   fetchValueSetByOidOrCanonicalUrl(idOrUrl: string): Observable<ValueSet> {
     const trimmed = idOrUrl.trim();
+    const vsacId = vsacValueSetIdFromCanonical(trimmed);
+    if (vsacId) {
+      return this.getValueSetById(vsacId);
+    }
     if (/^https?:\/\//i.test(trimmed)) {
       return this.searchValueSets({ url: trimmed, _count: 1 }).pipe(
         map((bundle) => {

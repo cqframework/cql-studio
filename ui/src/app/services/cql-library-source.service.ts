@@ -26,12 +26,18 @@ export class CqlLibrarySourceService {
   private readonly elmCache = new Map<string, string>();
 
   getCachedCql(path: string, system: string | null | undefined, version: string | null | undefined): string | null {
-    const key = this.elmIncludeParser.cacheKey(path, system, version);
-    return this.cqlCache.get(key) ?? null;
+    const direct = this.cqlCache.get(this.elmIncludeParser.cacheKey(path, system, version));
+    if (direct != null) {
+      return direct;
+    }
+    if (system) {
+      return this.cqlCache.get(this.elmIncludeParser.cacheKey(path, null, version)) ?? null;
+    }
+    return null;
   }
 
   hasCachedCql(path: string, system: string | null | undefined, version: string | null | undefined): boolean {
-    return this.cqlCache.has(this.elmIncludeParser.cacheKey(path, system, version));
+    return this.getCachedCql(path, system, version) != null;
   }
 
   setCachedCql(
@@ -186,6 +192,13 @@ export class CqlLibrarySourceService {
     let fetchedAny = false;
     let library: Library | null = null;
 
+    if (!this.cqlCache.has(key) && ref.system) {
+      const unscoped = this.cqlCache.get(this.elmIncludeParser.cacheKey(ref.path, null, ref.version));
+      if (unscoped) {
+        this.cqlCache.set(key, unscoped);
+      }
+    }
+
     if (!this.cqlCache.has(key)) {
       library = await this.findLogicLibrary(ref.path, ref.version);
       if (!library) {
@@ -204,6 +217,12 @@ export class CqlLibrarySourceService {
           ? rewriteFhirHelpersCql(cqlContent, ref.version, ref.version)
           : cqlContent;
       this.cqlCache.set(key, aligned);
+      if (ref.system) {
+        const unscopedKey = this.elmIncludeParser.cacheKey(ref.path, null, ref.version);
+        if (!this.cqlCache.has(unscopedKey)) {
+          this.cqlCache.set(unscopedKey, aligned);
+        }
+      }
       fetchedAny = true;
     }
 

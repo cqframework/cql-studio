@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, beforeEach } from 'vitest';
-import { ElmIncludeParser } from './elm-include.lib';
+import { ElmIncludeParser, unqualifyCqlLibraryIncludes } from './elm-include.lib';
 
 const fixturesDir = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 const helloCommonElm = readFileSync(join(fixturesDir, 'hello-common.elm.xml'), 'utf8');
@@ -147,5 +147,44 @@ define X: 1`;
   it('extractIncludesFromCql supports quoted library names', () => {
     const cql = `include "Hello Common" version '0.0.0' called Common`;
     expect(parser.extractIncludesFromCql(cql)[0]?.path).toBe('Hello Common');
+  });
+
+  it('drops namespace prefixes from include lines', () => {
+    const cql = `library CMS125 version '0.1.0'
+include hl7.fhir.uv.cql.FHIRHelpers version '4.0.1' called FHIRHelpers
+include hl7.fhir.us.cql.USCoreCommon version '2.0.0-ballot' called USCoreCommon
+include FHIRCommon version '2.0.0'`;
+    expect(unqualifyCqlLibraryIncludes(cql)).toBe(`library CMS125 version '0.1.0'
+include FHIRHelpers version '4.0.1' called FHIRHelpers
+include USCoreCommon version '2.0.0-ballot' called USCoreCommon
+include FHIRCommon version '2.0.0'`);
+  });
+
+  it('splits a qualified include into namespace and local name', () => {
+    const cql = `library CMS125 version '0.1.0'
+include hl7.fhir.uv.cql.FHIRHelpers version '4.0.1'
+include hl7.fhir.uv.cql.FHIRCommon version '2.0.0' called FHIRCommon`;
+    expect(parser.extractIncludesFromCql(cql)).toEqual([
+      {
+        path: 'FHIRHelpers',
+        version: '4.0.1',
+        localIdentifier: null,
+        system: 'hl7.fhir.uv.cql',
+      },
+      {
+        path: 'FHIRCommon',
+        version: '2.0.0',
+        localIdentifier: null,
+        system: 'hl7.fhir.uv.cql',
+      },
+    ]);
+    expect(parser.extractFhirIncludesFromCql(cql)).toEqual([
+      {
+        path: 'FHIRCommon',
+        version: '2.0.0',
+        localIdentifier: null,
+        system: 'hl7.fhir.uv.cql',
+      },
+    ]);
   });
 });

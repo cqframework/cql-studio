@@ -51,6 +51,8 @@ export interface ServerEnv {
   opencodeMaxSessionsGlobal: number;
   cqlAssetsDirectory?: string;
   cqlAssetsUrl: string;
+  /** Optional GitHub token for the CMS content proxy. Never taken from the browser. */
+  githubToken?: string;
 }
 
 function required(name: string, value: string | undefined): string {
@@ -246,5 +248,6 @@ export function loadEnv(): ServerEnv {
     cqlAssetsUrl:
       process.env.CQL_STUDIO_SERVER_CQL_ASSETS_URL?.trim().replace(/\/+$/, '') ||
       `${uiBaseUrl}/cql`,
+    githubToken: process.env.CQL_STUDIO_SERVER_GITHUB_TOKEN?.trim() || undefined,
   };
 }

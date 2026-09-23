@@ -160,6 +160,13 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'cms-measures',
+        loadComponent: () =>
+          import('./components/cms-measures/cms-measures.component').then(
+            (m) => m.CmsMeasuresComponent
+          ),
+      },
+      {
         path: 'terminology',
         loadComponent: () =>
           import('./components/terminology/terminology-layout.component').then(
