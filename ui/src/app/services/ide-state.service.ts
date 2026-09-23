@@ -32,6 +32,8 @@ export interface IdeValuesetPeekResult {
   codes: IdeValuesetPeekCode[];
   truncated: boolean;
   error?: string;
+  /** Shown with codes when `$expand` failed and the stored expansion was used instead. */
+  notice?: string;
 }
 
 export interface IdeRenameSymbolRequest {

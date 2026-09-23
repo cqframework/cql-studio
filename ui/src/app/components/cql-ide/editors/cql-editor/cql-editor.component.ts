@@ -6,6 +6,7 @@ import { EditorView, Decoration, DecorationSet, keymap, WidgetType } from '@code
 import { Compartment, EditorState, Prec, StateEffect, StateField } from '@codemirror/state';
 import { linter, lintGutter, Diagnostic } from '@codemirror/lint';
 import { firstValueFrom, Subscription, timer } from 'rxjs';
+import type { ValueSet } from 'fhir/r4';
 import { CqlGrammarManager } from '../../../../services/cql-grammar-manager.service';
 import { createCqlEditorBaseExtensions } from '../../../../services/cql-codemirror-extensions.lib';
 import { createCqlEditorThemeExtensions } from '../../../../services/cql-editor-theme.lib';
@@ -64,6 +65,8 @@ import { TerminologyResourceOpenerService } from '../../../../services/terminolo
 import { TerminologyService } from '../../../../services/terminology.service';
 import { LibraryService } from '../../../../services/library.service';
 import { describeFhirHttpFailure } from '../../../../services/fhir-http-error.lib';
+import { isResourceType } from '../../../../services/fhir-resource-type.lib';
+import { peekCodesFromStoredExpansion } from '../../../../services/vsac-valueset-materialize.lib';
 import {
   extractVsacCanonicalUrls,
   isVsacCanonicalUrl,
@@ -1495,29 +1498,92 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
           count: peekLimit
         })
       );
-      const contains = expanded.expansion?.contains ?? [];
-      const codes = contains.slice(0, peekLimit);
-      const total = expanded.expansion?.total;
-      this.publishValuesetPeekResult({
-        name,
-        url,
-        id: expanded.id || id || provisionalFhirIdFromUrl(url),
-        codes: codes.map(c => ({
-          system: c.system,
-          code: c.code,
-          display: c.display
-        })),
-        truncated: total != null ? total > codes.length : contains.length >= peekLimit
-      });
+      this.publishExpandedPeek(name, url, id, expanded, peekLimit, true);
     } catch (error) {
+      const message = describeFhirHttpFailure(error) || 'Failed to expand ValueSet';
+      if (message.includes('HAPI-0831') || message.includes('produced too many codes')) {
+        try {
+          const expanded = await firstValueFrom(this.terminologyService.expandValueSet({
+            id: id || undefined,
+            url
+          }));
+          this.publishExpandedPeek(name, url, id, expanded, peekLimit, false);
+          return;
+        } catch {
+          // Fall through to the stored expansion.
+        }
+      }
+      const stored = await this.readStoredValueSet(id, url);
+      const storedCodes = stored ? peekCodesFromStoredExpansion(stored, peekLimit) : null;
+      if (stored && storedCodes) {
+        const missingInclude = message.includes('HAPI-0889') || message.includes('Unknown ValueSet');
+        this.publishValuesetPeekResult({
+          name,
+          url,
+          id: stored.id || id || provisionalFhirIdFromUrl(url),
+          codes: storedCodes.codes,
+          truncated: storedCodes.truncated,
+          notice: missingInclude
+            ? 'Showing the stored expansion. Re-import this ValueSet so the terminology server can expand it.'
+            : undefined
+        });
+        return;
+      }
       this.publishValuesetPeekResult({
         name,
         url,
         id: id || provisionalFhirIdFromUrl(url),
         codes: [],
         truncated: false,
-        error: describeFhirHttpFailure(error) || 'Failed to expand ValueSet'
+        error: message
       });
+    }
+  }
+
+  private publishExpandedPeek(
+    name: string,
+    url: string,
+    id: string | null,
+    expanded: ValueSet,
+    peekLimit: number,
+    countWasRequested: boolean
+  ): void {
+    const contains = expanded.expansion?.contains ?? [];
+    const codes = contains.slice(0, peekLimit);
+    const total = expanded.expansion?.total;
+    this.publishValuesetPeekResult({
+      name,
+      url,
+      id: expanded.id || id || provisionalFhirIdFromUrl(url),
+      codes: codes.map(c => ({
+        system: c.system,
+        code: c.code,
+        display: c.display
+      })),
+      truncated: total != null
+        ? total > codes.length
+        : countWasRequested
+          ? contains.length >= peekLimit
+          : contains.length > codes.length
+    });
+  }
+
+  private async readStoredValueSet(id: string | null, url: string): Promise<ValueSet | null> {
+    if (id) {
+      try {
+        return await firstValueFrom(this.terminologyService.getValueSet(id));
+      } catch {
+        // The id may be a provisional OID. Search by canonical URL next.
+      }
+    }
+    try {
+      const bundle = await firstValueFrom(this.terminologyService.searchValueSets({ url, _count: 5 }));
+      return (bundle.entry ?? [])
+        .map(entry => entry.resource)
+        .find((resource): resource is ValueSet => isResourceType(resource, 'ValueSet') && resource.url === url)
+        ?? null;
+    } catch {
+      return null;
     }
   }
 
@@ -1534,16 +1600,35 @@ export class CqlEditorComponent implements AfterViewInit, OnDestroy, IdeEditor {
         : `Importing ${unique.length} VSAC ValueSets...`
     );
     try {
-      const summary = await this.vsacImport.importCanonicalUrls(unique);
+      const summary = await this.vsacImport.importCanonicalUrlsBatched(unique);
       if (!this.ideStateService.isCurrentEditorSession(session)) {
         return;
       }
-      for (const url of unique) {
+      const touched = new Set([
+        ...unique,
+        ...summary.items.map(item => item.canonicalUrl),
+      ]);
+      for (const url of touched) {
         this.terminologyExistence.invalidate('ValueSet', url);
         void this.terminologyExistence.resolve('ValueSet', url);
       }
-      const detail = `${summary.imported} imported · ${summary.alreadyPresent} already present on ${summary.target}`;
-      this.toastService.showSuccess(detail, 'VSAC Import');
+      const detail = [
+        `${summary.imported} imported`,
+        `${summary.alreadyPresent} already present on ${summary.target}`,
+        summary.failures.length > 0 ? `${summary.failures.length} failed` : ''
+      ].filter(part => part.length > 0).join(' · ');
+      if (summary.failures.length > 0 && summary.imported === 0 && summary.alreadyPresent === 0) {
+        const message = summary.failures.map(failure => failure.message).join(' ');
+        this.toastService.showError(message, 'VSAC Import');
+        this.ideStateService.addTextOutput(`VSAC Import Failed: ${label}`, message, 'error');
+        this.ideStateService.setExecutionStatus('VSAC import failed');
+        return;
+      }
+      if (summary.failures.length > 0) {
+        this.toastService.showWarning(detail, 'VSAC Import');
+      } else {
+        this.toastService.showSuccess(detail, 'VSAC Import');
+      }
       this.ideStateService.addTextOutput(
         `VSAC Import: ${label}`,
         detail,

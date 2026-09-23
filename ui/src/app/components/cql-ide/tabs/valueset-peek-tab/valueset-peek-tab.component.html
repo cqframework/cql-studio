@@ -19,6 +19,9 @@
       </div>
     </div>
 
+    @if (peek.notice) {
+      <div class="alert alert-info py-2 small" id="valueset-peek-notice">{{ peek.notice }}</div>
+    }
     @if (peek.error) {
       <div class="alert alert-warning py-2 small mb-0" id="valueset-peek-error">{{ peek.error }}</div>
     } @else {

@@ -9,6 +9,7 @@ import { TerminologyService } from './terminology.service';
 import { VsacService } from './vsac.service';
 import {
   extractVsacCanonicalUrls,
+  includedVsacValueSetUrls,
   isVsacCanonicalUrl,
   OpenCodeVsacImportService,
 } from './opencode-vsac-import.service';
@@ -66,6 +67,21 @@ describe('OpenCode VSAC terminology import', () => {
     expect(isVsacCanonicalUrl('https://example.org/fhir/ValueSet/test')).toBe(false);
   });
 
+  it('collects included VSAC ValueSets and drops canonical versions', () => {
+    const child = 'http://cts.nlm.nih.gov/fhir/ValueSet/2.16.840.1.113883.3.117.1.7.1.201';
+    expect(includedVsacValueSetUrls({
+      resourceType: 'ValueSet',
+      status: 'active',
+      compose: {
+        include: [{ valueSet: [`${child}|2024`] }],
+        exclude: [{ valueSet: ['http://cts.nlm.nih.gov/fhir/ValueSet/2.16.840.1.113762.1.4.1110.61', 'https://example.org/fhir/ValueSet/other'] }],
+      },
+    })).toEqual([
+      child,
+      'http://cts.nlm.nih.gov/fhir/ValueSet/2.16.840.1.113762.1.4.1110.61',
+    ]);
+  });
+
   it('skips an exact canonical already present on the terminology server', async () => {
     const existing: ValueSet = { resourceType: 'ValueSet', id: 'existing', url: canonical, title: 'Existing' };
     const terminologySearch = vi.fn(() => of({
@@ -96,7 +112,15 @@ describe('OpenCode VSAC terminology import', () => {
       expansion: { timestamp: '2026-09-03T00:00:00Z', total: 2, contains: [{ code: '1' }, { code: '2' }] },
     };
     const vsacFetch = vi.fn();
-    const terminologyExpand = vi.fn();
+    const terminologyExpand = vi.fn((params: { id?: string }) => {
+      if (params.id === good.id) {
+        return of({
+          ...good,
+          expansion: good.expansion,
+        });
+      }
+      return throwError(() => new Error('HAPI-0889: Unknown ValueSet'));
+    });
     const service = serviceWith({
       terminologySearch: vi.fn(() => of({
         resourceType: 'Bundle',
@@ -113,7 +137,8 @@ describe('OpenCode VSAC terminology import', () => {
     expect(result.imported).toBe(0);
     expect(result.alreadyPresent).toBe(1);
     expect(result.items[0]?.title).toBe('Good');
-    expect(terminologyExpand).not.toHaveBeenCalled();
+    expect(terminologyExpand).toHaveBeenCalledWith({ id: 'custom-id', count: 1 });
+    expect(terminologyExpand).toHaveBeenCalledWith({ id: good.id, count: 1 });
     expect(vsacFetch).not.toHaveBeenCalled();
   });
 
@@ -190,7 +215,156 @@ describe('OpenCode VSAC terminology import', () => {
 
     expect(result.imported).toBe(1);
     const posted = terminologyPost.mock.calls[0]?.[0] as Bundle;
-    expect(posted.entry?.[0]?.resource).toMatchObject({ url: canonical, expansion: { total: 1 } });
+    expect(posted.entry?.[0]?.resource).toMatchObject({
+      url: canonical,
+      expansion: { total: 1 },
+      compose: {
+        include: [{ system: 'http://snomed.info/sct', concept: [{ code: '1' }] }],
+      },
+    });
+  });
+
+  it('reimports a grouping ValueSet when stored expansion cannot be expanded', async () => {
+    const child = 'http://cts.nlm.nih.gov/fhir/ValueSet/2.16.840.1.113883.3.117.1.7.1.201';
+    const existing: ValueSet = {
+      resourceType: 'ValueSet',
+      id: '2.16.840.1.113762.1.4.1110.62',
+      url: canonical,
+      title: 'Grouping',
+      compose: { include: [{ valueSet: [child] }] },
+      expansion: {
+        timestamp: '2026-09-22T00:00:00Z',
+        total: 1,
+        contains: [{ system: 'http://snomed.info/sct', code: '9', display: 'Stored' }],
+      },
+    };
+    const definition: ValueSet = {
+      resourceType: 'ValueSet',
+      id: existing.id,
+      url: canonical,
+      title: 'Grouping',
+      compose: existing.compose,
+    };
+    const grandchild = 'http://cts.nlm.nih.gov/fhir/ValueSet/2.16.840.1.113762.1.4.1110.61';
+    const childDefinition: ValueSet = {
+      resourceType: 'ValueSet',
+      id: '2.16.840.1.113883.3.117.1.7.1.201',
+      url: child,
+      title: 'Child',
+      compose: { include: [{ valueSet: [grandchild] }] },
+    };
+    const grandchildDefinition: ValueSet = {
+      resourceType: 'ValueSet',
+      id: '2.16.840.1.113762.1.4.1110.61',
+      url: grandchild,
+      title: 'Grandchild',
+    };
+    const terminologyPost = vi.fn(() => of({ resourceType: 'Bundle', type: 'transaction-response' } as Bundle));
+    const service = serviceWith({
+      terminologySearch: vi.fn((params: { url?: string }) => of({
+        resourceType: 'Bundle',
+        type: 'searchset',
+        entry: params.url === canonical ? [{ resource: existing }] : [],
+      } as Bundle)),
+      terminologyExpand: vi.fn(() => throwError(() => new Error('HAPI-0889: Unknown ValueSet'))),
+      terminologyPost,
+      vsacFetch: vi.fn((url: string) => {
+        if (url === child) return of(childDefinition);
+        if (url === grandchild) return of(grandchildDefinition);
+        return of(definition);
+      }),
+      vsacExpand: vi.fn(() => of({
+        resourceType: 'ValueSet',
+        expansion: {
+          timestamp: '2026-09-22T00:00:00Z',
+          total: 1,
+          contains: [{ system: 'http://snomed.info/sct', code: '9', display: 'Stored' }],
+        },
+      } as ValueSet)),
+    });
+
+    const postedUrls = () => terminologyPost.mock.calls.flatMap(call =>
+      ((call[0] as Bundle).entry ?? []).map(entry => (entry.resource as ValueSet).url)
+    );
+
+    const batched = await service.importCanonicalUrlsBatched([canonical]);
+    expect(batched.alreadyPresent).toBe(0);
+    expect(batched.imported).toBe(3);
+    expect(postedUrls().sort()).toEqual([canonical, child, grandchild].sort());
+    const parent = (terminologyPost.mock.calls[0]?.[0] as Bundle).entry?.[0]?.resource as ValueSet;
+    expect(parent.compose?.include?.some(include => include.valueSet?.length)).toBe(false);
+    expect(parent.compose?.include?.[0]).toMatchObject({
+      system: 'http://snomed.info/sct',
+      concept: [{ code: '9', display: 'Stored' }],
+    });
+
+    terminologyPost.mockClear();
+    const single = await service.importCanonicalUrls([canonical]);
+    expect(single.imported).toBe(3);
+    expect(postedUrls().sort()).toEqual([canonical, child, grandchild].sort());
+  });
+
+  it('does not revisit a ValueSet include cycle', async () => {
+    const child = 'http://cts.nlm.nih.gov/fhir/ValueSet/2.16.840.1.113883.3.117.1.7.1.201';
+    const parent: ValueSet = {
+      resourceType: 'ValueSet',
+      id: 'parent',
+      url: canonical,
+      compose: { include: [{ valueSet: [child] }] },
+    };
+    const childDefinition: ValueSet = {
+      resourceType: 'ValueSet',
+      id: 'child',
+      url: child,
+      compose: { include: [{ valueSet: [canonical] }] },
+    };
+    const vsacFetch = vi.fn((url: string) => of(url === child ? childDefinition : parent));
+    const service = serviceWith({
+      terminologySearch: vi.fn(() => of({ resourceType: 'Bundle', type: 'searchset' } as Bundle)),
+      terminologyPost: vi.fn(() => of({ resourceType: 'Bundle', type: 'transaction-response' } as Bundle)),
+      vsacFetch,
+      vsacExpand: vi.fn(() => of({
+        resourceType: 'ValueSet',
+        expansion: { timestamp: '2026-09-22T00:00:00Z', total: 0, contains: [] },
+      } as ValueSet)),
+    });
+
+    const result = await service.importCanonicalUrlsBatched([canonical]);
+
+    expect(result.imported).toBe(2);
+    expect(vsacFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('treats a not-yet-preexpanded ValueSet as already present', async () => {
+    const existing: ValueSet = {
+      resourceType: 'ValueSet',
+      id: 'local-id',
+      url: canonical,
+      title: 'Extensional',
+      expansion: {
+        timestamp: '2026-09-22T00:00:00Z',
+        total: 124,
+        contains: [{ system: 'http://snomed.info/sct', code: '1' }],
+      },
+    };
+    const vsacFetch = vi.fn();
+    const service = serviceWith({
+      terminologySearch: vi.fn(() => of({
+        resourceType: 'Bundle', type: 'searchset', entry: [{ resource: existing }],
+      } as Bundle)),
+      terminologyExpand: vi.fn(() => throwError(() => new Error(
+        'HAPI-0831: Expansion of ValueSet produced too many codes (maximum 1)'
+      ))),
+      vsacFetch,
+      hasCredentials: false,
+    });
+
+    const result = await service.importCanonicalUrls([canonical]);
+
+    expect(result.imported).toBe(0);
+    expect(result.alreadyPresent).toBe(1);
+    expect(result.items[0]?.conceptCount).toBe(124);
+    expect(vsacFetch).not.toHaveBeenCalled();
   });
 
   it('refuses to import into an NLM endpoint', async () => {
@@ -215,7 +389,12 @@ describe('OpenCode VSAC terminology import', () => {
       return of({ resourceType: 'Bundle', type: 'searchset', entry: [{ resource: existing }] } as Bundle);
     });
     const vsacFetch = vi.fn();
-    const service = serviceWith({ terminologySearch, vsacFetch, hasCredentials: false });
+    const terminologyExpand = vi.fn((params: { id?: string }) => of({
+      resourceType: 'ValueSet',
+      id: params.id,
+      expansion: { timestamp: '2026-09-03T00:00:00Z', total: 0, contains: [] },
+    } as ValueSet));
+    const service = serviceWith({ terminologySearch, terminologyExpand, vsacFetch, hasCredentials: false });
     const cql = urls.map((url, i) => `valueset "VS${i}": '${url}'`).join('\n');
 
     const result = await service.importForCql(cql);
